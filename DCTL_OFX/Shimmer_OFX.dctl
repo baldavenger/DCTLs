@@ -1,0 +1,88 @@
+// Shimmer OFX DCTL
+
+DEFINE_UI_PARAMS(time, Shimmer, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+
+typedef struct
+{
+float2 r0, r1;
+} mat2;
+
+__DEVICE__ mat2 make_mat2(float2 A, float2 B)
+{
+mat2 C;
+C.r0 = A;
+C.r1 = B;
+return C;
+}
+
+__DEVICE__ float2 multi(float2 A, mat2 B)
+{
+float2 C;
+C.x = A.x * B.r0.x + A.y * B.r0.y;
+C.y = A.x * B.r1.x + A.y * B.r1.y;
+return C;
+}
+
+__DEVICE__ float2 fract( float2 A)
+{
+return make_float2(A.x - _floor(A.x), A.y - _floor(A.y));
+} 
+
+__DEVICE__ float2 floor( float2 A)
+{
+return make_float2(_floor(A.x), _floor(A.y));
+}
+
+__DEVICE__ float2 SIN(float2 A)
+{
+return make_float2(_sinf(A.x), _sinf(A.y));
+}
+
+__DEVICE__ float TIME = 0;
+
+__DEVICE__ float snow(float2 uv, float scale)
+{
+float w = smoothstep(1, 0, -uv.y * (scale / 10));
+if(w < 0.1f)
+return 0;
+uv.x += _sinf(uv.y + TIME * 5) / scale;
+uv = uv * scale;
+float2 s = floor(uv);
+float2 f = fract(uv);
+float2 p = make_float2(0);
+float k = 3, d = 0;
+p = 0.5f + 0.35f * SIN(11 * fract(SIN(multi((s + p + scale), make_mat2(make_float2(7, 3), make_float2(6, 5)))) * 5)) - f;
+if(uv.x < 0.5f) p = (f - 0.5f) * -1;
+d = length(p);
+k = _fminf(d, k);
+if(uv.x < 0.5f) k = smoothstep(0, k, _sinf(f.x + f.y) * 0.1f);
+else k = smoothstep(0, k, _sinf(f.x + f.y) * 0.01f);
+
+return k * w;
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+
+TIME = time * 10;
+	
+float2 uv;
+uv.x = (X * 2 - width) / _fminf(width, height);
+uv.y = (Y * 2 - height) / _fminf(width, height);
+float c = smoothstep(0.1f, 0, _clampf(uv.y * 0.3f + 0.8f, 0, 0.75f));
+c+=snow(uv, 1) * 0.3f;
+c+=snow(uv, 20) * 0.5f;
+c+=snow(uv, 15) * 0.8f;
+c+=snow(uv, 10);
+c+=snow(uv, 8);
+c+=snow(uv, 6);
+c+=snow(uv, 5);
+float3 RGB = make_float3(c, c, c);
+
+return RGB;
+}
