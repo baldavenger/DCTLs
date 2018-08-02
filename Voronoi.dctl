@@ -1,0 +1,118 @@
+// Voronoi DCTL
+
+__CONSTANT__ float Speed = 1.0f;
+__CONSTANT__ float Offset = 0.0f;
+__CONSTANT__ int Type = 0;
+__CONSTANT__ int Octaves = 1;
+__CONSTANT__ float Zoom = 8.0f;
+__CONSTANT__ float Detail = 2.0f;
+__CONSTANT__ float iTime = 1.0f; 
+
+__DEVICE__ float dot(float2 A, float2 B)
+{
+float C = A.x * B.x + A.y * B.y;
+return C;
+}
+
+__DEVICE__ float2 fract(float2 A)
+{
+float2 B;
+B.x = A.x -_floor(A.x);
+B.y = A.y -_floor(A.y);
+return B;
+}
+
+__DEVICE__ float2 hash(float2 p)
+{
+p = make_float2(dot(p, make_float2(127.1f, 311.7f)), dot(p, make_float2(269.5f, 183.3f)));
+return fract(make_float2(_sinf(p.x) * 43758.5453f, _sinf(p.y) * 43758.5453f));
+}
+
+__DEVICE__ float voronoi(float2 V, float iGT, float distance_type, float function, bool  multiply_by_F1, bool  inverse)
+{
+float2 n = make_float2(_floor(V.x), _floor(V.y));
+float2 f = fract(V);
+
+float F1 = 8.0f;
+float F2 = 8.0f;
+
+for( int j=-1; j<=1; j++ )
+for( int i=-1; i<=1; i++ )
+{
+float2 g = make_float2((float)i, (float)j);
+float2 o = hash( make_float2(n.x + g.x, n.y + g.y));
+
+o.x = 0.5f + 0.5f * _sinf( iGT + 6.2831f * o.x );
+o.y = 0.5f + 0.5f * _sinf( iGT + 6.2831f * o.y );
+
+float2 r;
+r.x = g.x - f.x + o.x;
+r.y = g.y - f.y + o.y;
+
+float d = 	distance_type < 1.0f ? dot(r,r)  : 
+distance_type < 2.0f ? _sqrtf(dot(r,r)) : 
+distance_type < 3.0f ? _fabs(r.x) + _fabs(r.y) :		
+distance_type < 4.0f ? _fmaxf(_fabs(r.x), _fabs(r.y)) :	
+0.0f;
+
+if( d<F1 ) 
+{ 
+F2 = F1; 
+F1 = d; 
+}
+else if( d<F2 ) 
+{
+F2 = d;
+}
+}
+
+float c = function < 1.0f ? F1 : 
+function < 2.0f ? F2 : 
+function < 3.0f ? F2-F1 :
+function < 4.0f ? (F1+F2)/2.0f : 
+0.0f;
+
+if( multiply_by_F1 )	c *= F1;
+if( inverse )			c = 1.0f - c;
+
+return c;
+}
+
+__DEVICE__ float fbm(float2 p, float iGT, float distance_type, float function, bool  multiply_by_F1, bool  inverse)
+{
+float s = 0.0f;
+float m = 0.0f;
+float a = 0.5f;
+
+for( int i=0; i<Octaves; i++ )
+{
+s += a * voronoi(p, iGT, distance_type, function, multiply_by_F1, inverse);
+m += a;
+a *= 0.5f;
+p.x *= Detail;
+p.y *= Detail;
+}
+return s/m;
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{ 
+
+float yo = _tex2D(p_TexR, 500, 500) * 1000;
+float iGT = yo * 0.05f * Speed + Offset; 
+float t = float(Type); 
+float function 			= _fmod(t, 4.0f); 
+bool  multiply_by_F1	= _fmod(t, 8.0f)  >= 4.0f; 
+bool  inverse			= _fmod(t, 16.0f) >= 8.0f; 
+float distance_type		= _fmod(t/16.0f, 4.0f); 
+
+float2 p;
+p.x = (float)p_X / p_Width;
+p.y = (float)p_Y / p_Height;
+
+float2 center = make_float2(2.0f * (p.x - 0.5f), 2.0f * (p.y - 0.5f));
+float c = fbm(make_float2(Zoom * center.x, Zoom * center.y), iGT, distance_type, function, multiply_by_F1, inverse);
+
+return make_float3(c, c, c);
+ 
+}

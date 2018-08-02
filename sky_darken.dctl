@@ -1,0 +1,15 @@
+// Darken pixels with blue/cyan hue
+// Driven by saturation levels
+
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+
+const float r = p_R < p_B && p_G <= p_B ? p_R * ((p_R + 0.0001f) / ((p_B + p_G + 0.0001f) / 2.0f)) : p_R;
+const float g = p_R < p_B && p_G <= p_B ? p_G * ((p_R + 0.0001f) / ((p_B + p_G + 0.0001f) / 2.0f)) : p_G;
+const float b = p_R < p_B && p_G <= p_B ? p_B * ((p_R + 0.0001f) / ((p_B + p_G + 0.0001f) / 2.0f)) : p_B;
+
+
+return make_float3(r, g, b);
+
+}

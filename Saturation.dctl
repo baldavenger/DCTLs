@@ -1,0 +1,14 @@
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+    const float M = _fmaxf(p_R, _fmaxf(p_G, p_B));
+    const float m = _fminf(p_R, _fminf(p_G, p_B));
+    const float C = M - m;
+    const float L = 0.5f * (M + m);
+    const float S = C == 0.0f ? 0.0f : C / (1.0f - (2.0f * L - 1.0f));
+
+    const float r = S;
+    const float g = S;
+    const float b = S;
+
+    return make_float3(r, g, b);
+}

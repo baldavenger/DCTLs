@@ -1,0 +1,26 @@
+// Waveform Green
+
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{
+    float y = p_Y / (p_Height - 1.0f);
+	float col = 0.0f;
+	float lum = 0.0f;
+    
+    
+    
+	for (int i = 0; i < p_Height; i+=1){
+	
+		lum = _tex2D(p_TexG, p_X, i);
+		
+		lum > 0.005f && lum < (1.0f - y) * 1.005f && lum + 0.005f > (1.0f - y) * 1.005f ? col += 0.02f : 0.0f;
+	}
+
+	float r = 0.0f;
+	float g = col;
+	float b = 0.0f;
+
+	
+
+    return make_float3(r, g, b);
+}

@@ -1,0 +1,15 @@
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+    
+    // Euler's Constant e = 2.718281828459045
+    
+    const float e = 2.718281828459045;
+    
+    // 1.0f / (1.0f + _powf(e, -8.0f*(r - 0.435f)))
+    
+    const float r = 1.0f / (1.0f + _powf(e, -8.0f*(p_R - 0.435f)));
+    const float g = 1.0f / (1.0f + _powf(e, -8.0f*(p_G - 0.435f)));
+    const float b = 1.0f / (1.0f + _powf(e, -8.0f*(p_B - 0.435f)));
+
+    return make_float3(r, g, b);
+}

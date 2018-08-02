@@ -1,0 +1,118 @@
+// The Force DCTL
+
+__CONSTANT__ float count = 10.0f;
+
+__DEVICE__ float fract(float A)
+{
+float B;
+B = A -_floor(A);
+return B;
+}
+
+__DEVICE__ float dot(float3 A, float3 B)
+{
+float C = A.x * B.x + A.y * B.y + A.z * B.z;
+return C;
+}
+
+__DEVICE__ float mix(float A, float B, float C)
+{
+float D = A * (1.0f - C) + B * C;
+return D;
+}
+
+__DEVICE__ float2 add2(float2 A, float2 B)
+{
+float2 C;
+C.x = A.x + B.x;
+C.y = A.y + B.y;
+return C;
+}
+
+__DEVICE__ float3 add3(float3 A, float3 B)
+{
+float3 C;
+C.x = A.x + B.x;
+C.y = A.y + B.y;
+C.z = A.z + B.z;
+return C;
+}
+
+__DEVICE__ float2 multi2(float A, float2 B)
+{
+float2 C;
+C.x = A * B.x;
+C.y = A * B.y;
+return C;
+}
+
+__DEVICE__ float3 multi3(float A, float3 B)
+{
+float3 C;
+C.x = A * B.x;
+C.y = A * B.y;
+C.z = A * B.z;
+return C;
+}
+
+__DEVICE__ float Hash(float2 p, float s)
+{
+    float3 p2 = make_float3(p.x, p.y, 10.0f * _fabs(_sinf(s)));
+    return fract(_sinf(dot(p2, make_float3(27.1f, 61.7f, 12.4f))) * 273758.5453123f);
+}
+
+__DEVICE__ float noise(float2 p, float s)
+{
+    float2 i = make_float2(_floor(p.x), _floor(p.y));
+    float2 f = make_float2(fract(p.x), fract(p.y));
+    f.x *= f.x * (3.0f - 2.0f * f.x);
+    f.y *= f.y * (3.0f - 2.0f * f.y);
+
+    return mix(mix(Hash(add2(i, make_float2(0.0f, 0.0f)), s), Hash(add2(i, make_float2(1.0f, 0.0f)), s), f.x),
+               mix(Hash(add2(i, make_float2(0.0f, 1.0f)), s), Hash(add2(i, make_float2(1.0f, 1.0f)), s), f.x),
+               f.y) * s;
+}
+
+__DEVICE__ float fbm(float2 p)
+{
+     float v = 0.0f;
+     v += noise(p, 0.35f);
+     v += noise(multi2(2.0f, p), 0.25f);
+     v += noise(multi2(4.0f, p), 0.125f);
+     v += noise(multi2(8.0f, p), 0.0625f);
+     return v;
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{
+	float time = _tex2D(p_TexR, 500, 500) * 100 + 10.0f;
+	float time2 = _tex2D(p_TexR, 500, 500) * 100 + 20.0f;
+	float2 uv;
+	uv.x = ((float)p_X / p_Width) * 2.0f - 1.0f + 0.1f;
+	uv.y = ((float)p_Y / p_Height) * 2.0f - 1.0f;
+	uv.x *= 1.2f * (float)p_Width / p_Height;
+
+	float3 finalColor = make_float3(0.0f, 0.0f, 0.0f);
+	for( float i = 1.0f; i < count; ++i )
+	{
+		float t = _fabs(1.0f / ((uv.x + fbm( make_float2(uv.x + time/i, uv.y + time/i))) * (i * 50.0f)));
+		finalColor = add3(finalColor, multi3(t, make_float3( i * 0.075f + 0.1f, 0.5f, 2.0f)));
+	}
+	
+	float2 uv2;
+	uv2.x = ((float)p_X / p_Width) * 2.0f - 1.0f - 0.4f;
+	uv2.y = ((float)p_Y / p_Height) * 2.0f - 1.0f;
+	uv2.x *= 1.2f * (float)p_Width / p_Height;
+
+	float3 finalColor2 = make_float3(0.0f, 0.0f, 0.0f);
+	for( float i = 1.0f; i < count; ++i )
+	{
+		float t = _fabs(1.0f / ((uv2.x + fbm( make_float2(uv2.x + time2/i, uv2.y + time2/i))) * (i * 50.0f)));
+		finalColor2 = add3(finalColor2, multi3(t, make_float3( i * 0.075f + 0.1f, 0.5f, 2.0f)));
+	}
+	
+	float3 Color = add3(finalColor, finalColor2);
+	Color = multi3(2.0f, Color);
+	return Color;
+
+}

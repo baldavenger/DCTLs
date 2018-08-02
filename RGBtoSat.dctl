@@ -1,0 +1,21 @@
+// RGB to Sat
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+    
+
+    float Mx = _fmaxf(p_R, _fmaxf(p_G, p_B));			
+    float mn = _fminf(p_R, _fminf(p_G, p_B));					
+    float C = Mx - mn;
+																
+    float L = 0.5f * (Mx + mn);													
+    	
+    float S = L <= 0.5f ? C / (Mx + mn) : C / (2.0f - C);
+
+    
+    float r = S;
+    float g = S;
+    float b = S;
+    
+    return make_float3(r, g, b);
+}

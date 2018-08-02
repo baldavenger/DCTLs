@@ -1,0 +1,34 @@
+// Waveform Vu
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{
+    
+    const float y = p_Y / (p_Height - 1.0f);
+    const float x = p_X / (p_Width - 1.0f);
+
+    float lumRGB[3];
+    float colRGB[3];
+
+    colRGB[0] = colRGB[1] = colRGB[2] = 0.0f;
+
+    for (int i = 0; i < p_Height; ++i)
+    {
+        lumRGB[0] = _tex2D(p_TexR, p_X, i);
+        lumRGB[1] = _tex2D(p_TexG, p_X, i);
+        lumRGB[2] = _tex2D(p_TexB, p_X, i);
+
+        for (int j = 0; j < 3; ++j)
+        {
+            if ((lumRGB[j] < ((1.0f - y) * 1.005f)) && ((lumRGB[j] + 0.005f) > (1.0f - y) * 1.005f))
+            {
+                colRGB[j] += 0.02f;
+            }
+        }
+    }
+
+    lumRGB[0] = colRGB[0];
+    lumRGB[1] = colRGB[1];
+    lumRGB[2] = colRGB[2];
+
+    return make_float3(lumRGB[0], lumRGB[1], lumRGB[2]);
+}

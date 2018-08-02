@@ -1,0 +1,430 @@
+// Server Room DCTL
+
+__CONSTANT__ float tmax = 20.0f;
+
+__DEVICE__ float2 add(float A, float2 B)
+{
+float2 C;
+C.x = A + B.x;
+C.y = A + B.y;
+return C;
+}
+
+__DEVICE__ float2 add(float2 A, float B)
+{
+float2 C;
+C.x = A.x + B;
+C.y = A.y + B;
+return C;
+}
+
+__DEVICE__ float2 add(float2 A, float2 B)
+{
+float2 C;
+C.x = A.x + B.x;
+C.y = A.y + B.y;
+return C;
+}
+
+__DEVICE__ float3 add(float3 A, float B)
+{
+float3 C;
+C.x = A.x + B;
+C.y = A.y + B;
+C.z = A.z + B;
+return C;
+}
+
+__DEVICE__ float3 add(float3 A, float3 B)
+{
+float3 C;
+C.x = A.x + B.x;
+C.y = A.y + B.y;
+C.z = A.z + B.z;
+return C;
+}
+
+__DEVICE__ float4 divide(float4 A, float B)
+{
+float4 C;
+C.x = A.x / B;
+C.y = A.y / B;
+C.z = A.z / B;
+C.w = A.w / B;
+return C;
+}
+
+__DEVICE__ float3 cross(float3 A, float3 B)
+{
+float3 C;
+C.x = A.y * B.z - A.z * B.y;
+C.y = A.z * B.x - A.x * B.z;
+C.z = A.x * B.y - A.y * B.x;
+return C;
+}
+
+__DEVICE__ float dot(float2 A, float2 B)
+{
+float C = A.x * B.x + A.y * B.y;
+return C;
+}
+
+__DEVICE__ float dot(float3 A, float3 B)
+{
+float C = A.x * B.x + A.y * B.y + A.z * B.z;
+return C;
+}
+
+__DEVICE__ float3 floor(float3 A)
+{
+float3 B;
+B.x = _floor(A.x);
+B.y = _floor(A.y);
+B.z = _floor(A.z);
+return B;
+}
+
+__DEVICE__ float fract(float A)
+{
+float B;
+B = A - _floor(A);
+return B;
+}
+
+__DEVICE__ float3 fract(float3 A)
+{
+float3 B;
+B.x = A.x - _floor(A.x);
+B.y = A.y - _floor(A.y);
+B.z = A.z - _floor(A.z);
+return B;
+}
+
+__DEVICE__ float length(float2 A)
+{
+float B = _sqrtf(A.x * A.x + A.y * A.y);
+return B;
+}
+
+__DEVICE__ float3 minus(float A, float3 B)
+{
+float3 C;
+C.x = A - B.x;
+C.y = A - B.y;
+C.z = A - B.z;
+return C;
+}
+
+__DEVICE__ float3 minus(float3 A, float3 B)
+{
+float3 C;
+C.x = A.x - B.x;
+C.y = A.y - B.y;
+C.z = A.z - B.z;
+return C;
+}
+
+__DEVICE__ float mix(float A, float B, float C)
+{
+float D = A * (1.0f - C) + B * C;
+return D;
+}
+
+__DEVICE__ float3 mix(float3 A, float3 B, float C)
+{
+float3 D;
+D.x = A.x * (1.0f - C) + B.x * C;
+D.y = A.y * (1.0f - C) + B.y * C;
+D.z = A.z * (1.0f - C) + B.z * C;
+return D;
+}
+
+__DEVICE__ float2 multi(float A, float2 B)
+{
+float2 C;
+C.x = A * B.x;
+C.y = A * B.y;
+return C;
+}
+
+__DEVICE__ float2 multi(float2 A, float B)
+{
+float2 C;
+C.x = A.x * B;
+C.y = A.y * B;
+return C;
+}
+
+__DEVICE__ float2 multi(float2 A, float2 B)
+{
+float2 C;
+C.x = A.x * B.x;
+C.y = A.y * B.y;
+return C;
+}
+
+__DEVICE__ float3 multi(float A, float3 B)
+{
+float3 C;
+C.x = A * B.x;
+C.y = A * B.y;
+C.z = A * B.z;
+return C;
+}
+
+__DEVICE__ float3 multi(float3 A, float B)
+{
+float3 C;
+C.x = A.x * B;
+C.y = A.y * B;
+C.z = A.z * B;
+return C;
+}
+
+__DEVICE__ float3 multi(float3 A, float3 B)
+{
+float3 C;
+C.x = A.x * B.x;
+C.y = A.y * B.y;
+C.z = A.z * B.z;
+return C;
+}
+
+__DEVICE__ float4 multi(float4 A, float B)
+{
+float4 C;
+C.x = A.x * B;
+C.y = A.y * B;
+C.z = A.z * B;
+C.w = A.w * B;
+return C;
+}
+
+__DEVICE__ float3 multi(float3 A[3], float3 In)
+{
+float3 out;
+out.x = In.x * A[0].x + In.y * A[0].y + In.z * A[0].z;
+out.y = In.x * A[1].x + In.y * A[1].y + In.z * A[1].z;
+out.z = In.x * A[2].x + In.y * A[2].y + In.z * A[2].z;
+return out;
+}
+
+__DEVICE__ float3 normalize(float3 A)
+{
+float3 B;
+float C = _sqrtf((A.x * A.x) + (A.y * A.y) + (A.z * A.z));
+B.x = A.x / C;
+B.y = A.y / C;
+B.z = A.z / C;
+return B;
+}
+
+__DEVICE__ float3 reflect(float3 A, float3 B)
+{
+float3 C;
+C.x = A.x - 2.0f * dot(B, A) * B.x;
+C.y = A.y - 2.0f * dot(B, A) * B.y;
+C.z = A.z - 2.0f * dot(B, A) * B.z;
+return C;
+}
+
+__DEVICE__ float step(float A, float B)
+{
+float C;
+C = B < A ? 0.0f : 1.0f;
+return C;
+}
+
+__DEVICE__ float smoothstep(float edge0, float edge1, float x)
+{
+float t = _saturatef((x - edge0) / (edge1 - edge0));
+return t * t * (3.0f - 2.0f * t);
+}
+
+__DEVICE__ float hash(float n)
+{
+return fract(_sinf(n) * 43758.5453f);
+}
+
+__DEVICE__ float3 hash(float3 p){ 
+
+float n = _sinf(dot(p, make_float3(7.0f, 157.0f, 113.0f)));    
+return fract(multi(make_float3(2097152.0f, 262144.0f, 32768.0f), n)); 
+}
+
+__DEVICE__ float noise(float g) {
+float p = _floor(g);
+float f = fract(g);
+
+return mix(hash(p), hash(p + 1.0f), f);
+}
+
+__DEVICE__ float voronoi(float3 x) {
+float3 p = floor(x);
+float3 f = fract(x);
+
+float2 res = make_float2(8.0f, 8.0f);
+
+for(int i = -1; i <= 1; i++)
+for(int j = -1; j <= 1; j++)
+for(int k = -1; k <= 1; k++) {
+float3 g = make_float3(float(i), float(j), float(k));
+float3 r = minus(add(g, hash(add(p, g))), f);
+
+float d = _fmaxf(_fabs(r.x), _fmaxf(_fabs(r.y), _fabs(r.z)));
+
+if(d < res.x) {
+res.y = res.x;
+res.x = d;
+} else if(d < res.y) {
+res.y = d;
+}
+}
+
+return res.y - res.x;
+}
+
+__DEVICE__ float2 path(float z) {
+return make_float2(_cosf(z / 8.0f) * _sinf(z / 12.0f) * 12.0f, 0.0f);
+}
+
+__DEVICE__ float map(float3 p) {
+float4 q = make_float4(p.x, p.y, p.z, 1.0f);
+q.x += 1.0f;
+
+for(int i = 0; i < 6; i++) {
+q.x = -1.0f + 2.0f * fract(0.5f + 0.5f * q.x);
+q.y = -1.0f + 2.0f * fract(0.5f + 0.5f * q.y);
+q.z = -1.0f + 2.0f * fract(0.5f + 0.5f * q.z);
+q = divide(multi(q, 1.2f), _fmaxf(dot(make_float3(q.x, q.y, q.z), make_float3(q.x, q.y, q.z)), 0.1f));
+}
+
+float2 tun;
+tun.x = _fabs(p.x - path(p.z).x) * 0.6f;
+tun.y = _fabs(p.y - path(p.z).y) * 0.5f;
+
+return _fminf(0.25f * _fabs(q.y) / q.w, 1.0f - _fmaxf(tun.x, tun.y));
+}
+
+__DEVICE__ float march(float3 ro, float3 rd, float mx) {
+float t = 0.0f;
+
+for(int i = 0; i < 200; i++) {
+float d = map(add(ro, multi(rd, t)));
+if(d < 0.001f || t >= mx) break;
+t += d * 0.75f;
+}
+
+return t;
+}
+
+__DEVICE__ float3 normal(float3 p) {
+float2 h = make_float2(0.001f, 0.0f);
+float3 n = make_float3(
+map(add(p, make_float3(h.x, h.y, h.y))) - map(minus(p, make_float3(h.x, h.y, h.y))),
+map(add(p, make_float3(h.y, h.x, h.y))) - map(minus(p, make_float3(h.y, h.x, h.y))),
+map(add(p, make_float3(h.y, h.y, h.x))) - map(minus(p, make_float3(h.y, h.y, h.x)))
+);
+return normalize(n);
+}
+
+__DEVICE__ float ao(float3 p, float3 n) {
+float o = 0.0f, s = 0.005f;
+for(int i = 0; i< 15; i++) {
+float d = map(add(p, multi(n, s)));
+o += (s - d);
+s += s / (float)(i + 1);
+}
+
+return 1.0f - _saturatef(o);
+}
+
+__DEVICE__ float3 material(float3 p, float iTime) {
+float v = 0.0f;
+float a = 0.7f, f = 1.0f;
+
+for(int i = 0; i < 4; i++) {
+float v1 = voronoi(add(multi(p, f), 5.0f));
+float v2 = 0.0f;
+
+if(i > 0) {
+v2 = voronoi(add(multi(p, f * 0.1f), 50.0f + 0.15f * iTime));
+
+float va = 0.0f, vb = 0.0f;
+va = 1.0f - smoothstep(0.0f, 0.1f, v1);
+vb = 1.0f - smoothstep(0.0f, 0.08f, v2);
+v += a * _powf(va * (0.5f + vb), 4.0f);
+}
+
+v1 = 1.0f - smoothstep(0.0f, 0.3f, v1);
+v2 =  a * noise(v1 * 5.5f + 0.1f);
+
+v += v2;
+
+f *= 3.0f;
+a *= 0.5f;
+}
+
+return multi(make_float3(_powf(v, 6.0f), _powf(v, 4.0f), _powf(v, 2.0f)), 2.0f);
+}
+
+__DEVICE__ float3* camera(float3 eye, float3 lat, float3 yo[3]) {
+
+float3 ww = normalize(minus(lat, eye));
+float3 uu = normalize(cross(make_float3(0.0f, 1.0f, 0.0f), ww));
+float3 vv = normalize(cross(ww, uu));
+yo[0] = uu;
+yo[1] = vv;
+yo[2] = ww;
+return yo;
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{
+
+//float iTime = _tex2D(p_TexR, 500, 500) / 24.0f;
+float iTime = _tex2D(p_TexR, 500, 500) * 100.0f;
+p_Y = p_Height - p_Y;
+float X = (float)p_X;
+float Y = (float)p_Y;
+float2 resolution = make_float2((float)p_Width, (float)p_Height);
+
+float2 uv = make_float2(X / resolution.x, Y / resolution.y);
+uv = add(-1.0f, multi(uv, 2.0f));
+uv.x *= resolution.x / resolution.y;
+
+float3 col = make_float3(0.0f, 0.0f, 0.0f);
+
+float3 ro = make_float3(0.63f * _cosf(iTime * 0.1f), 0.67f, iTime * 0.5f);
+float3 la = add(ro, make_float3(0.0f, 0.0f, 0.3f));
+
+ro.x += path(ro.z).x;
+ro.y += path(ro.z).y;
+la.x += path(la.z).x;
+la.y += path(la.z).y;
+float3 abc[3];
+float3 rd = normalize(multi(camera(ro, la, abc), make_float3(uv.x, uv.y, 1.97f)));
+
+float i = march(ro, rd, tmax);
+if(i < tmax) {
+float3 pos = add(ro, multi(rd, i));
+float3 nor = normal(pos);
+float3 ref = normalize(reflect(rd, nor));
+
+float occ = ao(pos, nor);
+
+col = multi(material(pos, iTime), occ);
+col = add(col, 2.0f * _powf(_saturatef(dot(make_float3(-rd.x, -rd.y, -rd.z), ref)), 16.0f) * occ);	
+}
+
+col = mix(col, make_float3(0.0f, 0.0f, 0.0f), 1.0f - _expf(-0.5f * i));
+
+col.x = 1.0f - _expf(-0.5f * col.x);
+col.y = 1.0f - _expf(-0.5f * col.y);
+col.z = 1.0f - _expf(-0.5f * col.z);
+col.x = _powf(_fabs(col.x), 1.0f/2.2f);
+col.y = _powf(_fabs(col.y), 1.0f/2.2f);
+col.z = _powf(_fabs(col.z), 1.0f/2.2f);
+
+return col;
+}

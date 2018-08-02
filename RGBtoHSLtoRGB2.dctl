@@ -1,0 +1,83 @@
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+    
+    // RGB to HSL
+    
+    const float R = p_R;
+    const float G = p_G;
+    const float B = p_B;
+    
+	const float Min = _fminf(R, _fminf(G, B));    
+	const float Max = _fmaxf(R, _fmaxf(G, B));    
+	const float del_Max = Max - Min;             
+
+    const float L = (Max + Min) / 2.0f;
+	const float s = del_Max == 0.0f ? 0.0f : (L < 0.5f ? del_Max / (Max + Min) : del_Max / (2.0f - Max - Min));
+	
+    const float del_R = (((Max - R) / 6.0f) + (del_Max / 2.0f)) / del_Max;
+    const float del_G = (((Max - G) / 6.0f) + (del_Max / 2.0f)) / del_Max;
+    const float del_B = (((Max - B) / 6.0f) + (del_Max / 2.0f)) / del_Max;
+   
+    const float h = del_Max == 0.0f ? 0.0f : (R == Max ? del_B - del_G : (G == Max ? (1.0f / 3.0f) + del_R - del_B : (2.0f / 3.0f) + del_G - del_R));
+
+    const float Hh = h < 0.0f ? h + 1.0f : (h > 1.0f ? h - 1.0f : h);
+    
+    /*
+    // Soft Clip Saturation
+
+    const float softsat = 0.15f;
+
+    const float S = s > softsat ? (-1.0f / ((s - softsat) / (1.0f - softsat) + 1.0f) + 1.0f) * (1.0f - softsat) + softsat : s;
+    */
+    
+    
+    // Hue Convergence
+    
+    const float hue = 0.08f;
+    const float range = 0.2f;
+    const float curve = 2.0f;
+    
+    const float Ho = Hh - (hue - 0.5f);
+    const float He = Ho < 0.0f ? Ho + 1.0f : (Ho > 1.0f ? Ho - 1.0f : Ho);
+    const float H = He > 0.5f - range && He < 0.5f ? (_powf(((He - (0.5f - range)) * (1/range)), 1/curve) * range) + (0.5f - range) + (hue - 0.5f):
+    (He > 0.5f && He < 0.5f + range ? (_powf(((He - 0.5f) * (1/range)), curve) * range) + 0.5f + (hue - 0.5f): Hh);
+    
+    
+    
+    const float S = s;
+    
+
+    // HSL to RGB
+
+    const float Q = (L < 0.5f) ? (L * (1.0f + S)) : (L + S - L * S);
+    const float P = (2.0f * L - Q);
+
+    const float RH = ((H + 1.0f / 3.0f) < 0.0f) ? ((H + 1.0f / 3.0f) + 1.0f) :
+    (((H + 1.0f / 3.0f) > 1.0f) ? ((H + 1.0f / 3.0f) - 1.0f) : (H + 1.0f / 3.0f));
+    
+    const float RR = (RH < 1.0f / 6.0f) ? (P + (Q - P) * 6.0f * RH) : 
+    ((RH < 1.0f / 2.0f) ? Q : ((RH < 2.0f / 3.0f) 
+    ? (P + (Q - P) * (2.0f / 3.0f - RH) * 6.0f) : P));
+
+    const float GH = (H < 0.0f) ? (H + 1.0f) :
+    ((H > 1.0f) ? (H - 1.0f) : H);
+
+    const float GG = (GH < 1.0f / 6.0f) ? (P + (Q - P) * 6.0f * GH) :
+    ((GH < 1.0f / 2.0f) ? Q :
+    ((GH < 2.0f / 3.0f) ? (P + (Q - P) * (2.0f / 3.0f - GH) * 6.0f) : P));
+
+    const float BH = ((H - 1.0f / 3.0f) < 0.0f) ? ((H - 1.0f / 3.0f) + 1.0f) :
+    (((H - 1.0f / 3.0f) > 1.0f) ? ((H - 1.0f / 3.0f) - 1.0f) : (H - 1.0f / 3.0f));
+    
+    const float BB = (BH < 1.0f / 6.0f) ? (P + (Q - P) * 6.0f * BH) :
+    ((BH < 1.0f / 2.0f) ? Q :
+    ((BH < 2.0f / 3.0f) ? (P + (Q - P) * (2.0f / 3.0f - BH) * 6.0f) : P));
+    
+    
+    const float r = S == 0.0f ? L : RR;
+    const float g = S == 0.0f ? L : GG;
+    const float b = S == 0.0f ? L : BB;
+    
+        
+    return make_float3(r, g, b);
+}

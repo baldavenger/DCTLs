@@ -1,0 +1,203 @@
+// Vortex DCTL
+
+
+__DEVICE__ float length(float2 A)
+{
+float B = _sqrtf(A.x * A.x + A.y * A.y);
+return B;
+}
+
+__DEVICE__ float length(float3 A)
+{
+float B = _sqrtf(A.x * A.x + A.y * A.y + A.z * A.z);
+return B;
+}
+
+__DEVICE__ float3 add(float3 A, float B)
+{
+float3 C;
+C.x = A.x + B;
+C.y = A.y + B;
+C.z = A.z + B;
+return C;
+}
+
+__DEVICE__ float3 add(float3 A, float3 B)
+{
+float3 C;
+C.x = A.x + B.x;
+C.y = A.y + B.y;
+C.z = A.z + B.z;
+return C;
+}
+
+__DEVICE__ float3 add(float3 A, float3 B, float3 C)
+{
+float3 D;
+D.x = A.x + B.x + C.x;
+D.y = A.y + B.y + C.y;
+D.z = A.z + B.z + C.z;
+return D;
+}
+
+__DEVICE__ float3 minus(float3 A, float3 B)
+{
+float3 C;
+C.x = A.x - B.x;
+C.y = A.y - B.y;
+C.z = A.z - B.z;
+return C;
+}
+
+__DEVICE__ float3 multi(float3 A, float B)
+{
+float3 C;
+C.x = A.x * B;
+C.y = A.y * B;
+C.z = A.z * B;
+return C;
+}
+
+__DEVICE__ float3 multi(float3 A, float3 B)
+{
+float3 C;
+C.x = A.x * B.x;
+C.y = A.y * B.y;
+C.z = A.z * B.z;
+return C;
+}
+
+__DEVICE__ float3 cross(float3 A, float3 B)
+{
+float3 C;
+C.x = A.y * B.z - A.z * B.y;
+C.y = A.z * B.x - A.x * B.z;
+C.z = A.x * B.y - A.y * B.x;
+return C;
+}
+
+__DEVICE__ float3 mix(float3 A, float3 B, float C)
+{
+float3 D;
+D.x = A.x * (1.0f - C) + B.x * C;
+D.y = A.y * (1.0f - C) + B.y * C;
+D.z = A.z * (1.0f - C) + B.z * C;
+return D;
+}
+
+__DEVICE__ float3 normalize(float3 A)
+{
+float3 B;
+float C = _sqrtf((A.x * A.x) + (A.y * A.y) + (A.z * A.z));
+B.x = A.x / C;
+B.y = A.y / C;
+B.z = A.z / C;
+return B;
+}
+
+__DEVICE__  float3 path(float t)
+{
+float a = _sinf(t * 0.2f + 1.5f), b = _sinf(t * 0.2f);
+return make_float3(a * 2.0f, a * b, 0.0f);
+}
+
+__DEVICE__ float4 r2d(float a)
+{
+float c = _cosf(a), s = _sinf(a);
+return make_float4(c, s, -s, c);
+}
+
+__DEVICE__  void mo(float3 *P, float2 d)
+{
+float3 p = *P;
+p.x = _fabs(p.x) - d.x;
+p.y = _fabs(p.y) - d.y;
+if(p.y > p.x) p = make_float3(p.y, p.x, p.z);
+*P = p;
+}
+
+__DEVICE__ float de(float3 p, float *g, float iTime)
+{
+
+float3 q = p;
+q.x += q.z * 0.1f;
+q.z += iTime * 0.1f;
+q.x = _fmod(q.x - 1.0f, 2.0f) - 1.0f;
+q.y = _fmod(q.y - 1.0f, 2.0f) - 1.0f;
+q.z = _fmod(q.z - 1.0f, 2.0f) - 1.0f;
+float s = length(q) - 0.001f + _sinf(iTime * 30.0f) * 0.005f;
+
+p = minus(p, path(p.z));
+
+float4 yo = r2d(p.z * 0.9f);
+float px1 = p.x * yo.x + p.y * yo.y;
+float py1 = p.x * yo.z + p.y * yo.w;
+p.x = px1;
+p.y = py1;
+mo(&p, make_float2(0.6f, 0.12f));
+mo(&p, make_float2(0.9f, 0.2f));
+
+yo = r2d(p.z * 0.5f);
+px1 = p.x * yo.x + p.y * yo.y;
+py1 = p.x * yo.z + p.y * yo.w;
+p.x = px1;
+p.y = py1;
+p = make_float3(p.z, p.y, p.x);
+mo(&p, make_float2(0.1f, 0.2f));
+p = make_float3(p.z, p.y, p.x);
+p.x = _fabs(p.x) - 0.4f;
+float d = length(make_float2(p.x, p.y)) - 0.02f - (0.5f + 0.5f * _sinf(p.z)) * 0.05f;
+
+d = _fminf(d, s);
+
+*g += 0.01f / (0.01f + d * d);
+return d;
+
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{
+
+float iTime = 1.0f + _tex2D(p_TexR, 500, 500) * 10.0f;
+p_Y = p_Height - p_Y;
+
+float2 uv;
+uv.x = ((float)p_X / p_Width) - 0.5f;
+uv.y = ((float)p_Y / p_Height) - 0.5f;
+uv.x *= (float)p_Width/p_Height;
+
+float dt = iTime * 6.0f;
+float3 ro = make_float3(0.0f, 0.0f, -3.0f + dt);
+float3 ta = make_float3(0.0f, 0.0f, dt);
+
+ro = add(ro, path(ro.z));
+ta = add(ta, path(ta.z));
+
+float3 fwd = normalize(minus(ta, ro));
+float3 left = cross(make_float3(0.0f, 1.0f, 0.0f), fwd);
+float3 up = cross(fwd, left);
+
+float3 rd = normalize(add(fwd, multi(left, uv.x), multi(up, uv.y)));
+
+float3 p;
+float ri, t = 0.0f;
+float g = 0.0f;
+
+for(float i = 0.0f; i < 1.0f; i += 0.01f)
+{
+ri = i;
+p = add(ro, multi(rd, t));
+float d = de(p, &g, iTime);
+if(d < 0.001f) break;
+t += d * 0.2f;
+}
+
+float3 bg = multi(make_float3(0.2f, 0.6f, 0.6f), 0.2f); 
+float3 col = mix(make_float3(0.4f, 0.5f, 0.5f), bg, ri);
+
+col = add(col, (g * 0.02f));
+col = mix(col, bg, 1.0f - _expf(-0.01f * t * t));
+
+return make_float3(col.x, col.y, col.z);
+
+}

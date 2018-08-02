@@ -1,0 +1,111 @@
+// Sauron DCTL
+
+
+__DEVICE__ float3 ADD3(float3 A, float3 B)
+{
+	float3 C;
+	C.x = A.x + B.x;
+	C.y = A.y + B.y;
+	C.z = A.z + B.z;
+
+	return C;
+}
+
+__DEVICE__ float snoise(float3 uv, float res)
+{
+	
+	uv.x *= res;
+	uv.y *= res;
+	uv.z *= res;
+	
+	float3 uv0;
+	uv0.x = _floor(_fmod(uv.x, res)) * 1e0;
+	uv0.y = _floor(_fmod(uv.y, res)) * 1e2;
+	uv0.z = _floor(_fmod(uv.z, res)) * 1e4;
+	
+	float3 uv1;
+	uv1.x = _floor(_fmod(uv.x + 1.0f, res)) * 1e0;
+	uv1.y = _floor(_fmod(uv.y + 1.0f, res)) * 1e2;
+	uv1.z = _floor(_fmod(uv.z + 1.0f, res)) * 1e4;
+	
+	float3 FR;
+	FR.x = uv.x - _floor(uv.x);
+	FR.x = FR.x * FR.x * (3.0f - 2.0f * FR.x);
+	FR.y = uv.y - _floor(uv.y);
+	FR.y = FR.y * FR.y * (3.0f - 2.0f * FR.y);
+	FR.z = uv.z - _floor(uv.z);
+	FR.z = FR.z * FR.z * (3.0f - 2.0f * FR.z);
+	
+	float4 v = make_float4(uv0.x + uv0.y + uv0.z, uv1.x + uv0.y + uv0.z,
+		      	  uv0.x + uv1.y + uv0.z, uv1.x + uv1.y + uv0.z);
+    
+	float4 r;
+	float RX = _sinf(v.x * 1e-3) * 1e5;
+	r.x = RX - _floor(RX);
+	float RY = _sinf(v.y * 1e-3) * 1e5;
+	r.y = RY - _floor(RY);
+	float RZ = _sinf(v.z * 1e-3) * 1e5;
+	r.z = RZ - _floor(RZ);
+	float RW = _sinf(v.w * 1e-3) * 1e5;
+	r.w = RW - _floor(RW);
+	
+	float AA = r.x * (1.0f - FR.x) + r.y * FR.x;
+	float BB = r.z * (1.0f - FR.x) + r.w * FR.x;
+	float r0 = AA * (1.0f - FR.y) + BB * FR.y;
+	
+	RX = _sinf((v.x + uv1.z - uv0.z) * 1e-3) * 1e5;
+	r.x = RX - _floor(RX);
+	RY = _sinf((v.y + uv1.z - uv0.z) * 1e-3) * 1e5;
+	r.y = RY - _floor(RY);
+	RZ = _sinf((v.z + uv1.z - uv0.z) * 1e-3) * 1e5;
+	r.z = RZ - _floor(RZ);
+	RW = _sinf((v.w + uv1.z - uv0.z) * 1e-3) * 1e5;
+	r.w = RW - _floor(RW);
+	
+	AA = r.x * (1.0f - FR.x) + r.y * FR.x;
+	BB = r.z * (1.0f - FR.x) + r.w * FR.x;
+	float r1 = AA * (1.0f - FR.y) + BB * FR.y;
+	
+	float NOSE = (r0 * (1.0f - FR.z) + r1 * FR.z) * 2.0f - 1.0f;
+	
+	return NOSE;
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{
+
+	float adsk_time = _tex2D(p_TexR, 500, 500) * 1000.0f;
+	float paramFlameSpeed = 10.0f; 
+	
+	float2 p;
+	
+	p.x = float(p_X) / p_Width;
+	p.x -= 0.5f;
+	p.x *= (float)(p_Width / p_Height);
+	
+	p.y = float(p_Y) / p_Height;
+	p.y -= 0.5f;
+	
+	float LengthA = _sqrtf(p.x * p.x * 2.0f + p.y * p.y * 2.0f);
+	LengthA *= 1.0f; // size
+	float LengthB = _sqrtf(p.x * p.x + p.y * p.y);
+	
+	float color = 3.0f - (3.0f * LengthA);
+	
+	float3 coord;
+	coord = make_float3(_atan2f(p.x, p.y) / 6.2832f + 0.5f, LengthB * 0.4f, 0.5f);
+	
+	for(int i = 1; i <= 7; i++)
+	{
+		float power = _powf(2.0f, float(i));
+		color += (1.5f / power) * snoise(ADD3(coord, make_float3(0.0f, -adsk_time * paramFlameSpeed / 100.0f * 0.05f, adsk_time * paramFlameSpeed / 100.0f * 0.01f)), power * 16.0f);
+	}
+	
+	float3 RGB;
+	RGB = make_float3(color, _powf(_fmaxf(color, 0.0f), 2.0f) * 0.4f, _powf(_fmaxf(color, 0.0f), 3.0f) * 0.15f);
+	RGB.x *= 0.7f;
+	RGB.y *= 0.7f;
+	RGB.z *= 0.7f;
+	
+	return RGB;
+}

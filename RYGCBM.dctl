@@ -1,0 +1,27 @@
+// Generate RYGCBM Hue/Sat/Lum (by Scott McLean)
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float X = p_X; // current x co ord
+float Y = p_Y; // current y co ord
+
+float WSeg = p_Width/6; //break width of frame into 6 Hue Segments RYGCBM
+float WSeg2 = (p_Width/6)*2; //segment2
+float WSeg3 = (p_Width/6)*3; //segment3
+float WSeg4 = (p_Width/6)*4; //segment4
+float WSeg5 = (p_Width/6)*5; //segment5
+float WSeg6 = p_Width; //segment6
+
+float H = (p_Height/(Y+1))/3; // This sets the RGB levels based on the top of frame equalling 0.
+float HSeg = p_Height/3; // Segments the height of the frame into 3 portions. Black to full sat. Full sat to white. Ramp and reverse ramp.
+
+float rHue = X < WSeg ? 1.0f : X >= WSeg && X < WSeg2 ? 1.0f - (X - WSeg)/WSeg : X >= WSeg4 && X < WSeg5 ? (X - WSeg4)/WSeg : X >= WSeg5 ? 1.0f : 0.0f; //Sets the red levels from left of frame to right of frame
+float gHue = X < WSeg ? X/WSeg : X >= WSeg && X < WSeg3 ? 1.0f : X >= WSeg3 && X < WSeg4 ? 1.0f - (X - WSeg3)/WSeg : 0.0f; //Sets the green levels
+float bHue = X >= WSeg2 && X < WSeg3 ? (X - WSeg2)/WSeg : X >= WSeg3 && X < WSeg5 ? 1.0f : X >= WSeg5 && X < WSeg6 ? 1.0f - (X - WSeg5)/WSeg : 0.0f; //Sets the blue levels
+
+float r = Y < HSeg ? rHue/H : Y >= HSeg && Y < HSeg*2 && rHue < 1 ? rHue + (1-rHue)*((Y-HSeg)/HSeg) : Y >= HSeg*2 && Y < HSeg*2.5 ? X/(p_Width - 1.0f) : Y >= HSeg*2.5 ? 1 - X/(p_Width - 1.0f) : 1.0f; //Setting Luminance base on current Y postition for red
+float g = Y < HSeg ? gHue/H : Y >= HSeg && Y < HSeg*2 && gHue < 1 ? gHue + (1-gHue)*((Y-HSeg)/HSeg) : Y >= HSeg*2 && Y < HSeg*2.5 ? X/(p_Width - 1.0f) : Y >= HSeg*2.5 ? 1 - X/(p_Width - 1.0f) : 1.0f; //Setting Luminance base on current Y postition for green
+float b = Y < HSeg ? bHue/H : Y >= HSeg && Y < HSeg*2 && bHue < 1 ? bHue + (1-bHue)*((Y-HSeg)/HSeg) : Y >= HSeg*2 && Y < HSeg*2.5 ? X/(p_Width - 1.0f) : Y >= HSeg*2.5 ? 1 - X/(p_Width - 1.0f) : 1.0f; //Setting Luminance base on current Y postition for blue
+
+return make_float3(r, g, b);
+}

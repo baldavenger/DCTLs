@@ -1,0 +1,25 @@
+// RGB to Hue
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+    
+
+    float Mx = _fmaxf(p_R, _fmaxf(p_G, p_B));			
+    float mn = _fminf(p_R, _fminf(p_G, p_B));					
+    float C = Mx - mn;
+																
+    float del_R = ((Mx - p_R) / 6.0f + C / 2.0f) / C;
+    float del_G = ((Mx - p_G) / 6.0f + C / 2.0f) / C;
+    float del_B = ((Mx - p_B) / 6.0f + C / 2.0f) / C;
+   
+    float h = C == 0.0f ? 0.0f : (p_R == Mx ? del_B - del_G : 
+    (p_G == Mx ? 1.0f / 3.0f + del_R - del_B : 2.0f / 3.0f + del_G - del_R));
+
+    float H = h < 0.0f ? h + 1.0f : (h > 1.0f ? h - 1.0f : h);
+    
+    const float r = H;
+    const float g = H;
+    const float b = H;
+    
+    return make_float3(r, g, b);
+}

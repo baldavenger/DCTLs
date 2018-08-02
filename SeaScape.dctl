@@ -1,0 +1,365 @@
+// SeaScape DCTL
+
+typedef struct
+{
+float c00, c01, c02;
+float c10, c11, c12;
+float c20, c21, c22;
+} mat3;
+
+__CONSTANT__ int NUM_STEPS = 8;
+__CONSTANT__ float PI = 3.141592f;
+__CONSTANT__ int ITER_GEOMETRY = 3;
+__CONSTANT__ int ITER_FRAGMENT = 5;
+__CONSTANT__ float SEA_HEIGHT = 0.6f;
+__CONSTANT__ float3 SEA_BASE = {0.1f, 0.19f, 0.22f};
+__CONSTANT__ float3 SEA_WATER_COLOR = {0.8f, 0.9f, 0.6f};
+__CONSTANT__ float4 octave_m = {1.6f, 1.2f, -1.2f, 1.6f};
+
+__DEVICE__ float3 mult_f3_f33(float3 In, mat3 A)
+{
+float3 out;
+out.x = In.x * A.c00 + In.y * A.c10 + In.z * A.c20;
+out.y = In.x * A.c01 + In.y * A.c11 + In.z * A.c21;
+out.z = In.x * A.c02 + In.y * A.c12 + In.z * A.c22;
+return out;
+}
+
+__DEVICE__ float3 minus3(float3 A, float3 B)
+{
+float3 C;
+C.x = A.x - B.x;
+C.y = A.y - B.y;
+C.z = A.z - B.z;
+return C;
+}
+
+__DEVICE__ float dot(float2 A, float2 B)
+{
+float C = A.x * B.x + A.y * B.y;
+return C;
+}
+
+__DEVICE__ float dot(float3 A, float3 B)
+{
+float C = A.x * B.x + A.y * B.y + A.z * B.z;
+return C;
+}
+
+__DEVICE__ float fract(float A)
+{
+float B;
+B = A - _floor(A);
+return B;
+}
+
+__DEVICE__ float2 fract(float2 A)
+{
+float2 B;
+B.x = A.x - _floor(A.x);
+B.y = A.y - _floor(A.y);
+return B;
+}
+
+__DEVICE__ float2 add2(float2 A, float2 B)
+{
+float2 C;
+C.x = A.x + B.x;
+C.y = A.y + B.y;
+return C;
+}
+
+__DEVICE__ float3 add3(float3 A, float3 B)
+{
+float3 C;
+C.x = A.x + B.x;
+C.y = A.y + B.y;
+C.z = A.z + B.z;
+return C;
+}
+
+__DEVICE__ float3 multi3(float3 A, float B)
+{
+float3 C;
+C.x = A.x * B;
+C.y = A.y * B;
+C.z = A.z * B;
+return C;
+}
+
+__DEVICE__ float mix(float A, float B, float C)
+{
+float D = A * (1.0f - C) + B * C;
+return D;
+}
+
+__DEVICE__ float3 mix3(float3 A, float3 B, float C)
+{
+float3 D;
+D.x = A.x * (1.0f - C) + B.x * C;
+D.y = A.y * (1.0f - C) + B.y * C;
+D.z = A.z * (1.0f - C) + B.z * C;
+return D;
+}
+
+
+__DEVICE__ float3 reflect(float3 A, float3 B)
+{
+float3 C;
+C.x = A.x - 2.0f * dot(B, A) * B.x;
+C.y = A.y - 2.0f * dot(B, A) * B.y;
+C.z = A.z - 2.0f * dot(B, A) * B.z;
+return C;
+}
+
+__DEVICE__ float length(float2 A)
+{
+float B = _sqrtf(A.x * A.x + A.y * A.y);
+return B;
+}
+
+__DEVICE__ float length(float3 A)
+{
+float B = _sqrtf(A.x * A.x + A.y * A.y + A.z * A.z);
+return B;
+}
+
+__DEVICE__ float3 normalize(float3 A)
+{
+float3 B;
+float C = _sqrtf((A.x * A.x) + (A.y * A.y) + (A.z * A.z));
+B.x = A.x / C;
+B.y = A.y / C;
+B.z = A.z / C;
+return B;
+}
+
+__DEVICE__ float smoothstep(float edge0, float edge1, float x)
+{
+float t = _saturatef((x - edge0) / (edge1 - edge0));
+return t * t * (3.0f - 2.0f * t);
+}
+
+// math
+__DEVICE__ mat3 fromEuler(float3 ang)
+{
+float2 a1 = make_float2(_sinf(ang.x), _cosf(ang.x));
+float2 a2 = make_float2(_sinf(ang.y), _cosf(ang.y));
+float2 a3 = make_float2(_sinf(ang.z), _cosf(ang.z));
+mat3 m;
+m.c00 = a1.y * a3.y + a1.x * a2.x * a3.x;
+m.c01 = a1.y * a2.x * a3.x + a3.y * a1.x;
+m.c02 = -a2.y * a3.x;
+m.c10 = -a2.y * a1.x;
+m.c11 = a1.y * a2.y;
+m.c12 = a2.x;
+m.c20 = a3.y * a1.x * a2.x + a1.y * a3.x;
+m.c21 = a1.x * a3.x - a1.y * a3.y * a2.x;
+m.c22 = a2.y * a3.y;
+return m;
+}
+__DEVICE__ float hash(float2 p)
+{
+	float h = dot(p, make_float2(127.1f, 311.7f));	
+    return fract(_sinf(h) * 43758.5453123f);
+}
+
+__DEVICE__ float noise(float2 p)
+{
+    float2 i = make_float2(_floor(p.x), _floor(p.y));
+    float2 f = fract(p);	
+	float2 u;
+	u.x = f.x * f.x * (3.0f - 2.0f * f.x);
+	u.y = f.y * f.y * (3.0f - 2.0f * f.y);
+    return -1.0f + 2.0f * mix(mix(hash(add2(i, make_float2(0.0f, 0.0f))), hash(add2(i, make_float2(1.0f, 0.0f))), u.x), 
+    mix(hash(add2(i, make_float2(0.0f, 1.0f))), hash(add2(i, make_float2(1.0f, 1.0f))), u.x), u.y);
+}
+
+// lighting
+__DEVICE__ float diffuse(float3 n, float3 l, float p)
+{
+    return _powf(dot(n,l) * 0.4f + 0.6f, p);
+}
+
+__DEVICE__ float specular(float3 n, float3 l, float3 e, float s)
+{    
+    float nrm = (s + 8.0f) / (PI * 8.0f);
+    return _powf(_fmaxf(dot(reflect(e, n), l), 0.0f), s) * nrm;
+}
+
+// sky
+__DEVICE__ float3 getSkyColor(float3 e)
+{
+    e.y = _fmaxf(e.y, 0.0f);
+    return make_float3(_powf(1.0f - e.y, 2.0f), 1.0f - e.y, 0.6f + (1.0f - e.y) * 0.4f);
+}
+
+
+// sea
+__DEVICE__ float sea_octave(float2 uv, float choppy)
+{
+    float buzz = noise(uv);
+    uv.x = uv.x + buzz;
+    uv.y = uv.y + buzz;        
+    float2 wv;
+    wv.x = 1.0f - _fabs(_sinf(uv.x));
+    wv.y = 1.0f - _fabs(_sinf(uv.y));
+    float2 swv;
+    swv.x = _fabs(_cosf(uv.x));
+    swv.y = _fabs(_cosf(uv.y));
+    wv.x = mix(wv.x, swv.x, wv.x);
+    wv.y = mix(wv.y, swv.y, wv.y);
+    return _powf(1.0f - _powf(wv.x * wv.y, 0.65f), choppy);
+}
+
+__DEVICE__ float map(float3 p, float SEA_TIME)
+{
+    float freq = 0.16f;
+    float amp = 0.6f;
+    float choppy = 4.0f;
+    float2 uv;
+    uv.x = p.x;
+    uv.y = p.z;
+    uv.x *= 0.75f;
+    
+    float d;
+    float h = 0.0f;    
+    for(int i = 0; i < ITER_GEOMETRY; i++)
+    {
+	d = sea_octave(make_float2((uv.x + SEA_TIME) * freq, (uv.y + SEA_TIME) * freq), choppy);
+	d += sea_octave(make_float2((uv.x - SEA_TIME) * freq, (uv.y - SEA_TIME) * freq), choppy);
+	h += d * amp;        
+	uv.x = uv.x * octave_m.x + uv.y * octave_m.y;
+	uv.y = uv.x * octave_m.z + uv.y * octave_m.w;
+	freq *= 1.9f;
+	amp *= 0.22f;
+	choppy = mix(choppy, 1.0f, 0.2f);
+    }
+    return p.y - h;
+}
+
+__DEVICE__ float map_detailed(float3 p, float SEA_TIME)
+{
+    float freq = 0.16f;
+    float amp = 0.6f;
+    float choppy = 4.0f;
+    float2 uv;
+    uv.x = p.x;
+    uv.y = p.z;
+    uv.x *= 0.75f;
+    
+    float d;
+    float h = 0.0f;    
+    for(int i = 0; i < ITER_FRAGMENT; i++) {        
+	d = sea_octave(make_float2((uv.x + SEA_TIME) * freq, (uv.y + SEA_TIME) * freq), choppy);
+	d += sea_octave(make_float2((uv.x - SEA_TIME) * freq, (uv.y - SEA_TIME) * freq), choppy);
+	h += d * amp;        
+	uv.x = uv.x * octave_m.x + uv.y * octave_m.y;
+	uv.y = uv.x * octave_m.z + uv.y * octave_m.w;
+	freq *= 1.9f;
+	amp *= 0.22f;
+	choppy = mix(choppy, 1.0f, 0.2f);
+    }
+    return p.y - h;
+}
+
+__DEVICE__ float3 getSeaColor(float3 p, float3 n, float3 l, float3 eye, float3 dist)
+{  
+    float fresnel = _clampf(1.0f - dot(n, multi3(eye, -1.0f)), 0.0f, 1.0f);
+    fresnel = _powf(fresnel, 3.0f) * 0.65f;
+        
+    float3 reflected = getSkyColor(reflect(eye,n));    
+    float3 refracted;
+    refracted.x = SEA_BASE.x + diffuse(n, l, 80.0f) * SEA_WATER_COLOR.x * 0.12f;
+    refracted.y = SEA_BASE.y + diffuse(n, l, 80.0f) * SEA_WATER_COLOR.y * 0.12f;
+    refracted.z = SEA_BASE.z + diffuse(n, l, 80.0f) * SEA_WATER_COLOR.z * 0.12f;
+    
+    float3 color;
+    color.x = mix(refracted.x, reflected.x, fresnel);
+    color.y = mix(refracted.y, reflected.y, fresnel);
+    color.z = mix(refracted.z, reflected.z, fresnel);
+    
+    float atten = _fmaxf(1.0f - dot(dist, dist) * 0.001f, 0.0f);
+    color.x += SEA_WATER_COLOR.x * (p.y - SEA_HEIGHT) * 0.18f * atten;
+    color.y += SEA_WATER_COLOR.y * (p.y - SEA_HEIGHT) * 0.18f * atten;
+    color.z += SEA_WATER_COLOR.z * (p.y - SEA_HEIGHT) * 0.18f * atten;
+    
+    color.x += specular(n, l , eye, 60.0f);
+    color.y += specular(n, l , eye, 60.0f);
+    color.z += specular(n, l , eye, 60.0f);
+    
+    return color;
+}
+
+// tracing
+__DEVICE__ float3 getNormal(float3 p, float eps, float SEA_TIME)
+{
+    float3 n;
+    n.y = map_detailed(p, SEA_TIME);    
+    n.x = map_detailed(make_float3(p.x + eps, p.y, p.z), SEA_TIME) - n.y;
+    n.z = map_detailed(make_float3(p.x, p.y, p.z + eps), SEA_TIME) - n.y;
+    n.y = eps;
+    return normalize(n);
+}
+
+__DEVICE__ void heightMapTracing(float3 ori, float3 dir, float3 *p, float SEA_TIME)
+{  
+    float tm = 0.0f;
+    float tx = 1000.0f;    
+    float hx = map(add3(ori, multi3(dir, tx)), SEA_TIME);
+    hx = hx > 0.0f ? 1000.0f : hx;
+    float hm = map(add3(ori, multi3(dir, tm)), SEA_TIME);    
+    float tmid = 0.0;
+    for(int i = 0; i < NUM_STEPS; i++) {
+        tmid = mix(tm,tx, hm/(hm-hx));                   
+        *p = add3(ori, multi3(dir, tmid));
+    	float hmid = map(*p, SEA_TIME);
+		if(hmid < 0.0) {
+        	tx = tmid;
+            hx = hmid;
+        } else {
+            tm = tmid;
+            hm = hmid;
+        }
+    }
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{
+	
+	float2 uv;
+	uv.x = (float)p_X / p_Width;
+	uv.y = (float)(p_Height - p_Y) / p_Height;
+    uv.x = uv.x * 2.0f - 1.0f;
+    uv.y = uv.y * 2.0f - 1.0f;
+    uv.x *= (float)p_Width / p_Height;
+    
+    float iTime = _tex2D(p_TexR, 500, 500) * 10.0f;
+    float SEA_SPEED = 1.0f;
+    float SEA_TIME = 1.0f + iTime * SEA_SPEED;
+    float time = iTime * 0.3f;
+    float EPSILON_NRM = 0.1f / (float)p_Width;
+        
+    // ray
+    float3 ang = make_float3(_sinf(time * 3.0f) * 0.1f, _sinf(time) * 0.2f + 0.3f, time);
+    float3 ori = make_float3(0.0f, 3.5f, time * 5.0f);
+    float3 dir = normalize(make_float3(uv.x, uv.y, -2.0f));
+    dir.z += length(uv) * 0.15f;
+    dir = mult_f3_f33(normalize(dir), fromEuler(ang));
+    
+    // tracing
+    float3 p; 
+    heightMapTracing(ori, dir, &p, SEA_TIME);
+    float3 dist = minus3(p, ori);
+    float3 n = getNormal(p, dot(dist,dist) * EPSILON_NRM, SEA_TIME);
+    float3 light = normalize(make_float3(0.0f, 1.0f, 0.8f)); 
+    
+    // color
+    float3 Color = mix3(getSkyColor(dir), getSeaColor(p, n, light, dir, dist), _powf(smoothstep(0.0f, -0.05f, dir.y), 0.3f));
+    
+    float R = _powf(Color.x, 0.75f);
+    float G = _powf(Color.y, 0.75f);
+    float B = _powf(Color.z, 0.75f);
+    
+    return make_float3(R, G, B);
+}

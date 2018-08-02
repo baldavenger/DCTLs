@@ -1,0 +1,11 @@
+// Time Ramp DCTL
+ 
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B) 
+{ 
+
+int frames = 24;
+int seconds = 20;
+float Time = (float)frames * seconds;
+return make_float3(Time, Time, Time);
+ 
+}

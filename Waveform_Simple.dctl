@@ -1,0 +1,43 @@
+// Waveform Simple
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{
+    float y = p_Y / (p_Height - 1.0f);
+	float colR = 0.0f;
+	float colG = 0.0f;
+	float colB = 0.0f;
+	float lumR = 0.0f;
+	float lumG = 0.0f;
+	float lumB = 0.0f;
+    
+    
+    
+	for (int i = 0; i < p_Height; i+=1){
+	
+		lumR = _tex2D(p_TexR, p_X, i);
+		
+		lumR > 0.005f && lumR < (1.0f - y) * 1.005f && lumR + 0.005f > (1.0f - y) * 1.005f ? colR += 0.02f : 0.0f;
+	}
+	
+	for (int i = 0; i < p_Height; i+=1){
+	
+		lumG = _tex2D(p_TexG, p_X, i);
+		
+		lumG > 0.005f && lumG < (1.0f - y) * 1.005f && lumG + 0.005f > (1.0f - y) * 1.005f ? colG += 0.02f : 0.0f;
+	}
+	
+	for (int i = 0; i < p_Height; i+=1){
+	
+		lumB = _tex2D(p_TexB, p_X, i);
+		
+		lumB > 0.005f && lumB < (1.0f - y) * 1.005f && lumB + 0.005f > (1.0f - y) * 1.005f ? colB += 0.02f : 0.0f;
+	}
+
+	float r = colR;
+	float g = colG;
+	float b = colB;
+
+	
+
+    return make_float3(r, g, b);
+}
