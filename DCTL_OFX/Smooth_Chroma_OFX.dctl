@@ -1,0 +1,61 @@
+// Smooth Chroma OFX DCTL
+
+DEFINE_UI_PARAMS(blur, Blur Amount, DCTLUI_SLIDER_FLOAT, 0.2, 0, 1, 0.001)
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{
+    float R = _tex2D(p_TexR, p_X, p_Y);
+    float G = _tex2D(p_TexG, p_X, p_Y);
+    float B = _tex2D(p_TexB, p_X, p_Y);
+
+	float3 RGB = make_float3(R, G, B);
+	float3 RGB_NoBlur = RGB;
+
+	float amount = blur * 0.01f;
+
+	float3 blurred = RGB;
+   
+	blurred.x += _tex2D( p_TexR, p_X - (int)(amount * p_Width), p_Y);
+	blurred.x += _tex2D( p_TexR, p_X + (int)(amount * p_Width), p_Y);
+	blurred.x += _tex2D( p_TexR, p_X, p_Y - (int)(amount * p_Height));
+	blurred.x += _tex2D( p_TexR, p_X, p_Y + (int)(amount * p_Height));
+	blurred.x += _tex2D( p_TexR, p_X - (int)(amount * 2 * p_Width), p_Y);
+	blurred.x += _tex2D( p_TexR, p_X + (int)(amount * 2 * p_Width), p_Y);
+	blurred.x += _tex2D( p_TexR, p_X, p_Y - (int)(amount * 2 * p_Height));
+	blurred.x += _tex2D( p_TexR, p_X, p_Y + (int)(amount * 2 * p_Height));
+	blurred.x /= 9.0f;
+   
+	blurred.y += _tex2D( p_TexG, p_X - (int)(amount * p_Width), p_Y);
+	blurred.y += _tex2D( p_TexG, p_X + (int)(amount * p_Width), p_Y);
+	blurred.y += _tex2D( p_TexG, p_X, p_Y - (int)(amount * p_Height));
+	blurred.y += _tex2D( p_TexG, p_X, p_Y + (int)(amount * p_Height));
+	blurred.y += _tex2D( p_TexG, p_X - (int)(amount * 2 * p_Width), p_Y);
+	blurred.y += _tex2D( p_TexG, p_X + (int)(amount * 2 * p_Width), p_Y);
+	blurred.y += _tex2D( p_TexG, p_X, p_Y - (int)(amount * 2 * p_Height));
+	blurred.y += _tex2D( p_TexG, p_X, p_Y + (int)(amount * 2 * p_Height));
+	blurred.y /= 9.0f;
+   
+	blurred.z += _tex2D( p_TexB, p_X - (int)(amount * p_Width), p_Y);
+	blurred.z += _tex2D( p_TexB, p_X + (int)(amount * p_Width), p_Y);
+	blurred.z += _tex2D( p_TexB, p_X, p_Y - (int)(amount * p_Height));
+	blurred.z += _tex2D( p_TexB, p_X, p_Y + (int)(amount * p_Height));
+	blurred.z += _tex2D( p_TexB, p_X - (int)(amount * 2 * p_Width), p_Y);
+	blurred.z += _tex2D( p_TexB, p_X + (int)(amount * 2 * p_Width), p_Y);
+	blurred.z += _tex2D( p_TexB, p_X, p_Y - (int)(amount * 2 * p_Height));
+	blurred.z += _tex2D( p_TexB, p_X, p_Y + (int)(amount * 2 * p_Height));
+	blurred.z /= 9.0f;
+
+	RGB = blurred;
+  
+	float Y = 0.065f + ( RGB_NoBlur.x * 0.257f ) + ( RGB_NoBlur.y * 0.504f ) + ( RGB_NoBlur.z * 0.098f );
+	float Cb = 0.5f - ( RGB.x * 0.148f ) - ( RGB.y * 0.291f ) + ( RGB.z * 0.439f );
+	float Cr = 0.5f + ( RGB.x * 0.439f ) - ( RGB.y * 0.368f ) - ( RGB.z * 0.071f );
+
+	float3 color;
+
+	color.x = 1.164f * (Y - 0.065f) + 1.596f * (Cr - 0.5f);
+	color.y = 1.164f * (Y - 0.065f) - 0.813f * (Cr - 0.5f) - 0.392f * (Cb - 0.5f);
+	color.z = 1.164f * (Y - 0.065f) + 2.017f * (Cb - 0.5f);
+
+	return color;
+}

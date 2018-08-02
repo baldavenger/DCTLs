@@ -1,0 +1,333 @@
+// sRGB in CIELab Cube OFX DCTL
+
+DEFINE_UI_PARAMS(multiSample, Multi-Sample, DCTLUI_CHECK_BOX, 0)
+DEFINE_UI_PARAMS(rotateX, Rotate X, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(rotateY, Rotate Y, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(zoom, Zoom, DCTLUI_SLIDER_FLOAT, 0, -5, 5, 0.001)
+DEFINE_UI_PARAMS(density, Density, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(background, Background, DCTLUI_SLIDER_INT, 1, 1, 4, 1)
+DEFINE_UI_PARAMS(Border, Border, DCTLUI_SLIDER_FLOAT, 0.5, 0, 1, 0.001)
+DEFINE_UI_PARAMS(apply, Apply Border, DCTLUI_CHECK_BOX, 1)
+
+#define MAX_VOLUME_STEPS	290
+#define VOLUME_STEP_SIZE	0.02f
+#define MAX_ALPHA			1.0f
+#define pi					_atan2f(1.0f, 1.0f) * 4.0f
+#define tau					_atan2f(1.0f, 1.0f) * 8.0f
+
+__CONSTANT__ float ref_X = 95.047f;
+__CONSTANT__ float ref_Y = 100.0f;
+__CONSTANT__ float ref_Z = 108.883f;
+
+__DEVICE__ bool LINEAR_SAMPLE = true;
+__DEVICE__ float DENSITY_SCALE = 1.0f;
+__DEVICE__ float BORDER = 1.0f;
+__DEVICE__ bool APPLY = true;
+__DEVICE__ float3 vres = {0,0,0};
+__DEVICE__ float width = 0;
+__DEVICE__ float height = 0;
+
+typedef struct
+{
+float c00, c01;
+float c10, c11;
+} mat2;
+
+__DEVICE__ mat2 rotate(float a)
+{
+    mat2 ro;
+    ro.c00 = _cosf(a);
+    ro.c01 = _sinf(a);
+    ro.c10 = -_sinf(a);
+    ro.c11 = _cosf(a);
+    return ro;
+}
+
+__DEVICE__ float3 fract(float3 A)
+{
+	return A - _floor(A);
+}
+
+__DEVICE__ float2 multi(float2 A, mat2 B)
+{
+    float C, D;
+    C = A.x * B.c00 + A.y * B.c01;
+    D = A.x * B.c10 + A.y * B.c11;
+    return make_float2(C, D);
+}
+
+__DEVICE__ float4 mix(float4 A, float4 B, float C)
+{
+	return A * (1 - C) + B * C;
+}
+
+__DEVICE__ bool isValid(float3 c)
+{
+    //return c.x >= 0.0f && c.y >= 0.0f && c.z >= 0.0f &&  c.x <= 1.0f && c.y <= 1.0f && c.z <= 1.0f;
+    return c.x > 0.0f && c.y > 0.0f && c.z > 0.0f &&  c.x < 1.0f && c.y < 1.0f && c.z < 1.0f;
+}
+
+__DEVICE__ float3 xyz2rgb(float3 xyz)
+{
+    float var_X = xyz.x * 0.01f;
+    float var_Y = xyz.y * 0.01f;
+    float var_Z = xyz.z * 0.01f;
+    
+    float var_R = var_X * 3.2406f + var_Y * -1.5372f + var_Z * -0.4986f;
+    float var_G = var_X * -0.9689f + var_Y * 1.8758f + var_Z * 0.0415f;
+    float var_B = var_X * 0.0557f + var_Y * -0.2040f + var_Z * 1.0570f;
+    
+    if (var_R > 0.0031308f) var_R = 1.055f * _powf(var_R, 1.0f/2.4f) - 0.055f;
+    else var_R = 12.92f * var_R;
+    if (var_G > 0.0031308f) var_G = 1.055f * _powf(var_G, 1.0f/2.4f) - 0.055f;
+    else var_G = 12.92f * var_G;
+    if (var_B > 0.0031308f) var_B = 1.055f * _powf(var_B, 1.0f/2.4f) - 0.055f;
+    else var_B = 12.92f * var_B;
+    
+    return make_float3(var_R, var_G, var_B);
+}
+
+__DEVICE__ float3 cielab2xyz(float3 lab)
+{
+    float var_Y = (lab.x + 16.0f) / 116.0f;
+    float var_X = lab.y / 500.0f + var_Y;
+    float var_Z = var_Y - lab.z / 200.0f;
+    
+	float py = var_Y *var_Y * var_Y;
+    float px = var_X *var_X * var_X;
+    float pz = var_Z *var_Z * var_Z;
+
+    if (py > 0.008856f) var_Y = py;
+    else var_Y = (var_Y - 16.0f / 116.0f) / 7.787f;
+    if (px > 0.008856f) var_X = px;
+    else var_X = (var_X - 16.0f / 116.0f) / 7.787f;
+    if (pz > 0.008856f) var_Z = pz;
+    else var_Z = (var_Z - 16.0f / 116.0f) / 7.787f;
+    
+    float X = ref_X * var_X;
+    float Y = ref_Y * var_Y;
+    float Z = ref_Z * var_Z;
+    return make_float3(X, Y, Z);
+}
+
+__DEVICE__ float3 cielab2rgb(float3 lab)
+{
+    return xyz2rgb(cielab2xyz(lab));
+}
+
+__DEVICE__ float4 gamut(float3 Coord)
+{ 
+    float3 lab = Coord / vres;
+    
+    lab = (lab - 0.1f) * 1.25f;
+    
+    lab.x = lab.x * 110.0f - 5.0f;
+	lab.y = lab.y * 256.0f - 128.0f;
+	lab.z = lab.z * 256.0f - 128.0f;
+	
+    float3 color = cielab2rgb(lab);
+    
+    return make_float4(color, isValid(color));
+}
+
+__DEVICE__ float3 border(float3 uvw, float3 vres)
+{
+    uvw.x = _fmod(_floor(uvw.x * vres.x), vres.x);
+    uvw.y = _fmod(_floor(uvw.y * vres.y), vres.y);
+    uvw.z = _fmod(_floor(uvw.z * vres.z), vres.z);
+    
+	float r = uvw.x / vres.x;
+	float g = uvw.y / vres.y;
+	float b = uvw.z / vres.z;
+	
+	float3 RGB = make_float3(r, g, b);
+	RGB = (RGB - 0.1f) * 1.25f;
+	
+	return RGB;
+}
+
+__DEVICE__ float4 texture3D(float3 uvw, float3 vres)
+{
+    uvw.x = _fmod(_floor(uvw.x * vres.x), vres.x);
+    uvw.y = _fmod(_floor(uvw.y * vres.y), vres.y);
+    uvw.z = _fmod(_floor(uvw.z * vres.z), vres.z);
+    
+    float4 rgba = gamut(uvw);
+    
+	return rgba;
+}
+
+__DEVICE__ float4 texture3DLinear(float3 uvw, float3 vres)
+{
+    float3 blend = fract(uvw * vres);
+    float4 off = make_float4(1.0f/vres, 0.0f);
+    
+    //2x2x2 sample blending
+    float4 b000 = texture3D(uvw + make_float3(off.w, off.w, off.w), vres);
+    float4 b100 = texture3D(uvw + make_float3(off.x, off.w, off.w), vres);
+    
+    float4 b010 = texture3D(uvw + make_float3(off.w, off.y, off.w), vres);
+    float4 b110 = texture3D(uvw + make_float3(off.x, off.y, off.w), vres);
+    
+    float4 b001 = texture3D(uvw + make_float3(off.w, off.w, off.z), vres);
+    float4 b101 = texture3D(uvw + make_float3(off.x, off.w, off.z), vres);
+    
+    float4 b011 = texture3D(uvw + make_float3(off.w, off.y, off.w), vres);
+    float4 b111 = texture3D(uvw + make_float3(off.x, off.y, off.z), vres);
+    
+    return mix(mix(mix(b000,b100,blend.x), mix(b010,b110,blend.x), blend.y), 
+               mix(mix(b001,b101,blend.x), mix(b011,b111,blend.x), blend.y),
+               blend.z);
+}
+
+__DEVICE__ float2 IntersectBox(float3 orig, float3 dir, float3 pos, float3 size)
+{
+    //size = size * 0.5f;
+    size = size * 0.4f;
+    
+    float3 mins = pos - size;
+    float3 maxs = pos + size;
+
+    float3 t0 = (mins - orig) / dir;
+    float3 t1 = (maxs - orig) / dir;
+    
+    float3 tmp = t0;
+    if(dir.x < 0.0f){ t0.x = t1.x; t1.x = tmp.x; }
+    if(dir.y < 0.0f){ t0.y = t1.y; t1.y = tmp.y; }
+    if(dir.z < 0.0f){ t0.z = t1.z; t1.z = tmp.z; }
+    
+    float tmin = _fmaxf(_fmaxf(t0.x, t0.y), t0.z);
+    float tmax = _fminf(_fminf(t1.x, t1.y), t1.z);
+    
+	return make_float2(tmin, tmax);
+}
+
+__DEVICE__ float4 MarchVolume(float3 orig, float3 dir)
+{
+    float2 hit = IntersectBox(orig, dir, make_float3(0), make_float3(2));
+    
+    if(hit.x > hit.y)
+    {
+    return make_float4(0);
+    }
+    
+    //Step though the volume and add up the opacity.
+    float t = hit.x;   
+    float4 dst = make_float4(0);
+    float4 src = make_float4(0);
+    
+    for(int i = 0;i < MAX_VOLUME_STEPS;i++)
+    {
+        t += VOLUME_STEP_SIZE;
+        
+        //Stop marching if the ray leaves the cube.
+        if(t > hit.y){break;}
+        
+    	float3 pos = orig + dir * t;
+        
+        float3 uvw = 1 - (pos * 0.5f + 0.5f);
+        
+        if(LINEAR_SAMPLE){
+        src = texture3DLinear(uvw, vres);
+        } else {
+        src = texture3D(uvw, vres);
+        }
+        src = clamp(src, 0.0f, 1.0f);
+        
+        src.w *= DENSITY_SCALE;
+        src.x *= src.w;
+        src.y *= src.w;
+        src.z *= src.w;
+        
+        dst = (1.0f - dst.w) * src + dst;
+        
+        if(APPLY){
+        float3 brd = border(uvw, vres);
+        float edge = 0.02f;
+        float top = 1.0f - 0.025f;
+        float XX = (brd.x > edge && brd.x < top) ? 0 : 1;
+        float YY = (brd.y > edge && brd.y < top) ? 0 : 1;
+        float ZZ = (brd.z > edge && brd.z < top) ? 0 : 1;
+        float xx = _fmaxf(XX, YY) * _fmaxf(ZZ,YY) * _fmaxf(ZZ,XX);
+        float xx1 = xx * BORDER;
+        dst.x = dst.x * (1 - xx) + xx1;
+        dst.y = dst.y * (1 - xx) + xx1;
+        dst.z = dst.z * (1 - xx) + xx1;
+        dst.w = dst.w > xx ? dst.w : xx;
+        }
+        
+        //Stop marching if the color is nearly opaque.
+        if(dst.w > MAX_ALPHA){break;}
+    }
+    
+    return dst;
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+    width = (float)p_Width;
+    height = (float)p_Height;
+    p_Y = p_Height - p_Y;
+    float2 iMouse = make_float2(0, height/2);
+    iMouse.x += rotateX * width/2;
+    iMouse.y += rotateY * height;
+    float2 iResolution = make_float2(width, height);
+    
+    float vres1 = _powf(width * height, 1.0f/3.0f);
+    vres1 = _floor(vres1);
+    vres = make_float3(vres1);  
+    
+    float2 res, uv;
+    res.x = width / height;
+    res.y = 1.0f;
+	uv.x = (float)p_X / height;
+	uv.y = (float)p_Y / height;
+    
+    float4 color = make_float4(0);
+    DENSITY_SCALE = density + 0.001f;
+    BORDER = Border;
+    LINEAR_SAMPLE = multiSample;
+    APPLY = apply;
+    
+    //Checkerboard background
+    float2 bguv = uv - res/2.0f;
+    float back = _sinf(bguv.x * pi * 8.0f) * _sinf(bguv.y * pi * 8.0f);
+    back = step(0.0f, back);
+    back = back * 0.05f + 0.2f;
+    back = background == 2 ? 1 - back : background == 3 ? 0 : background == 4 ? 1 : back;
+    color = make_float4(back, back, back, 0);
+    
+    float3 dir = normalize(make_float3(uv - res/2.0f, 1.0f));
+    float3 orig = make_float3(0.0f, 0.0f, -3.5f);
+	
+    orig.z *= 1 - zoom;
+    orig.z += 0.1f;
+    
+    float2 angles = make_float2(0);
+    
+    angles = (iMouse / iResolution) * 2.0f - 1.0f;
+    angles = angles * make_float2(tau, tau / 2.0f);
+
+    mat2 rX = rotate(angles.y);
+    mat2 rY = rotate(angles.x);
+    
+    float2 dirX = multi(make_float2(dir.y, dir.z), rX);
+    float2 origX = multi(make_float2(orig.y, orig.z), rX);
+    dir.y = dirX.x;
+    dir.z = dirX.y;
+    orig.y = origX.x;
+    orig.z = origX.y;
+    
+    float2 dirY = multi(make_float2(dir.x, dir.z), rY);
+    float2 origY = multi(make_float2(orig.x, orig.z), rY);
+    dir.x = dirY.x;
+    dir.z = dirY.y;
+    orig.x = origY.x;
+    orig.z = origY.y;
+    
+    float4 volume = MarchVolume(orig, dir);
+    
+    color = mix(color, volume, volume.w);
+        
+	return make_float3(color.x, color.y, color.z);
+}

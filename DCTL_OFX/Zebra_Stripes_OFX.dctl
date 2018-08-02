@@ -1,0 +1,48 @@
+// Zebra Stripes OFX DCTL
+
+DEFINE_UI_PARAMS(PEAK_WHITE, Peak White, DCTLUI_SLIDER_INT, 940, 0, 1023, 1)
+DEFINE_UI_PARAMS(FULL_BLACK, Full Black, DCTLUI_SLIDER_INT, 64, 0, 1023, 1)
+DEFINE_UI_PARAMS(STRIPES, Stripes, DCTLUI_SLIDER_INT, 3, 1, 5, 1)
+DEFINE_UI_PARAMS(colorA, Highlight Colour, DCTLUI_SLIDER_INT, 1, 0, 7, 1)
+DEFINE_UI_PARAMS(colorB, Shadow Colour, DCTLUI_SLIDER_INT, 1, 0, 7, 1)
+
+#define RED_LUMA     0.2126f
+#define GREEN_LUMA   0.7152f
+#define BLUE_LUMA    0.0722f
+
+__DEVICE__ float frac( float x)
+{
+	return x - _floor(x);
+} 
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+    float3 RGB = make_float3(p_R, p_G, p_B);
+
+	float luma = dot (RGB, make_float3(RED_LUMA, GREEN_LUMA, BLUE_LUMA));
+	float peak_white = PEAK_WHITE / 1023.0f;
+	float full_black = FULL_BLACK / 1023.0f;
+
+	float x = (float)p_X;
+	float y = (float)p_Y;
+
+	x = frac(x / (STRIPES * 4));
+	y = frac(y / (STRIPES * 4));
+	float colA = _round(frac(x + y));
+	float colB = _round(frac(x + 1.0f - y));
+	
+	float3 high = colorA == 0 ? make_float3(0,0,0) : colorA == 1 ? make_float3(colA,colA,colA) : 
+	colorA == 2 ? make_float3(colA,0,0) : colorA == 3 ? make_float3(colA,colA,0) : colorA == 4 ? make_float3(0,colA,0) : 
+	colorA == 5 ? make_float3(0,colA,colA) : colorA == 6 ? make_float3(0,0,colA) : make_float3(colA,0,colA);
+	
+	float3 low = colorB == 0 ? make_float3(0,0,0) : colorB == 1 ? make_float3(colB,colB,colB) : 
+	colorB == 2 ? make_float3(colB,0,0) : colorB == 3 ? make_float3(colB,colB,0) : colorB == 4 ? make_float3(0,colB,0) : 
+	colorB == 5 ? make_float3(0,colB,colB) : colorB == 6 ? make_float3(0,0,colB) : make_float3(colB,0,colB);
+	
+	if (luma >= peak_white) RGB = (RGB + high) / 2.0f;
+	
+	if (luma <= full_black) RGB = (RGB + low) / 2.0f;
+
+	return RGB;
+	
+}

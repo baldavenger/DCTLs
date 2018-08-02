@@ -1,0 +1,44 @@
+// Radial Ramp OFX DCTL
+
+DEFINE_UI_PARAMS(centreX, Centre X, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(centreY, Centre Y, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(lift, Expand, DCTLUI_SLIDER_FLOAT, 0, -2, 2, 0.001)
+DEFINE_UI_PARAMS(scaleX, Stretch X, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(scaleY, Stretch Y, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(rotate, Skew, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(gamma, Gamma, DCTLUI_SLIDER_FLOAT, 0, -2, 2, 0.001)
+DEFINE_UI_PARAMS(steps, Pixelate, DCTLUI_SLIDER_INT, 1, 1, 100, 1)
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+    centreX += 0.5f;
+    centreY += 0.5f;
+    lift -= 1;
+    gamma = gamma < 0 ? -gamma + 1 : 1 / (gamma + 1);
+    
+    p_Y = p_Height - p_Y;
+    float X = (float)p_X;
+    float Y = (float)p_Y;
+    X = X - _fmod(X, steps) + _floor(steps/2);
+    Y = Y - _fmod(Y, steps) + _floor(steps/2);
+    
+	float2 aspect, uv;
+    aspect.x = (float)p_Width / p_Height;
+    aspect.y = 1.0f;
+	uv.x = X / p_Width;
+	uv.y = Y / p_Height;
+	
+	uv.x -= centreX;
+	uv.y -= centreY;
+	float tempX = uv.x;
+	uv.x = uv.x * _cosf(rotate) - uv.y * _sinf(rotate);
+	uv.y = uv.y * _cosf(rotate) + tempX * _sinf(rotate);
+	uv.x = uv.x * aspect.x * (2 - scaleX) + centreX;
+	uv.y = uv.y * aspect.y * (2 - scaleY) + centreY;
+	
+    float radial = 1 - _sqrtf((centreX - uv.x) * (centreX - uv.x) + (centreY - uv.y) * (centreY - uv.y));
+	radial = _saturatef(radial + lift * (1 - radial));
+	radial = _powf(radial, gamma);
+    
+    return make_float3(radial);
+}

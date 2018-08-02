@@ -1,0 +1,215 @@
+// Clone Stamp Frequency Swap OFX DCTL
+
+DEFINE_UI_PARAMS(size, Size, DCTLUI_SLIDER_FLOAT, 0.3, 0, 1, 0.001)
+DEFINE_UI_PARAMS(softness, Softness, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(srcPosX, Source Position X, DCTLUI_SLIDER_FLOAT, 0.5, 0, 1, 0.001)
+DEFINE_UI_PARAMS(srcPosY, Source Position Y, DCTLUI_SLIDER_FLOAT, 0.5, 0, 1, 0.001)
+DEFINE_UI_PARAMS(aspectRatio, AspectRatio, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(destPosX, Destination Position X, DCTLUI_SLIDER_FLOAT, 0.5, 0, 1, 0.001)
+DEFINE_UI_PARAMS(destPosY, Destination Position Y, DCTLUI_SLIDER_FLOAT, 0.5, 0, 1, 0.001)
+DEFINE_UI_PARAMS(Blur, Low Frequency, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(SHARPEN, High Frequency, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(blendOpacity, Blend Frequencies, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(SCALE, Gain, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(interpolation, Softness Type, DCTLUI_SLIDER_INT, 0, 0, 2, 1)
+DEFINE_UI_PARAMS(colorA, Highlight Area, DCTLUI_SLIDER_INT, 0, 0, 7, 1)
+DEFINE_UI_PARAMS(frequency, Swap High Frequency, DCTLUI_CHECK_BOX, 0)
+DEFINE_UI_PARAMS(shape, Rectangle, DCTLUI_CHECK_BOX, 0)
+
+#define PI      3.14159265f
+#define PI_AREA 1.27323954f
+
+__DEVICE__ float Size = 0;
+__DEVICE__ float Softness = 0;
+__DEVICE__ int Interpolation = 0; 	// 0 = Linear, 1 = Square, 2 = Sinusoidal
+__DEVICE__ float SrcPosX = 0;
+__DEVICE__ float SrcPosY = 0;
+__DEVICE__ float AspectRatio = 0;
+__DEVICE__ float DestPosX = 0;
+__DEVICE__ float DestPosY = 0;
+__DEVICE__ float BLUR = 0;
+__DEVICE__ float BlendOpacity = 0;
+__DEVICE__ float Sharpen = 0;
+__DEVICE__ float Scale = 0;
+__DEVICE__ bool Frequency = false;	// true = High Frequency Swap, false = Low Frequency Swap
+__DEVICE__ bool Shape = false; 		// true = Rectangle, false = Ellipse
+
+
+__DEVICE__ float normpdf(float x, float sigma)
+{
+	return 0.39894f * _expf(-0.5f * x * x / (sigma * sigma)) / sigma;
+}
+
+__DEVICE__ float3 gaussian(__TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB, int p_X, int p_Y)
+{
+	const int mSize = 11;
+	const int kSize = (mSize-1)/2;
+	float kernel[mSize];
+	float3 final_colour = make_float3(0);
+	
+	float sigma = 3.5f * BLUR;
+	float Z = 0;
+	for (int j = 0; j <= kSize; ++j)
+	{
+		kernel[kSize+j] = kernel[kSize-j] = normpdf(float(j), sigma);
+	}
+	
+	for (int j = 0; j < mSize; ++j)
+	{
+		Z += kernel[j];
+	}
+	
+	for (int i = -kSize; i <= kSize; ++i)
+	{
+		for (int j = -kSize; j <= kSize; ++j)
+		{
+			final_colour.x += kernel[kSize+j] * kernel[kSize+i] * _tex2D(p_TexR, p_X + i, p_Y + j);
+			final_colour.y += kernel[kSize+j] * kernel[kSize+i] * _tex2D(p_TexG, p_X + i, p_Y + j);
+			final_colour.z += kernel[kSize+j] * kernel[kSize+i] * _tex2D(p_TexB, p_X + i, p_Y + j);
+		}
+	}
+	
+	final_colour = final_colour / (Z * Z);
+	return final_colour;
+}
+
+__DEVICE__ float distance(float2 AB, float2 CD)
+{
+    float square_difference_x = (CD.x - AB.x) * (CD.x - AB.x);
+    float square_difference_y = (CD.y - AB.y) * (CD.y - AB.y);
+    float sum = square_difference_x + square_difference_y;
+    float value = _sqrtf(sum);
+    return value;
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{   
+	Size = size;
+	Softness = softness;
+	SrcPosX = srcPosX;
+	SrcPosY = srcPosY;;
+	AspectRatio = aspectRatio;
+	DestPosX = destPosX;
+	DestPosY = destPosY;
+	Interpolation = interpolation;
+	BLUR = Blur + 0.1f;
+	BlendOpacity = 1.0f - blendOpacity;
+	Sharpen = SHARPEN + 1.0f;
+	Scale = SCALE;
+	Frequency = frequency;
+	Shape = shape;
+
+	float r = _tex2D(p_TexR, p_X, p_Y);
+	float g = _tex2D(p_TexG, p_X, p_Y);
+	float b = _tex2D(p_TexB, p_X, p_Y);
+	float3 Src = make_float3(r, g, b);
+
+	float width = (float)p_Width;
+	float height = (float)p_Height;
+	float2 uv = make_float2(p_X/width, p_Y/height);
+	float _OutputAspectRatio = width/height;
+
+	float CircleSize = Size * PI_AREA;
+
+	float2 DestPos = make_float2(DestPosX, 1.0f - DestPosY);
+	float2 DestAspectAdjustedPos = ((uv - DestPos) / (make_float2(AspectRatio, _OutputAspectRatio) * CircleSize)) + DestPos;
+	float2 DestSize = make_float2(AspectRatio, _OutputAspectRatio) * Size;
+
+	float DestDelta = distance(DestAspectAdjustedPos, DestPos);
+
+	float Soft = 0.0f;
+
+	if(Shape)
+	{
+
+	float2 SoftSize = DestSize * (1.0f - Softness);
+
+	float2 BoxMin = DestPos - DestSize / 2.0f;
+	float2 BoxMax = BoxMin + DestSize;
+
+	if ( ((uv.x - BoxMin.x < 0) || (uv.y - BoxMin.y < 0)) || ((uv.x - BoxMax.x > 0) || (uv.y - BoxMax.y > 0)) ) return Src;
+
+	float2 SoftMin = DestPos - SoftSize / 2.0f;
+	float2 SoftMax = SoftMin + SoftSize;
+
+	float2 RangeMin = (uv - SoftMin) / (BoxMin - SoftMin);
+	float2 RangeMax = (uv - SoftMax) / (BoxMax - SoftMax);
+	
+	if (Interpolation == 1) {
+	RangeMin.x = 1.0f - _powf((1.0f - _powf(RangeMin.x, 2.0f)), 0.5f);
+	RangeMin.y = 1.0f - _powf((1.0f - _powf(RangeMin.y, 2.0f)), 0.5f);
+	RangeMax.x = 1.0f - _powf((1.0f - _powf(RangeMax.x, 2.0f)), 0.5f);
+	RangeMax.y = 1.0f - _powf((1.0f - _powf(RangeMax.y, 2.0f)), 0.5f);
+	}
+	else if (Interpolation == 2) {
+	RangeMin.x = 0.5f - (_cosf(RangeMin.x * PI) / 2.0f);
+	RangeMin.y = 0.5f - (_cosf(RangeMin.y * PI) / 2.0f);
+	RangeMax.x = 0.5f - (_cosf(RangeMax.x * PI) / 2.0f);
+	RangeMax.y = 0.5f - (_cosf(RangeMax.y * PI) / 2.0f);
+	}
+
+	RangeMin = 1.0f - RangeMin;
+	RangeMax = 1.0f - RangeMax;
+
+	float Soft_1 = ((uv.x >= BoxMin.x) && (uv.x <= SoftMin.x)) ? RangeMin.x : 1.0f;
+	float Soft_2 = ((uv.y >= BoxMin.y) && (uv.y <= SoftMin.y)) ? RangeMin.y : 1.0f;
+
+	if ((uv.x <= BoxMax.x) && (uv.x >= SoftMax.x)) Soft_1 = _fminf(Soft_1, RangeMax.x);
+	if ((uv.y <= BoxMax.y) && (uv.y >= SoftMax.y)) Soft_2 = _fminf(Soft_2, RangeMax.y);
+
+	Soft = 1.0f - _saturatef(_fminf(Soft_1, Soft_2) * Soft_1 * Soft_2);
+
+	} else {
+ 
+	if (CircleSize <= DestDelta) return Src;
+
+	float SoftRadius = CircleSize * (1.0f - Softness);
+
+	float SoftRing = DestDelta - SoftRadius;
+
+	if (SoftRing >= 0.0f) {
+	SoftRing /= (CircleSize - SoftRadius);
+
+	Soft = (Interpolation == 0) ? SoftRing
+		   : (Interpolation == 1) ? 1.0f - _powf(1.0f - _powf(SoftRing, 2.0f), 0.5f)
+								  : 0.5f - (_cosf(SoftRing * PI) / 2.0f);
+	}
+
+	}
+
+	float2 xy = uv + make_float2(SrcPosX, DestPosY) - make_float2(DestPosX, SrcPosY);
+	int XX = (int)(xy.x * width);
+	int YY = (int)(xy.y * height);
+
+	float3 Dest;
+	
+	Dest.x = _tex2D(p_TexR, XX, YY);
+	Dest.y = _tex2D(p_TexG, XX, YY);
+	Dest.z = _tex2D(p_TexB, XX, YY);
+	
+	float3 sourceLF = gaussian(p_TexR, p_TexG, p_TexB, p_X, p_Y);
+	float3 destLF = gaussian(p_TexR, p_TexG, p_TexB, XX, YY);
+	
+	float3 sourceHF = Src - sourceLF;
+	float3 destHF = Dest - destLF;
+	
+	if(Frequency){
+	destHF = destHF * Sharpen;
+	destHF = lerp(sourceHF, destHF, BlendOpacity);
+	Dest = destHF + sourceLF;
+	} else {
+	sourceHF = sourceHF * Sharpen;
+	destLF = lerp(sourceLF, destLF, BlendOpacity);
+	Dest = destLF + sourceHF;
+	}
+	
+	Dest = Dest * Scale;
+	
+	float3 high = colorA == 0 ? Dest : colorA == 1 ? make_float3(1) : 
+	colorA == 2 ? make_float3(1,0,0) : colorA == 3 ? make_float3(1,1,0) : colorA == 4 ? make_float3(0,1,0) : 
+	colorA == 5 ? make_float3(0,1,1) : colorA == 6 ? make_float3(0,0,1) : make_float3(1,0,1);
+	
+	Dest = lerp(high, Src, Soft);
+
+	return Dest;
+}

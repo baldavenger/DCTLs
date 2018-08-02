@@ -1,0 +1,72 @@
+// Something OFX DCTL
+
+DEFINE_UI_PARAMS(time, Motion, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.01)
+DEFINE_UI_PARAMS(VOYEUR_MODE, Voyeur Mode, DCTLUI_CHECK_BOX, 0)
+
+typedef struct
+{
+float2 r0, r1;
+} mat2;
+
+__DEVICE__ mat2 make_mat2(float2 A, float2 B)
+{
+mat2 C;
+C.r0 = A;
+C.r1 = B;
+return C;
+}
+
+__DEVICE__ float2 multi(float2 A, mat2 B)
+{
+float2 C;
+C.x = A.x * B.r0.x + A.y * B.r0.y;
+C.y = A.x * B.r1.x + A.y * B.r1.y;
+return C;
+}
+
+__DEVICE__ float TIME = 0;
+
+__DEVICE__ float orgy(float2 p)
+{
+float pl = 0, expsmo = 0;
+float t = _sinf(TIME * 5.0f);
+float a = -0.35f + t * 0.02f;
+p = multi(p, make_mat2(make_float2(_cosf(a), _sinf(a)), make_float2(-_sinf(a), _cosf(a))));
+p = p * 0.07 + make_float2(0.728f, -0.565f) + t * 0.017f + make_float2(0, t * 0.014f);
+for (int i = 0; i < 13; i++) {
+p.x = _fabs(p.x);
+p = p * 2 + make_float2(-2, 0.85f) - t * 0.04f;
+p = p / _fminf(dot(p, p), 1.06f);  
+float l = length(p * p);
+expsmo += _expf(-1.2f / _fabs(l - pl));
+pl = l;
+}
+return expsmo;
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+TIME = time * 10;
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+
+float2 uv;
+uv.x = X / width - 0.5f;
+uv.y = Y / height - 0.5f;
+uv.x *= width / height;
+float2 p = uv;
+p.x *= 1.2f;
+float o = _clampf(orgy(p) * 0.07f, 0.3f, 1.0f);
+o = _powf(o, 1.8f);
+float3 col = make_float3(o * 0.8f, o * o * 0.87f, o * o * o * 0.9f);
+float hole = length(uv + make_float2(0.1f, 0.05f)) - 0.15f;
+
+if(VOYEUR_MODE) 
+col = col * _powf(_fabs(1 - _fmaxf(0, hole)), 80.0f);
+
+float3 RGB = col * 1.2f + 0.15f;
+return RGB;
+}

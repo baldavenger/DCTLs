@@ -1,0 +1,252 @@
+// Cube OFX DCTL
+
+DEFINE_UI_PARAMS(p_RotateX, Rotate X, DCTLUI_SLIDER_FLOAT, -0.25, -1, 1, 0.001)
+DEFINE_UI_PARAMS(p_RotateY, Rotate Y, DCTLUI_SLIDER_FLOAT, 0.25, -1, 1, 0.001)
+DEFINE_UI_PARAMS(p_OffsetX, Offset X, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(p_OffsetY, Offset Y, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(p_Zoom, Zoom, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(p_Scale, Scale Cube, DCTLUI_SLIDER_FLOAT, 1, 0, 3, 0.001)
+DEFINE_UI_PARAMS(p_Space, Scale segments, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(p_Cubes, Segments, DCTLUI_SLIDER_INT, 1, 1, 5, 1)
+DEFINE_UI_PARAMS(p_Time, Transform, DCTLUI_SLIDER_FLOAT, 0, 0, 20, 0.001)
+DEFINE_UI_PARAMS(p_Hue1, Left Hue, DCTLUI_SLIDER_FLOAT, 0, 0, 360, 0.01)
+DEFINE_UI_PARAMS(p_Hue2, Front Hue, DCTLUI_SLIDER_FLOAT, 120, 0, 360, 0.01)
+DEFINE_UI_PARAMS(p_Hue3, Top Hue, DCTLUI_SLIDER_FLOAT, 240, 0, 360, 0.01)
+DEFINE_UI_PARAMS(p_Bright, Brightness, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(p_Back, Background, DCTLUI_SLIDER_INT, 1, 0, 2, 1)
+
+#define MAX_STEPS 96
+#define MIN_DIST 0.001f
+#define NORMAL_SMOOTHNESS 0.02f
+
+#ifndef M_PI
+#define M_PI			3.14159265358979323846264338327950288
+#endif
+
+typedef struct
+{
+float c00, c01;
+float c10, c11;
+} mat2;
+
+__DEVICE__ float iTime = 0;
+__DEVICE__ float SCALE = 0;
+__DEVICE__ float SPACE = 0;
+__DEVICE__ int CUBES = 1;
+__DEVICE__ float HUE1 = 0;
+__DEVICE__ float HUE2 = 0;
+__DEVICE__ float HUE3 = 0;
+__DEVICE__ float BRIGHT = 0;
+__DEVICE__ float BACK = 0;
+
+__DEVICE__ mat2 Rotate(float a)
+{
+    mat2 ro;
+    ro.c00 = _cosf(a);
+    ro.c01 = _sinf(a);
+    ro.c10 = -_sinf(a);
+    ro.c11 = _cosf(a);
+    return ro;
+}
+
+__DEVICE__ float2 multi(float2 A, mat2 B)
+{
+    float C, D;
+    C = A.x * B.c00 + A.y * B.c01;
+    D = A.x * B.c10 + A.y * B.c11;
+    return make_float2(C, D);
+}
+
+__DEVICE__ float3 mix(float3 A, float3 B, float C)
+{
+return A * (1.0f - C) + B * C;
+}
+
+__DEVICE__ float3 HSV_to_RGB(float H, float S, float V)
+  {
+  float r, g, b;
+  if (S == 0.0f) {
+	  r = g = b = V;
+	  return;
+  }
+  H *= 6.0f;
+  int i = floor(H);
+  float f = H - i;
+  i = (i >= 0) ? (i % 6) : (i % 6) + 6;
+  float p = V * (1.0f - S);
+  float q = V * (1.0f - S * f);
+  float t = V * (1.0f - S * (1.0f - f));
+  r = i == 0 ? V : i == 1 ? q : i == 2 ? p : i == 3 ? p : i == 4 ? t : V;
+  g = i == 0 ? t : i == 1 ? V : i == 2 ? V : i == 3 ? q : i == 4 ? p : p;
+  b = i == 0 ? p : i == 1 ? p : i == 2 ? t : i == 3 ? V : i == 4 ? V : q;
+  return make_float3(r, g, b);
+  }
+
+__DEVICE__ float Union(float a, float b)
+{
+    return _fminf(a, b);
+}
+
+__DEVICE__ float Sphere(float radius, float3 position)
+{
+    return length(position) - radius;
+}
+
+__DEVICE__ float Box(float radius, float3 position)
+{
+    return _fmaxf(_fmaxf(_fabs(position.x), _fabs(position.y)), _fabs(position.z)) - radius;
+}
+
+__DEVICE__ float Scene(float3 position)
+{
+    float map = -Sphere(24.0f, position);
+    
+    float animTime = _fmod(iTime, 10.0f);
+    
+    float xScale = smoothstep(1.0f, 1.5f, animTime) - smoothstep(6.0f, 6.5f, animTime);  
+    float zScale = smoothstep(2.0f, 2.5f, animTime) - smoothstep(7.0f, 7.5f, animTime);
+    float yScale = smoothstep(3.0f, 3.5f, animTime) - smoothstep(8.0f, 8.5f, animTime);
+    
+    for(int i = -CUBES; i <= CUBES;i++)
+    {
+        for(int j = -CUBES; j <= CUBES;j++)
+        {
+            for(int k = -CUBES; k <= CUBES;k++)
+            {
+                float3 offset = make_float3( (float)i, (float)j, (float)k) * SCALE;
+                
+                offset.x *= 1.0f + xScale;
+                offset.y *= 1.0f + yScale;
+                offset.z *= 1.0f + zScale;
+                
+    			map = Union(map, Box(SPACE, position + offset));
+        	}
+        }
+    }
+    
+    return map;
+}
+
+__DEVICE__ float3 Normal(float3 position)
+{
+	float3 offset = make_float3(NORMAL_SMOOTHNESS, 0, 0);
+    
+    float3 normal = make_float3
+    (
+        Scene(position - offset) - Scene(position + offset),
+        Scene(position - make_float3(offset.z, offset.x, offset.y)) - Scene(position + make_float3(offset.z, offset.x, offset.y)),
+        Scene(position - make_float3(offset.y, offset.z, offset.x)) - Scene(position + make_float3(offset.y, offset.z, offset.x))
+    );
+    
+    return normalize(normal);
+}
+
+__DEVICE__ float3 RayMarch(float3 origin, float3 direction)
+{
+    float hitDist = 0.0f;
+    for(int i = 0;i < MAX_STEPS;i++)
+    {
+        float sceneDist = Scene(origin + direction * hitDist);
+        
+        hitDist += sceneDist;
+        
+        if(sceneDist < MIN_DIST)
+        {
+            break;
+        }
+    }
+    
+    return origin + direction * hitDist;
+}
+
+__DEVICE__ float3 Shade(float3 position, float3 normal, float3 rayOrigin, float3 rayDirection, float2 uv, float3 background)
+{
+    float3 color = make_float3(0, 0, 0);
+    
+    //Face Colors
+    
+    float grad = 1 - _sqrtf((1 - uv.x) * (1 - uv.x) + (1 - uv.y) * (1 - uv.y)) / 1.8f;
+    grad = _clampf(grad * BRIGHT, 0, 1);
+    float3 leftColor = HSV_to_RGB(HUE1, 1, 0.75f) * grad;
+    float3 frontColor = HSV_to_RGB(HUE2, 1, 0.75f) * grad;
+    float3 topColor = HSV_to_RGB(HUE3, 1, 0.75f) * grad;
+    
+    color = mix(color, leftColor,  _fabs( dot(normal, make_float3(1,0,0) ) ) );
+    color = mix(color, frontColor, _fabs( dot(normal, make_float3(0,0,1) ) ) );
+    color = mix(color, topColor,   _fabs( dot(normal, make_float3(0,1,0) ) ) );
+    
+    //Background
+    float environ = BACK == 2 ? 220 : 22;
+    color = mix(color, background, step(environ, length(position)));
+    
+    return color;
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+    p_Y = p_Height - p_Y;
+	float2 aspect, uv;
+    aspect.x = (float)p_Width / p_Height;
+    aspect.y = 1.0f;
+	uv.x = (float)p_X / p_Height;
+	uv.y = (float)p_Y / p_Height;
+	float2 UV = make_float2((float)p_X / p_Width, uv.y);
+	uv.x -= p_OffsetX;
+	uv.y -= p_OffsetY;
+	
+	iTime = p_Time;
+	SCALE = p_Scale;
+	SPACE = p_Space / 2;
+	CUBES = p_Cubes;
+	HUE1 = p_Hue1 / 360;
+	HUE2 = p_Hue2 / 360;
+	HUE3 = p_Hue3 / 360;
+	BRIGHT = p_Bright;
+	if (p_Zoom < 1) p_Zoom = 1 - (1 - p_Zoom) * 0.6f;
+	p_Zoom = -8 / p_Zoom;
+	
+	BACK = p_Back;
+    
+    float2 mouse;
+    mouse.x = p_RotateX;
+    mouse.y = p_RotateY;
+    
+    float2 mouseAngle = make_float2(0);
+    
+    mouseAngle.x = M_PI * mouse.y + M_PI/2.0f;
+    mouseAngle.x += M_PI/3.0f;
+    
+    mouseAngle.y = 2.0f * M_PI * -mouse.x;
+    mouseAngle.y += M_PI/4.0f;
+    
+    float3 rayOrigin = make_float3(0, 0, p_Zoom);
+    float3 rayDirection = normalize(make_float3(uv - aspect / 2.0f, 1.0f));
+    
+    mat2 rotateX = Rotate(mouseAngle.x);
+    mat2 rotateY = Rotate(mouseAngle.y);
+    
+    float2 rayOriginX = multi(make_float2(rayOrigin.y, rayOrigin.z), rotateX);
+    rayOrigin.y = rayOriginX.x;
+    rayOrigin.z = rayOriginX.y;
+    
+    float2 rayOriginY = multi(make_float2(rayOrigin.x, rayOrigin.z), rotateY);
+    rayOrigin.x = rayOriginY.x;
+    rayOrigin.z = rayOriginY.y;
+    
+    float2 rayDirectionX = multi(make_float2(rayDirection.y, rayDirection.z), rotateX);
+    rayDirection.y = rayDirectionX.x;
+    rayDirection.z = rayDirectionX.y;
+    
+    float2 rayDirectionY = multi(make_float2(rayDirection.x, rayDirection.z), rotateY);
+    rayDirection.x = rayDirectionY.x;
+    rayDirection.z = rayDirectionY.y;
+    
+    float3 scenePosition = RayMarch(rayOrigin, rayDirection);
+    
+    float3 RGB = make_float3(p_R, p_G, p_B);
+    float3 background = BACK == 0 ? RGB : make_float3(0.1f);
+    
+    float3 outColor = Shade(scenePosition,Normal(scenePosition),rayOrigin,rayDirection, UV, background);
+    
+	return outColor;
+}

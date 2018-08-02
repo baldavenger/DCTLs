@@ -1,0 +1,34 @@
+// Curve OFX DCTL
+
+DEFINE_UI_PARAMS(time, Time, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+
+__DEVICE__ float4 COS(float4 A)
+{
+return make_float4(_cosf(A.x), _cosf(A.y), _cosf(A.z), _cosf(A.w));
+}
+
+__DEVICE__ float4 MAX(float4 A, float4 B)
+{
+return make_float4(_fmaxf(A.x, B.x), _fmaxf(A.y, B.y), _fmaxf(A.z, B.z), _fmaxf(A.w, B.w));
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+float t;
+t = time * 10;
+float2 r = make_float2(width, height);
+float2 o = make_float2(X, Y) - r/2;
+o = make_float2(length(o) / r.y - 0.5f, _atan2f(o.y, o.x));    
+float4 s = 0.07f * COS(1.5f * make_float4(0, 1, 2, 3) + t + o.y + _cosf(o.y) * _cosf(t));
+float4 e = make_float4(s.y, s.z, s.w, s.x); 
+float4 f = MAX(-1 * (s - o.x), e - o.x);
+float4 COL = dot(clamp(f * r.y, 0, 1), 80 * (s - e)) * (s - 0.1f) + f;
+
+float3 RGB = make_float3(COL.x, COL.y, COL.z);
+return RGB;
+}

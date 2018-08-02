@@ -1,0 +1,33 @@
+// VHS Filter OFX DCTL
+
+DEFINE_UI_PARAMS(BLUR, Chroma Shift, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.01)
+DEFINE_UI_PARAMS(TIME, Warp, DCTLUI_SLIDER_FLOAT, 10, 0, 20, 0.01)
+DEFINE_UI_PARAMS(SCAN, Scanline, DCTLUI_SLIDER_INT, 400, 0, 1000, 1)
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{
+	float x = (float)p_X;
+	float y = (float)p_Y;
+	float2 uv = make_float2(x / p_Width, y / p_Height);
+	float d = length(uv - make_float2(0.5f, 0.5f));
+	
+	float blur = BLUR;	
+	
+    float iTime = (float)(TIME);
+    float2 myuv;
+   
+    if(TIME > 0)
+    myuv =  make_float2(uv.x + _sinf( (uv.y + _sinf(iTime)) * _fabs(_sinf(iTime) + _sinf(2 * iTime) + _sinf(0.3f * iTime) + _sinf(1.4f * iTime) + _cosf(0.7f * iTime) + _cosf(1.3f * iTime)) * 4 ) * 0.02f, uv.y);
+    else myuv = uv;
+    
+    float3 col;
+    col.x = _tex2D(p_TexR, (int)((myuv.x + blur) * p_Width), (int)(myuv.y * p_Height));
+    col.y = _tex2D(p_TexG, (int)(myuv.x * p_Width), (int)(myuv.y * p_Height));
+    col.z = _tex2D(p_TexB, (int)((myuv.x - blur)*p_Width), (int)(myuv.y * p_Height));
+	
+	float scanline = _sinf(uv.y * SCAN) * 0.08f;
+	col = col - scanline;
+	col = col * (1 - d * 0.5f);
+	
+    return col;
+}

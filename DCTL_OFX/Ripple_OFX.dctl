@@ -1,0 +1,55 @@
+// Ripple OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Ripple, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(RIPPLE, Ripple Type, DCTLUI_SLIDER_INT, 1, 1, 3, 1)
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float3 RGB;
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+float time = TIME * 10, speed = 10, rip = 0;
+float2 uv = make_float2(X / width, Y / height);
+float f, f2, f2a;
+
+float2 cPos = -1.0f + 2.0f * make_float2(X, Y) / make_float2(width, height);
+float ratio = width / height;
+cPos.x *= ratio;
+
+float cLength = length(cPos);
+
+switch (RIPPLE) 
+{
+case 1:
+{
+rip = _cosf(cLength * 40 - time * speed);
+uv = uv + (cPos / cLength) * rip * 0.3f;
+RGB = make_float3(uv.x, 0, 0);
+}
+break;
+case 2:
+{
+rip = _cosf(cLength * 40 - time * speed);
+uv = uv + (cPos / cLength) * rip * 0.3f;
+f = _sinf(uv.x * 2.0f + time);
+float F = _fabs(f);
+RGB = make_float3(f, _powf(F, 8), _powf(F, 3));
+}
+break; 
+case 3: 
+{
+speed = 5;
+rip = _cosf(cLength * 18 - time * speed);
+uv = cPos * 3 + (cPos / cLength) * rip * 1.6f;
+f = _fabs(_sinf(uv.x * 2 + 2.5f * time));
+f2 = _fabs(_sinf(uv.y * 1.3f + 0.29f * time));
+f2a = _powf(f2, 3);
+RGB = make_float3(f + f2a, 0.7f * _powf(f, 3) + f2a, f2a);
+}
+}
+
+return RGB;
+}
