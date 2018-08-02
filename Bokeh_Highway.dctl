@@ -1,0 +1,507 @@
+// Bokeh Highway DCTL
+
+__CONSTANT__ bool HQ = true;
+__CONSTANT__ bool RAIN = true;
+__CONSTANT__ float CAM_SHAKE = 1.0f;
+
+__DEVICE__ float sign(float A)
+{
+float B;
+B = A < 0.0f ? -1.0f : A > 0.0f ? 1.0f : 0.0f;
+//B = A < 0.0f ? -1.0f : 1.0f;
+return B;
+}
+
+__DEVICE__ float fract(float A)
+{
+float B;
+B = A - floor(A);
+return B;
+}
+
+__DEVICE__ float2 fract(float2 A)
+{
+float2 B;
+B.x = A.x - _floor(A.x);
+B.y = A.y - _floor(A.y);
+return B;
+}
+
+__DEVICE__ float3 fract(float3 A)
+{
+float3 B;
+B.x = A.x - _floor(A.x);
+B.y = A.y - _floor(A.y);
+B.z = A.z - _floor(A.z);
+return B;
+}
+
+__DEVICE__ float2 multi(float2 A, float B)
+{
+float2 C;
+C.x = A.x * B;
+C.y = A.y * B;
+return C;
+}
+
+__DEVICE__ float3 multi(float3 A, float B)
+{
+float3 C;
+C.x = A.x * B;
+C.y = A.y * B;
+C.z = A.z * B;
+return C;
+}
+
+__DEVICE__ float3 multi(float3 A, float3 B)
+{
+float3 C;
+C.x = A.x * B.x;
+C.y = A.y * B.y;
+C.z = A.z * B.z;
+return C;
+}
+
+__DEVICE__ float2 multi(float2 A, float4 B)
+{
+float2 C;
+C.x = A.x * B.x + A.y * B.y;
+C.y = A.x * B.z + A.y * B.w;
+return C;
+}
+
+__DEVICE__ float dot(float3 A, float3 B)
+{
+float C = A.x * B.x + A.y * B.y + A.z * B.z;
+return C;
+}
+
+__DEVICE__ float3 add(float3 A, float B)
+{
+float3 C;
+C.x = A.x + B;
+C.y = A.y + B;
+C.z = A.z + B;
+return C;
+}
+
+__DEVICE__ float2 add(float2 A, float2 B)
+{
+float2 C;
+C.x = A.x + B.x;
+C.y = A.y + B.y;
+return C;
+}
+
+__DEVICE__ float3 add(float3 A, float3 B)
+{
+float3 C;
+C.x = A.x + B.x;
+C.y = A.y + B.y;
+C.z = A.z + B.z;
+return C;
+}
+
+
+__DEVICE__ float3 cross(float3 A, float3 B)
+{
+float3 C;
+C.x = A.y * B.z - A.z * B.y;
+C.y = A.z * B.x - A.x * B.z;
+C.z = A.x * B.y - A.y * B.x;
+return C;
+}
+
+__DEVICE__ float3 minus(float3 A, float3 B)
+{
+float3 C;
+C.x = A.x - B.x;
+C.y = A.y - B.y;
+C.z = A.z - B.z;
+return C;
+}
+
+__DEVICE__ float mix(float A, float B, float C)
+{
+float D = A * (1.0f - C) + B * C;
+return D;
+}
+
+__DEVICE__ float2 mix(float2 A, float2 B, float C)
+{
+float2 D;
+D.x = A.x * (1.0f - C) + B.x * C;
+D.y = A.y * (1.0f - C) + B.y * C;
+return D;
+}
+
+__DEVICE__ float3 mix(float3 A, float3 B, float C)
+{
+float3 D;
+D.x = A.x * (1.0f - C) + B.x * C;
+D.y = A.y * (1.0f - C) + B.y * C;
+D.z = A.z * (1.0f - C) + B.z * C;
+return D;
+}
+
+__DEVICE__ float length(float2 A)
+{
+float B = _sqrtf(A.x * A.x + A.y * A.y);
+return B;
+}
+
+__DEVICE__ float length(float3 A)
+{
+float B = _sqrtf(A.x * A.x + A.y * A.y + A.z * A.z);
+return B;
+}
+
+__DEVICE__ float smoothstep(float edge0, float edge1, float x)
+{
+float t = _saturatef((x - edge0) / (edge1 - edge0));
+return t * t * (3.0f - 2.0f * t);
+}
+
+__DEVICE__ float3 normalize(float3 A)
+{
+float3 B;
+float C = _sqrtf((A.x * A.x) + (A.y * A.y) + (A.z * A.z));
+B.x = A.x / C;
+B.y = A.y / C;
+B.z = A.z / C;
+return B;
+}
+
+__DEVICE__ float N(float t)
+{
+	return fract(_sinf(t * 10234.324f) * 123423.23512f);
+}
+
+__DEVICE__ float3 N31(float p)
+{
+   float3 p3 = fract(multi(make_float3(p, p, p), make_float3(0.1031f, 0.11369f, 0.13787f)));
+   p3 = add(p3, dot(p3, make_float3(p3.y + 19.19f, p3.z + 19.19f, p3.x + 19.19f)));
+   return fract(make_float3((p3.x + p3.y) * p3.z, (p3.x + p3.z) * p3.y, (p3.y + p3.z) * p3.x));
+}
+__DEVICE__ float N2(float2 p)
+{
+	float3 p3  = fract(multi(make_float3(p.x, p.y, p.x), make_float3(443.897f, 441.423f, 437.195f)));
+    p3 = add(p3, dot(p3, make_float3(p3.y + 19.19f, p3.z + 19.19f, p3.x + 19.19f)));
+    return fract((p3.x + p3.y) * p3.z);
+}
+
+__DEVICE__ float DistLine(float3 ro, float3 rd, float3 p)
+{
+	return length(cross(minus(p, ro), rd));
+}
+ 
+__DEVICE__ float3 ClosestPoint(float3 ro, float3 rd, float3 p)
+{
+    return add(ro, multi(rd, _fmaxf(0.0f, dot(minus(p, ro), rd))));
+}
+
+__DEVICE__ float Remap(float a, float b, float c, float d, float t)
+{
+	return ((t - a) / (b - a)) * (d - c) + c;
+}
+
+__DEVICE__ float BokehMask(float3 ro, float3 rd, float3 p, float size, float blur, bool HQ)
+{
+	float d = DistLine(ro, rd, p);
+    float m = smoothstep(size, size * (1.0f - blur), d);
+    
+    if(HQ){
+    m *= mix(0.7f, 1.0f, smoothstep(0.8f * size, size, d));
+    }
+    
+    return m;
+}
+
+__DEVICE__ float SawTooth(float t)
+{
+    return _cosf(t + _cosf(t)) + _sinf(2.0f * t) * 0.2f + _sinf(4.0f * t) * 0.02f;
+}
+
+__DEVICE__ float DeltaSawTooth(float t)
+{
+    return 0.4f * _cosf(2.0f * t) + 0.08f * _cosf(4.0f * t) - (1.0f - _sinf(t)) * _sinf(t + _cosf(t));
+}  
+
+__DEVICE__ float2 GetDrops(float2 uv, float seed, float m, float iTime, bool HQ)
+{
+    
+    float t = iTime + m * 30.0f;
+    float2 o = make_float2(0.0f, 0.0f);
+    uv.y += t * 0.05f;
+    
+    uv.x *= 20.0f;
+    uv.y *= 5.0f;
+    float2 id = make_float2(_floor(uv.x), _floor(uv.y));
+    float3 n = N31(id.x + (id.y + seed) * 546.3524f);
+    float2 bd = fract(uv);
+    
+    bd.x -= 0.5f;
+    bd.y -= 0.5f;
+    
+    bd.y *= 4.0f;
+    
+    bd.x += (n.x - 0.5f) * 0.6f;
+    
+    t += n.z * 6.28f;
+    float slide = SawTooth(t);
+    
+    float ts = 1.5f;
+    float2 trailPos = make_float2(bd.x * ts, (fract(bd.y * ts * 2.0f - t * 2.0f) - 0.5f) * 0.5f);
+    
+    bd.y += slide * 2.0f;								// make drops slide down
+    
+    if(HQ){
+    float dropShape = bd.x * bd.x;
+    dropShape *= DeltaSawTooth(t);
+    bd.y += dropShape;								// change shape of drop when it is falling
+    }
+    
+    float d = length(bd);							// distance to main drop
+    
+    float trailMask = smoothstep(-0.2f, 0.2f, bd.y);				// mask out drops that are below the main
+    trailMask *= bd.y;								// fade dropsize
+    float td = length(multi(trailPos, _fmaxf(0.5f, trailMask)));	// distance to trail drops
+    
+    float mainDrop = smoothstep(0.2f, 0.1f, d);
+    float dropTrail = smoothstep(0.1f, 0.02f, td);
+    
+    dropTrail *= trailMask;
+    o = mix(multi(bd, mainDrop), trailPos, dropTrail);		// mix main drop and drop trail
+    
+    return o;
+}
+
+__DEVICE__ void CameraSetup(float2 uv, float3 pos, float3 lookat, float zoom, float m, float iTime, float3 *ro, float3 *rd, bool RAIN, bool HQ)
+{
+	*ro = pos;
+    float3 f = normalize(minus(lookat, *ro));
+    float3 r = cross(make_float3(0.0f, 1.0f, 0.0f), f);
+    float3 u = cross(f, r);
+    
+    float2 offs = make_float2(0.0f, 0.0f);
+    
+    if(RAIN){
+    float2 dropUv = uv; 
+    
+    if(HQ){
+    float x = (_sinf(iTime * 0.1f) * 0.5f + 0.5f) * 0.5f;
+    x = -x * x;
+    float s = _sinf(x);
+    float c = _cosf(x);
+    
+    float4 rot = make_float4(c, -s, s, c);
+    dropUv = multi(uv, rot);
+    dropUv.x += -_sinf(iTime * 0.1f) * 0.5f;
+    }
+    offs = GetDrops(dropUv, 1.0f, m, iTime, HQ);
+    offs = add(offs, GetDrops(multi(dropUv, 1.4f), 10.0f, m, iTime, HQ));
+    
+    if(HQ){
+    offs = add(offs, GetDrops(multi(dropUv, 2.4f), 25.0f, m, iTime, HQ));
+    }
+    
+    float ripple = _sinf(iTime + uv.y * 3.1415f * 30.0f + uv.x * 124.0f) * 0.5f + 0.5f;
+    ripple *= 0.005f;
+    offs = add(offs, make_float2(ripple * ripple, ripple));
+    }
+    
+    float3 center = add(*ro, multi(f, zoom));
+    float3 i = add(add(center, multi(r, (uv.x - offs.x))), multi(u, (uv.y - offs.y)));
+    
+    *rd = normalize(minus(i, pos));
+}
+
+__DEVICE__ float3 HeadLights(float i, float t, float3 ro, float3 rd, bool HQ)
+{
+    float3 headLightCol = make_float3(0.8f, 0.8f, 1.0f);
+    float z = fract(-t * 2.0f + i);
+    float3 p = make_float3(-0.3f, 0.1f, z * 40.0f);
+    float d = length(minus(p, ro));
+    
+    float size = mix(0.03f, 0.05f, smoothstep(0.02f, 0.07f, z)) * d;
+    float m = 0.0f;
+    float blur = 0.1f;
+    m += BokehMask(ro, rd, minus(p, make_float3(0.08f, 0.0f, 0.0f)), size, blur, HQ);
+    m += BokehMask(ro, rd, add(p, make_float3(0.08f, 0.0f, 0.0f)), size, blur, HQ);
+    
+    if(HQ){
+    m += BokehMask(ro, rd, add(p, make_float3(0.1f, 0.0f, 0.0f)), size, blur, HQ);
+    m += BokehMask(ro, rd, minus(p, make_float3(0.1f, 0.0f, 0.0f)), size, blur, HQ);
+    }
+    
+    float distFade = fmax(0.01f, powf(1.0f - z, 9.0f));
+    
+    blur = 0.8f;
+    size *= 2.5f;
+    float r = 0.0f;
+    r += BokehMask(ro, rd, add(p, make_float3(-0.09f, -0.2f, 0.0f)), size, blur, HQ);
+    r += BokehMask(ro, rd, add(p, make_float3(0.09f, -0.2f, 0.0f)), size, blur, HQ);
+    r *= distFade*distFade;
+    
+    return multi(headLightCol, (m + r) * distFade);
+}
+
+
+__DEVICE__ float3 TailLights(float i, float t, float3 ro, float3 rd, bool HQ)
+{
+    
+    float LANE_BIAS = 0.5f;
+    float3 tailLightCol = make_float3(1.0f, 0.1f, 0.1f);
+    t = t * 1.5f + i;
+    float id = _floor(t) + i;
+    float3 n = N31(id);
+    
+    float laneId = smoothstep(LANE_BIAS, LANE_BIAS + 0.01f, n.y);
+    
+    float ft = fract(t);
+    
+    float z = 3.0f - ft * 3.0f;				// distance ahead
+    
+    laneId *= smoothstep(0.2f, 1.5f, z);				// get out of the way!
+    float lane = mix(0.6f, 0.3f, laneId);
+    float3 p = make_float3(lane, 0.1f, z);
+    float d = length(minus(p, ro));
+    
+    
+    float size = 0.05f * d;
+    float blur = 0.1f;
+    float m = BokehMask(ro, rd, make_float3(p.x - 0.08f, p.y, p.z), size, blur, HQ) +
+    			BokehMask(ro, rd, make_float3(p.x + 0.08f, p.y, p.z), size, blur, HQ);
+    
+    if(HQ){
+    float bs = n.z * 3.0f;						// start braking at random distance		
+    float brake = smoothstep(bs, bs + 0.01f, z);
+    brake *= smoothstep(bs + 0.01f, bs, z - 0.5f * n.y);		// n.y = random brake duration
+    
+    m += (BokehMask(ro, rd, make_float3(p.x + 0.1f, p.y, p.z), size, blur, HQ) +
+    	BokehMask(ro, rd, make_float3(p.x - 0.1f, p.y, p.z), size, blur, HQ)) * brake;
+    }
+    
+    float refSize = size * 2.5f;
+    m += BokehMask(ro, rd, make_float3(p.x - 0.09f, p.y - 0.2f, p.z), refSize, 0.8f, HQ);
+    m += BokehMask(ro, rd, make_float3(p.x + 0.09f, p.y - 0.2f, p.z), refSize, 0.8f, HQ);
+    
+    float3 col = multi(tailLightCol, (m * ft)); 
+    
+    float b = BokehMask(ro, rd, make_float3(p.x + 0.12f, p.y, p.z), size, blur, HQ);
+    b += BokehMask(ro, rd, make_float3(p.x + 0.12f, p.y - 0.2f, p.z), refSize, 0.8f, HQ) * 0.2f;
+    
+    float3 blinker = make_float3(1.0f, 0.7f, 0.2f);
+    blinker = multi(blinker, smoothstep(1.5f, 1.4f, z) * smoothstep(0.2f, 0.3f, z));
+    blinker = multi(blinker, saturate(sinf(t * 200.0f) * 100.0f));
+    blinker = multi(blinker, laneId);
+    col = add(col, multi(blinker, b));
+    
+    return col;
+}
+
+__DEVICE__ float3 StreetLights(float i, float t, float3 ro, float3 rd, bool HQ)
+{
+	float3 streetLightCol = make_float3(1.0f, 0.7f, 0.3f);
+	float side = sign(rd.x);
+    float offset = _fmaxf(side, 0.0f) * (1.0f / 16.0f);
+    float z = fract(i - t + offset); 
+    float3 p = make_float3(2.0f * side, 2.0f, z * 60.0f);
+    float d = length(minus(p, ro));
+	float blur = 0.1f;
+    float3 rp = ClosestPoint(ro, rd, p);
+    float distFade = Remap(1.0f, 0.7f, 0.1f, 1.5f, 1.0f - _powf(1.0f - z, 6.0f));
+    distFade *= (1.0f - z);
+    float m = BokehMask(ro, rd, p, 0.05f * d, blur, HQ) * distFade;
+    
+    return multi(streetLightCol, m);
+}
+
+__DEVICE__ float3 EnvironmentLights(float i, float t, float3 ro, float3 rd, bool HQ)
+{
+	float3 streetLightCol = make_float3(1.0f, 0.7f, 0.3f);
+	float3 tailLightCol = make_float3(1.0f, 0.1f, 0.1f);
+	float3 headLightCol = make_float3(0.8f, 0.8f, 1.0f);
+	
+	float n = N(i + floor(t));
+    float side = sign(rd.x);
+    float offset = _fmaxf(side, 0.0f) * (1.0f / 16.0f);
+    float z = fract(i - t + offset + fract(n * 234.0f));
+    float n2 = fract(n * 100.0f);
+    float3 p = make_float3((3.0f + n) * side, n2 * n2 * n2 * 1.0f, z * 60.0f);
+    float d = length(minus(p, ro));
+	float blur = 0.1f;
+    float3 rp = ClosestPoint(ro, rd, p);
+    float distFade = Remap(1.0f, 0.7f, 0.1f, 1.5f, 1.0f - _powf(1.0f - z, 6.0f));
+    float m = BokehMask(ro, rd, p, 0.05f * d, blur, HQ);
+    m *= distFade * distFade * 0.5f;
+    
+    m *= 1.0f - _powf(_sinf(z * 6.28f * 20.0f * n) * 0.5f + 0.5f, 20.0f);
+    float3 randomCol = make_float3(fract(n * -34.5f), fract(n * 4572.0f), fract(n * 1264.0f));
+    float3 col = mix(tailLightCol, streetLightCol, fract(n * -65.42f));
+    col = mix(col, randomCol, n);
+    
+    return multi(multi(col, m), 0.2f);
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{
+
+float time = 1.0f + _tex2D(p_TexR, 500, 500) * 10.0f;
+
+float3 col = make_float3(0.0f, 0.0f, 0.0f);
+float2 uv;
+
+uv.x = ((float)p_X / p_Width) - 0.5f;
+uv.y = ((float)(p_Height - p_Y) / p_Height) - 0.5f;
+uv.x *= (float)p_Width/p_Height;
+
+float3 pos = make_float3(0.3f, 0.15f, 0.0f);
+
+float bt = time * 5.0f;
+float h1 = N(_floor(bt));
+float h2 = N(_floor(bt + 1.0f));
+float bumps = mix(h1, h2, fract(bt)) * 0.1f;
+bumps = bumps * bumps * bumps * CAM_SHAKE;
+
+pos.y += bumps;
+float lookatY = pos.y + bumps;
+float3 lookat = make_float3(0.3f, lookatY, 1.0f);
+float3 lookat2 = make_float3(0.0f, lookatY, 0.7f);
+lookat = mix(lookat, lookat2, _sinf(time * 0.1f) * 0.5f + 0.5f);
+
+uv.y += bumps * 4.0f;
+float3 ro, rd;
+CameraSetup(uv, pos, lookat, 2.0f, 0.0f, time, &ro, &rd, RAIN, HQ);
+
+time *= 0.03f;
+
+float stp = 1.0f / 8.0f;
+
+for(float i=0.0f; i<1.0f; i+=stp) {
+col = add(col, StreetLights(i, time, ro, rd, HQ));
+}
+
+for(float i=0.0f; i<1.0f; i+=stp) {
+float n = N(i + floor(time));
+col = add(col, HeadLights(i + n * stp * 0.7f, time, ro, rd, HQ));
+}
+
+if(HQ){
+stp = 1.0f / 32.0f;
+} else {
+stp = 1.0f / 16.0f;
+}
+
+for(float i=0.0f; i<1.0f; i+=stp) {
+col = add(col, EnvironmentLights(i, time, ro, rd, HQ));
+}
+
+col = add(col, TailLights(0.0f, time, ro, rd, HQ));
+col = add(col, TailLights(0.5f, time, ro, rd, HQ));
+
+col = add(col, multi(make_float3(0.6f, 0.5f, 0.9f), saturate(rd.y)));
+
+return make_float3(col.x, col.y, col.z);
+
+}

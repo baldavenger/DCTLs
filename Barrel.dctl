@@ -1,0 +1,77 @@
+// Barrel Distortion DCTL
+
+
+#define BARREL_DISTORTION 10
+
+
+__DEVICE__ float2 add(float2 A, float2 B)
+{
+float2 C;
+C.x = A.x + B.x;
+C.y = A.y + B.y;
+return C;
+}
+
+__DEVICE__ float2 divide(float2 A, float2 B)
+{
+float2 C;
+C.x = A.x / B.x;
+C.y = A.y / B.y;
+return C;
+}
+
+__DEVICE__ float2 minus(float2 A, float2 B)
+{
+float2 C;
+C.x = A.x - B.x;
+C.y = A.y - B.y;
+return C;
+}
+
+__DEVICE__ float2 multi(float2 A, float2 B)
+{
+float2 C;
+C.x = A.x * B.x;
+C.y = A.y * B.y;
+return C;
+}
+
+__DEVICE__ float2 multi(float2 A, float B)
+{
+float2 C;
+C.x = A.x * B;
+C.y = A.y * B;
+return C;
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{
+
+float X = (float)p_X + 1.0f;
+float Y = (float)p_Y + 1.0f;
+float2 resolution = make_float2((float)p_Width, (float)p_Height);
+float2 TexCoord = make_float2(X/resolution.x, Y/resolution.y);
+
+float2 tex0 = TexCoord;
+
+float distortion = (float)BARREL_DISTORTION * 0.025f;
+float rescale = 1.0f - (0.25f * distortion);
+
+float2 texcoord = minus(tex0, make_float2(0.5f, 0.5f));
+float rsq = texcoord.x * texcoord.x + texcoord.y * texcoord.y;
+texcoord = add(texcoord, (multi(texcoord, (distortion * rsq))));
+texcoord = multi(texcoord, rescale);
+
+if (_fabs(texcoord.x) > 0.5f || _fabs(texcoord.y) > 0.5f)
+return make_float3(0.0f, 0.0f, 0.0f);
+else
+{
+texcoord = add(texcoord, make_float2(0.5f, 0.5f));
+texcoord = multi(texcoord, resolution);
+
+float3 col = make_float3(_tex2D(p_TexR, texcoord.x, texcoord.y), _tex2D(p_TexG, texcoord.x, texcoord.y), _tex2D(p_TexB, texcoord.x, texcoord.y));
+
+return col;
+
+}
+}

@@ -1,0 +1,53 @@
+// Elvish Fractal DCTL
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{ 
+
+float steps = 10.0f;
+float wx = 1.0f;
+float wy = 1.0f;
+int number = 20;
+float2 ratio = make_float2(1.f, 1.0f);
+float2 positionB = make_float2(0.5f, 0.5f);
+
+float yo = _tex2D(p_TexR, 500, 500);
+float algo = yo;
+float3 color = make_float3(0.9f, 1.5f, 0.8f);
+
+float2 w = make_float2(wx, wy);
+float2 st0;
+st0.x = (float)p_X / p_Width;
+st0.y = (float)p_Y / p_Height;
+
+float F = 1.0f;
+float g = F;
+float t = steps;
+
+float2 p = make_float2((ratio.x * st0.x - positionB.x), (ratio.y * st0.y - positionB.y));
+float2 z = p;
+float2 k = make_float2(_cosf(t * algo), _sinf(algo * t));
+
+for(int i = 0; i < number; i++) 
+{	 
+z = make_float2( z.x * z.x - z.x * z.y, z.x / z.y );
+z.x -= p.x * k.x;
+z.y -= p.y * k.y;
+
+float2 zp = make_float2(z.x - p.x, z.y - p.y);
+float2 zk = make_float2(z.x - k.x, z.y - k.y);
+
+F = _fminf(F, _fabs(zp.x * zk.x + zp.y * zk.y));
+
+g = _fminf(g, z.x * z.x + z.x * z.x);
+}
+
+F = _logf(F) / 9.0f;
+float3 c;
+c = make_float3(color.x * F, color.y * F, color.z * F);
+c.x = _fabs(c.x);
+c.y = _fabs(c.y);
+c.z = _fabs(c.z);
+
+return c;
+ 
+}

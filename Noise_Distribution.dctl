@@ -1,0 +1,224 @@
+// Noise Distribution DCTL
+
+__DEVICE__ float2 add(float2 A, float B)
+{
+float2 C;
+C.x = A.x + B;
+C.y = A.y + B;
+return C;
+}
+
+__DEVICE__ float dot(float2 A, float2 B)
+{
+float C = A.x * B.x + A.y * B.y;
+return C;
+}
+
+__DEVICE__ float fract(float A)
+{
+float B;
+B = A - floor(A);
+return B;
+}
+
+__DEVICE__ float step(float A, float B)
+{
+float C;
+C = B < A ? 0.0f : 1.0f;
+return C;
+}
+
+#define NUM_BUCKETS 32
+#define ITER_PER_BUCKET 1024
+#define HIST_SCALE 8.0f
+
+#define NUM_BUCKETS_F 32.0f
+#define ITER_PER_BUCKET_F 1024.0f
+
+//note: uniformly distributed, normalized rand, [0;1[
+__DEVICE__ float nrand( float2 n )
+{
+return fract(_sinf(dot(n, make_float2(12.9898f, 78.233f))) * 43758.5453f);
+}
+
+//note: remaps v to [0;1] in interval [a;b]
+__DEVICE__ float remap( float a, float b, float v )
+{
+return _saturatef((v-a) / (b-a));
+}
+
+//note: quantizes in l levels
+__DEVICE__ float truncf( float a, float l )
+{
+return _floor(a*l)/l;
+}
+
+__DEVICE__ float n1rand( float2 n, float iTime )
+{
+float t = fract( iTime );
+float nrnd0 = nrand( add(n, 0.07f* t) );
+return nrnd0;
+}
+
+__DEVICE__ float n2rand( float2 n, float iTime )
+{
+float t = fract( iTime );
+float nrnd0 = nrand( add(n, 0.07f * t) );
+float nrnd1 = nrand( add(n, 0.11f * t) );
+return (nrnd0 + nrnd1) / 2.0f;
+}
+
+__DEVICE__ float n3rand( float2 n, float iTime )
+{
+float t = fract( iTime );
+float nrnd0 = nrand( add(n, 0.07f * t) );
+float nrnd1 = nrand( add(n, 0.11f * t) );
+float nrnd2 = nrand( add(n, 0.13f * t) );
+return (nrnd0 + nrnd1 + nrnd2) / 3.0f;
+}
+
+__DEVICE__ float n4rand( float2 n, float iTime )
+{
+float t = fract( iTime );
+float nrnd0 = nrand( add(n, 0.07f * t) );
+float nrnd1 = nrand( add(n, 0.11f * t) );
+float nrnd2 = nrand( add(n, 0.13f * t) );
+float nrnd3 = nrand( add(n, 0.17f * t) );
+return (nrnd0 + nrnd1 + nrnd2 + nrnd3) / 4.0f;
+}
+
+__DEVICE__ float n8rand( float2 n, float iTime )
+{
+float t = fract( iTime );
+float nrnd0 = nrand( add(n, 0.07f * t) );
+float nrnd1 = nrand( add(n, 0.11f * t) );
+float nrnd2 = nrand( add(n, 0.13f * t) );
+float nrnd3 = nrand( add(n, 0.17f * t) );
+
+float nrnd4 = nrand( add(n, 0.19f * t) );
+float nrnd5 = nrand( add(n, 0.23f * t) );
+float nrnd6 = nrand( add(n, 0.29f * t) );
+float nrnd7 = nrand( add(n, 0.31f * t) );
+
+return (nrnd0 + nrnd1 + nrnd2 + nrnd3 + nrnd4 + nrnd5 + nrnd6 + nrnd7) / 8.0f;
+}
+
+__DEVICE__ float n4rand_inv( float2 n, float iTime )
+{
+float t = fract( iTime );
+float nrnd0 = nrand( add(n, 0.07f * t) );
+float nrnd1 = nrand( add(n, 0.11f * t) );
+float nrnd2 = nrand( add(n, 0.13f * t) );
+float nrnd3 = nrand( add(n, 0.17f * t) );
+float nrnd4 = nrand( add(n, 0.19f * t) );
+float v1 = (nrnd0 + nrnd1 + nrnd2 + nrnd3) / 4.0f;
+float v2 = 0.5f * remap( 0.0f, 0.5f, v1 ) + 0.5f;
+float v3 = 0.5f * remap( 0.5f, 1.0f, v1 );
+return (nrnd4 < 0.5f) ? v2 : v3;
+}
+
+//alternative Gaussian,
+__DEVICE__ float n4rand_ss( float2 n, float iTime )
+{
+float nrnd0 = nrand( add(n, 0.07f * fract( iTime )) );
+float nrnd1 = nrand( add(n, 0.11f * fract( iTime + 0.573953f )) );	
+return 0.23f * _sqrtf(-_logf(nrnd0 + 0.00001f)) * _cosf(2.0f * 3.141592f * nrnd1) + 0.5f;
+}
+
+/*
+//Coordinate yy (YY is Height) gives a curve distribution of ^1 to ^8
+__DEVICE__  float n4rand( float2 n, float iTime, float yy, float YY)
+{
+float t = fract( iTime );
+float nrnd0 = nrand( add(n, 0.07f * t) );
+
+float p = 1.0f / (1.0f + yy * 8.0f / YY);
+nrnd0 -= 0.5f;
+nrnd0 *= 2.0f;
+if(nrnd0< 0.0f)
+nrnd0 = _powf(1.0f + nrnd0, p) * 0.5f;
+else
+nrnd0 = 1.0f - _powf(nrnd0, p) * 0.5f;
+return nrnd0; 
+}
+*/
+
+__DEVICE__ float histogram( int iter, float2 uv, float2 interval, float height, float scale, float iTime, int p_Height )
+{
+float t = remap( interval.x, interval.y, uv.x );
+float2 bucket = make_float2( truncf(t, NUM_BUCKETS_F), truncf(t, NUM_BUCKETS_F) + 1.0f / NUM_BUCKETS_F);
+float bucketval = 0.0f;
+for ( int i=0; i < ITER_PER_BUCKET; ++i )
+{
+float seed = float(i)/ITER_PER_BUCKET_F;
+
+float r;
+if ( iter < 2 )
+r = n1rand( add(make_float2(uv.x, 0.5f), seed), iTime );
+else if ( iter<3 )
+r = n2rand( add(make_float2(uv.x, 0.5f), seed), iTime );
+else if ( iter<4 )
+r = n4rand( add(make_float2(uv.x, 0.5f), seed), iTime );
+else
+r = n8rand( add(make_float2(uv.x, 0.5f), seed), iTime );
+
+bucketval += step(bucket.x, r) * step(r, bucket.y);
+}
+bucketval /= ITER_PER_BUCKET_F;
+bucketval *= scale;
+
+float v0 = step( uv.y / height, bucketval );
+float v1 = step( (uv.y - 1.0f/p_Height) / height, bucketval );
+float v2 = step( (uv.y + 1.0f/p_Height) / height, bucketval );
+return 0.5f * v0 + v1 - v2;
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{
+float iTime = _tex2D(p_TexR, 500, 500) / 24.0f;
+p_Y = p_Height - p_Y;
+
+float2 uv;
+uv.x = (float)p_X / p_Width;
+uv.y = (float)p_Y / p_Height;
+
+float o;
+int idx;
+float2 uvrange;
+if ( uv.x < 1.0f/4.0f )
+{
+o = n1rand( uv, iTime );
+idx = 1;
+uvrange = make_float2( 0.0f/4.0f, 1.0f/4.0f );
+}
+else if ( uv.x < 2.0f / 4.0f )
+{
+o = n2rand( uv, iTime );
+idx = 2;
+uvrange = make_float2( 1.0/4.0f, 2.0/4.0f );
+}
+else if ( uv.x < 3.0 / 4.0 )
+{
+o = n4rand( uv, iTime );
+idx = 3;
+uvrange = make_float2( 2.0/4.0f, 3.0/4.0f );
+}
+else
+{
+o = n8rand( uv, iTime );
+idx = 4;
+uvrange = make_float2( 3.0f/4.0f, 4.0f/4.0f );
+}
+
+//display histogram
+if ( uv.y < 1.0f / 4.0f )
+o = 0.125f + histogram( idx, uv, uvrange, 1.0/4.0, HIST_SCALE, iTime, p_Height );
+
+//display lines
+if ( abs(uv.x - 1.0f/4.0f) < 0.002f ) o = 0.0f;
+if ( abs(uv.x - 2.0f/4.0f) < 0.002f ) o = 0.0f;
+if ( abs(uv.x - 3.0f/4.0f) < 0.002f ) o = 0.0f;
+if ( abs(uv.y - 1.0f/4.0f) < 0.002f ) o = 0.0f;
+
+return make_float3(o, o, o);
+}

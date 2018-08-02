@@ -1,0 +1,10 @@
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+    const float X = p_X;
+
+    const float r = X/(p_Width - 1.0f);
+    const float g = X/(p_Width - 1.0f);
+    const float b = X/(p_Width - 1.0f);
+
+    return make_float3(r, g, b);
+}

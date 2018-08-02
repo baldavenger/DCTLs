@@ -1,0 +1,111 @@
+// CRT DCTL
+
+#define CURVE 2
+#define SCAN 2
+
+__DEVICE__ float2 add(float2 A, float B)
+{
+float2 C;
+C.x = A.x + B;
+C.y = A.y + B;
+return C;
+}
+
+__DEVICE__ float2 add(float2 A, float2 B)
+{
+float2 C;
+C.x = A.x + B.x;
+C.y = A.y + B.y;
+return C;
+}
+
+__DEVICE__ float2 divide(float2 A, float2 B)
+{
+float2 C;
+C.x = A.x / B.x;
+C.y = A.y / B.y;
+return C;
+}
+
+__DEVICE__ float2 minus(float2 A, float B)
+{
+float2 C;
+C.x = A.x - B;
+C.y = A.y - B;
+return C;
+}
+
+__DEVICE__ float2 multi(float2 A, float B)
+{
+float2 C;
+C.x = A.x * B;
+C.y = A.y * B;
+return C;
+}
+
+__DEVICE__ float2 multi(float2 A, float2 B)
+{
+float2 C;
+C.x = A.x * B.x;
+C.y = A.y * B.y;
+return C;
+}
+
+__DEVICE__ float3 multi(float3 A, float B)
+{
+float3 C;
+C.x = A.x * B;
+C.y = A.y * B;
+C.z = A.z * B;
+return C;
+}
+
+__DEVICE__ float2 CRTCurveUV(float2 uv)
+{
+uv = minus(multi(uv, 2.0f), 1.0f);
+float2 offset = divide(make_float2(_fabs(uv.y), _fabs(uv.x)), make_float2( 6.0f, 4.0f ));
+offset = multi(offset, (float)CURVE);
+uv = add(uv, multi(multi(uv, offset),offset));
+uv = add(multi(uv, 0.5f), 0.5f);
+return uv;
+}
+
+__DEVICE__ void DrawVignette(float3 *color, float2 uv)
+{    
+float vignette = uv.x * uv.y * ( 1.0f - uv.x ) * ( 1.0f - uv.y );
+vignette = _saturatef( _powf( 16.0f * vignette, 0.3f ));
+*color = multi(*color, vignette);
+}
+
+__DEVICE__ void DrawScanline(float3 *color, float2 uv, float time)
+{
+float scanline = _saturatef( 0.95f + 0.05f * _cosf( 3.14f * ( uv.y + 0.008f * time ) * (240.0f / SCAN) * 1.0f ));
+float grille = 0.85f + 0.15f * _saturatef( 1.5f * _cosf( 3.14f * uv.x * (640.0f / SCAN) * 1.0f ));    
+*color = multi(*color, scanline * grille * 1.2f);
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{
+float iTime = _tex2D(p_TexR, 500, 500) * 100.0f;
+float X = (float)p_X;
+float Y = (float)(p_Height - p_Y);
+float2 resolution = make_float2((float)p_Width, (float)p_Height);
+float2 uv = make_float2(X / resolution.x, Y / resolution.y);
+
+float R = _tex2D(p_TexR, p_X, p_Y);
+float G = _tex2D(p_TexG, p_X, p_Y);
+float B = _tex2D(p_TexB, p_X, p_Y);
+float3 color = make_float3(R, G, B);
+
+float2 crtUV = CRTCurveUV(uv);
+if ( crtUV.x < 0.0f || crtUV.x > 1.0f || crtUV.y < 0.0f || crtUV.y > 1.0f )
+{
+color = make_float3(0.0f, 0.0f, 0.0f);
+}
+
+DrawVignette(&color, crtUV);
+DrawScanline(&color, uv, iTime);
+
+return color;
+
+}

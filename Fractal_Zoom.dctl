@@ -1,0 +1,117 @@
+// Fractal Zoom DCTL
+
+
+#define AA 			2
+#define start	 	0.78f
+#define end		 	0.65f
+#define speed	 	0.1f
+#define maxiters 	400
+
+
+__DEVICE__ float2 add(float2 A, float2 B)
+{
+float2 C;
+C.x = A.x + B.x;
+C.y = A.y + B.y;
+return C;
+}
+
+__DEVICE__ float dot(float2 A, float2 B)
+{
+float C = A.x * B.x + A.y * B.y;
+return C;
+}
+
+__DEVICE__ float mix(float A, float B, float C)
+{
+float D = A * (1.0f - C) + B * C;
+return D;
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{
+
+//float iTime = _tex2D(p_TexR, 500, 500) / 24.0f;
+float iTime = _tex2D(p_TexR, 500, 500) * 100.0f;
+float X = (float)p_X + 1.0f;
+float Y = (float)(p_Height - p_Y) + 1.0f;
+float2 resolution = make_float2((float)p_Width, (float)p_Height);
+
+float2 offset;
+offset.x = 0.0f;
+offset.y = 0.0f;
+
+float3 col = make_float3(0.0f, 0.0f, 0.0f);
+float t = (iTime * speed) + 2.0f;
+
+#if AA>1
+for( int m=0; m<AA; m++ )
+for( int n=0; n<AA; n++ )
+{
+float2 p;
+p.x = (-resolution.x + 2.0f * (X + float(m) / float(AA))) / resolution.y;
+p.y = (-resolution.y + 2.0f * (Y + float(n) / float(AA))) / resolution.y;
+float w = float(AA * m + n);
+float time = t + 0.5f * (1.0f / 24.0f) * w / float(AA*AA);
+#else    
+float2 p;
+p.x = (-resolution.x + 2.0f * X) / resolution.y;
+p.y = (-resolution.y + 2.0f * Y) / resolution.y;
+float time = t * 0.1f;
+#endif
+float zoo = start + end * _cosf(0.509f * time);
+float coa = _cosf( 0.0055f * (1.0f - zoo) * time );
+float sia = _sinf( 0.0055f * (1.0f - zoo) * time );
+zoo = _powf(zoo, 8.0f);
+float2 xy = make_float2(p.x * coa - p.y * sia, p.x * sia + p.y * coa);
+float clickX = 0.0f;
+float clickY = 0.0f;
+
+if (offset.x != 0.0f) 
+{
+clickX = offset.x * -0.015f * zoo;
+}
+if (offset.y != 0.0f)
+{
+clickY = offset.y * -0.015f * zoo;
+}
+
+float2 c = make_float2(-0.745f + clickX, 0.186f + clickY);
+c.x += xy.x * zoo;
+c.y += xy.y * zoo;
+
+const float B = 256.0f;
+float l = 0.0f; // should be zero 
+float2 z  = make_float2(0.0f, 0.0f);
+for( int i=0; i<maxiters; i++ )
+{
+z = add(make_float2( z.x * z.x - z.y * z.y, 2.0f * z.x * z.y ), c);
+if( dot(z, z) > (B * B) )
+{
+break;
+}
+if ( l  == 1.1f )
+{ 
+l = z.x + z.y;
+}
+l += 1.0f;
+}
+
+float sl = l - _log2f(_log2f(dot(z, z))) + 4.0f; 
+float al = 1.1f;
+l = mix( l, sl, al );
+
+col.x += 0.5f + 0.5f * _cosf( 3.0f + l * 0.15f + 0.0f);
+col.y += 0.5f + 0.5f * _cosf( 3.0f + l * 0.15f + 0.6f);
+col.z += 0.5f + 0.5f * _cosf( 3.0f + l * 0.15f + 1.0f);
+
+#if AA>1
+}
+col.x /= float(AA*AA);
+col.y /= float(AA*AA);
+col.z /= float(AA*AA);
+#endif
+
+return col;
+
+}

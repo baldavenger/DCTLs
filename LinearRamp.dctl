@@ -1,0 +1,35 @@
+// ResolveMath DCTL export
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+
+	float r = p_R;
+	float g = p_G;
+	float b = p_B;
+	float x = p_X;
+	float y = p_Y;
+	int width = p_Width;
+	int height = p_Height;
+
+	float mix = 1.000000f;
+	float param1 = 1.000000f;
+	float param2 = 1.000000f;
+	float param3 = 1.000000f;
+	float param4r = 1.000000f;
+	float param4g = 1.000000f;
+	float param4b = 1.000000f;
+
+	float expr1 = 0.000000f;
+	float expr2 = 0.000000f;
+	float expr3 = 0.000000f;
+
+	float R1 = x / (width - 1);
+	float G1 = x / (width - 1);
+	float B1 = x / (width - 1);
+
+	float R = R1 * mix + r * (1.0 - mix);
+	float G = G1 * mix + g * (1.0 - mix);
+	float B = B1 * mix + b * (1.0 - mix);
+
+	return make_float3(R, G, B);
+}

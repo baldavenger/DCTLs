@@ -1,0 +1,139 @@
+// Infinite 3D Linoleum DCTL
+
+__DEVICE__ float3 ABS(float3 A)
+{
+float3 B;
+B.x = _fabs(A.x);
+B.y = _fabs(A.y);
+B.z = _fabs(A.z);
+return B;
+}
+
+__DEVICE__ float3 minus(float3 A, float B)
+{
+float3 C;
+C.x = A.x - B;
+C.y = A.y - B;
+C.z = A.z - B;
+return C;
+}
+ 
+__DEVICE__ float3 minus(float3 A, float3 B)
+{
+float3 C;
+C.x = A.x - B.x;
+C.y = A.y - B.y;
+C.z = A.z - B.z;
+return C;
+}
+
+__DEVICE__ float3 multi(float3 A, float B)
+{
+float3 C;
+C.x = A.x * B;
+C.y = A.y * B;
+C.z = A.z * B;
+return C;
+}
+
+__DEVICE__ float3 multi(float3 A, float3 B)
+{
+float3 C;
+C.x = A.x * B.x;
+C.y = A.y * B.y;
+C.z = A.z * B.z;
+return C;
+}
+
+__DEVICE__ float length(float3 A)
+{
+float B = _sqrtf(A.x * A.x + A.y * A.y + A.z * A.z);
+return B;
+}
+
+__DEVICE__ float3 fract(float3 A)
+{
+float3 B;
+B.x = A.x - _floor(A.x);
+B.y = A.y - _floor(A.y);
+B.z = A.z - _floor(A.z);
+return B;
+}
+
+__DEVICE__ float3 add(float3 A, float3 B)
+{
+float3 C;
+C.x = A.x + B.x;
+C.y = A.y + B.y;
+C.z = A.z + B.z;
+return C;
+}
+
+__DEVICE__ float3 normalize(float3 A)
+{
+float3 B;
+float C = _sqrtf((A.x * A.x) + (A.y * A.y) + (A.z * A.z));
+B.x = A.x / C;
+B.y = A.y / C;
+B.z = A.z / C;
+return B;
+}
+
+__DEVICE__ float sdBox(float3 p, float3 b)
+{
+float3 d = minus(ABS(p), b);
+return _fminf(_fmaxf(d.x, _fmaxf(d.y, d.z)), 0.0f) + length(make_float3(_fmaxf(d.x, 0.0f), _fmaxf(d.y, 0.0f), _fmaxf(d.z, 0.0f)));
+}
+
+__DEVICE__ float map(float3 p)
+{
+float3 q = minus(multi(fract(p), 2.0f), 1.0f);
+return sdBox(q, make_float3(0.25f, 0.25f, 0.25f)) - 1.0f;
+}
+
+__DEVICE__ float trace(float3 o, float3 r)
+{
+float t = 0.0f;
+for (int i = 0; i < 32; ++i)
+{
+float3 p = add(o, multi(r, t));
+float d = map(p);
+t += d * 0.5f;
+}
+return t;
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{
+float2 uv;
+uv.x = (float)p_X / p_Width;
+uv.y = (float)(p_Height - p_Y) / p_Height;
+uv.x = uv.x * 2.0f - 1.0f;
+uv.y = uv.y * 2.0f - 1.0f;
+uv.x *= (float)p_Width/p_Height;
+
+float iTime = 1.0f + _tex2D(p_TexR, 500, 500) * 10.0f;
+
+float3 r = normalize(make_float3(uv.x, uv.y, 2.0f));
+float the = iTime * 0.25f;
+
+float RX = r.x * _cosf(the) + r.z * -_sinf(the);
+float RZ = r.x * _sinf(the) + r.z * _cosf(the);
+r.x = RX;
+r.z = RZ;
+
+float3 o = make_float3(0.5f, 0.5f, iTime);
+
+float t = trace(o, r);
+
+float fog = 1.0f / (1.0f + t * t * 0.1f);
+
+float3 fc = make_float3(fog * 2.0f, fog * 2.0f, fog * 2.0f);
+
+float3 tint = make_float3(0.9f, 0.5f, 0.2f);
+
+float3 col = multi(fc, tint);
+
+return make_float3(col.x, col.y, col.z);
+
+}

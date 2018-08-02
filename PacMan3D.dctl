@@ -1,0 +1,617 @@
+__DEVICE__ float3 mult_f3_f33(float3 In, float3 A[3])
+{
+float3 out;
+out.x = In.x * A[0].x + In.y * A[0].y + In.z * A[0].z;
+out.y = In.x * A[1].x + In.y * A[1].y + In.z * A[1].z;
+out.z = In.x * A[2].x + In.y * A[2].y + In.z * A[2].z;
+return out;
+}
+
+__DEVICE__ float dot(float2 A, float2 B)
+{
+float C = A.x * B.x + A.y * B.y;
+return C;
+}
+
+__DEVICE__ float dot(float3 A, float3 B)
+{
+float C = A.x * B.x + A.y * B.y + A.z * B.z;
+return C;
+}
+
+__DEVICE__ float sign(float A)
+{
+float B;
+B = A < 0.0f ? -1.0f : A > 0.0f ? 1.0f : 0.0f;
+return B;
+}
+
+__DEVICE__ float step(float A, float B)
+{
+float C;
+C = B < A ? 0.0f : 1.0f;
+return C;
+}
+
+__DEVICE__ float3 sign(float3 A)
+{
+float3 B;
+B.x = A.x < 0.0f ? -1.0f : A.x > 0.0f ? 1.0f : 0.0f;
+B.y = A.y < 0.0f ? -1.0f : A.y > 0.0f ? 1.0f : 0.0f;
+B.z = A.z < 0.0f ? -1.0f : A.z > 0.0f ? 1.0f : 0.0f;
+return B;
+}
+
+__DEVICE__ float3 absolute(float3 A)
+{
+float3 B;
+B.x = _fabs(A.x);
+B.y = _fabs(A.y);
+B.z = _fabs(A.z);
+return B;
+}
+
+__DEVICE__ float3 MAX(float3 A, float B)
+{
+float3 C;
+C.x = _fmaxf(A.x, B);
+C.y = _fmaxf(A.y, B);
+C.z = _fmaxf(A.z, B);
+return C;
+}
+
+__DEVICE__ float3 CLAMP(float3 A, float B, float C)
+{
+float3 D;
+D.x = _clampf(A.x, B, C);
+D.y = _clampf(A.y, B, C);
+D.z = _clampf(A.z, B, C);
+return D;
+}
+
+__DEVICE__ float3 add(float3 A, float B)
+{
+float3 C;
+C.x = A.x + B;
+C.y = A.y + B;
+C.z = A.z + B;
+return C;
+}
+
+__DEVICE__ float3 add(float A, float3 B)
+{
+float3 C;
+C.x = A + B.x;
+C.y = A + B.y;
+C.z = A + B.z;
+return C;
+}
+
+__DEVICE__ float2 add(float2 A, float2 B)
+{
+float2 C;
+C.x = A.x + B.x;
+C.y = A.y + B.y;
+return C;
+}
+
+__DEVICE__ float3 add(float3 A, float3 B)
+{
+float3 C;
+C.x = A.x + B.x;
+C.y = A.y + B.y;
+C.z = A.z + B.z;
+return C;
+}
+
+__DEVICE__ float3 add(float3 A, float3 B, float3 C, float3 D)
+{
+float3 E;
+E.x = A.x + B.x + C.x + D.x;
+E.y = A.y + B.y + C.y + D.y;
+E.z = A.z + B.z + C.z + D.z;
+return E;
+}
+
+__DEVICE__ float2 minus(float2 A, float2 B)
+{
+float2 C;
+C.x = A.x - B.x;
+C.y = A.y - B.y;
+return C;
+}
+
+__DEVICE__ float3 minus(float3 A, float3 B)
+{
+float3 C;
+C.x = A.x - B.x;
+C.y = A.y - B.y;
+C.z = A.z - B.z;
+return C;
+}
+
+__DEVICE__ float3 minus(float3 A, float B)
+{
+float3 C;
+C.x = A.x - B;
+C.y = A.y - B;
+C.z = A.z - B;
+return C;
+}
+
+__DEVICE__ float3 minus(float A, float3 B)
+{
+float3 C;
+C.x = A - B.x;
+C.y = A - B.y;
+C.z = A - B.z;
+return C;
+}
+
+__DEVICE__ float3 multi(float3 A, float B)
+{
+float3 C;
+C.x = A.x * B;
+C.y = A.y * B;
+C.z = A.z * B;
+return C;
+}
+
+__DEVICE__ float3 multi(float A, float3 B)
+{
+float3 C;
+C.x = A * B.x;
+C.y = A * B.y;
+C.z = A * B.z;
+return C;
+}
+
+__DEVICE__ float3 multi(float3 A, float3 B)
+{
+float3 C;
+C.x = A.x * B.x;
+C.y = A.y * B.y;
+C.z = A.z * B.z;
+return C;
+}
+
+__DEVICE__ float3 divide(float3 A, float B)
+{
+float3 C;
+C.x = A.x / B;
+C.y = A.y / B;
+C.z = A.z / B;
+return C;
+}
+
+__DEVICE__ float3 divide(float3 A, float3 B)
+{
+float3 C;
+C.x = A.x / B.x;
+C.y = A.y / B.y;
+C.z = A.z / B.z;
+return C;
+}
+
+__DEVICE__ float fract(float A)
+{
+float B;
+B = A - _floor(A);
+return B;
+}
+
+__DEVICE__ float3 fract(float3 A)
+{
+float3 B;
+B.x = A.x - _floor(A.x);
+B.y = A.y - _floor(A.y);
+B.z = A.z - _floor(A.z);
+return B;
+}
+
+__DEVICE__ float3 FLOOR(float3 A)
+{
+float3 B;
+B.x = _floor(A.x);
+B.y = _floor(A.y);
+B.z = _floor(A.z);
+return B;
+}
+
+__DEVICE__ float3 POW(float3 A, float B)
+{
+float3 C;
+C.x = _powf(A.x, B);
+C.y = _powf(A.y, B);
+C.z = _powf(A.z, B);
+return C;
+}
+
+__DEVICE__ float mix(float A, float B, float C)
+{
+float D = A * (1.0f - C) + B * C;
+return D;
+}
+
+__DEVICE__ float2 mix(float2 A, float2 B, float C)
+{
+float2 D;
+D.x = A.x * (1.0f - C) + B.x * C;
+D.y = A.y * (1.0f - C) + B.y * C;
+return D;
+}
+
+__DEVICE__ float3 mix(float3 A, float3 B, float C)
+{
+float3 D;
+D.x = A.x * (1.0f - C) + B.x * C;
+D.y = A.y * (1.0f - C) + B.y * C;
+D.z = A.z * (1.0f - C) + B.z * C;
+return D;
+}
+
+__DEVICE__ float length(float2 A)
+{
+float B = _sqrtf(A.x * A.x + A.y * A.y);
+return B;
+}
+
+__DEVICE__ float length(float3 A)
+{
+float B = _sqrtf(A.x * A.x + A.y * A.y + A.z * A.z);
+return B;
+}
+
+__DEVICE__ float smoothstep(float edge0, float edge1, float x)
+{
+float t = _saturatef((x - edge0) / (edge1 - edge0));
+return t * t * (3.0f - 2.0f * t);
+}
+
+__DEVICE__ float3 normalize(float3 A)
+{
+float3 B;
+float C = _sqrtf((A.x * A.x) + (A.y * A.y) + (A.z * A.z));
+B.x = A.x / C;
+B.y = A.y / C;
+B.z = A.z / C;
+return B;
+}
+
+__DEVICE__ float3 reflect(float3 A, float3 B)
+{
+float3 C;
+C.x = A.x - 2.0f * dot(B, A) * B.x;
+C.y = A.y - 2.0f * dot(B, A) * B.y;
+C.z = A.z - 2.0f * dot(B, A) * B.z;
+return C;
+}
+
+__DEVICE__ float3 COS(float3 A)
+{
+float3 B;
+B.x = _cosf(A.x);
+B.y = _cosf(A.y);
+B.z = _cosf(A.z);
+return B;
+}
+
+// Parameters
+#define VOXEL_RESOLUTION	1.5f
+#define VOXEL_LIGHTING
+#define SHADOW
+#define GROUND
+#define GHOST
+#define MOUSE
+
+#define HSV2RGB_SAFE
+//#define HSV2RGB_FAST
+
+//#define SPOOKY
+
+#define CAMERA_FOCAL_LENGTH	2.0f
+#define DELTA				0.01f
+#define RAY_LENGTH_MAX		500.0f
+#define RAY_STEP_MAX		100.0f
+#define AMBIENT				0.2f
+#define SPECULAR_POWER		2.0f
+#define SPECULAR_INTENSITY	0.3f
+#define SHADOW_LENGTH		150.0f
+#define SHADOW_POWER		3.0f
+#define FADE_POWER			1.0f
+#define BACKGROUND			0.7f
+#define GLOW				0.4f
+#define GAMMA				0.8f
+
+// Math constants
+#define PI		3.14159265359f
+#define SQRT3	1.73205080757f
+
+__DEVICE__ float rand(float3 seed)
+{
+	seed = fract(multi(seed, make_float3(5.3983f, 5.4427f, 6.9371f)));
+	seed = add(seed, dot(make_float3(seed.y, seed.z, seed.x), add(seed, make_float3(21.5351f, 14.3137f, 15.3219f))));
+	return fract(seed.x * seed.y * seed.z * 95.4337f);
+}
+
+__DEVICE__ float distVoxel(float3 p, float *glowCounter)
+{
+
+	// Update the glow counter
+	++*glowCounter;
+	
+	// Rounded box
+	const float voxelRadius = 0.25f;
+	return length(MAX(add(absolute(p), - 0.5f + voxelRadius), 0.0f)) - voxelRadius;
+}
+
+__DEVICE__ float2 distScene(float3 p, float3 *P, float iTime, float *glowCounter)
+{
+	
+	// Update the glow counter
+	++*glowCounter;
+	
+	// Scaling
+	p = multi(p, VOXEL_RESOLUTION);
+	
+	// Velocity, period of the waves, spacing of the sweets
+	float v = VOXEL_RESOLUTION * _floor(iTime * 100.0f / VOXEL_RESOLUTION);
+	float k1 = 0.05f;
+	float k2 = 60.0f;
+
+	// Giant Pac-Man
+	float body = length(p);
+	body = _fmaxf(body - 32.0f, 27.0f - body);
+	float eyes = 6.0f - length(make_float3(_fabs(p.x) - 12.5f, p.y - 19.5f, p.z - 20.0f));
+	float mouthAngle = PI * (0.07f + 0.07f * _cosf(2.0f * v * PI / k2));
+	float mouthTop = dot(p, make_float3(0.0f, -_cosf(mouthAngle), _sinf(mouthAngle))) - 2.0f;
+	mouthAngle *= 2.5f;
+	float mouthBottom = dot(p, make_float3(0.0f, _cosf(mouthAngle), _sinf(mouthAngle)));
+	float pacMan = _fmaxf(_fmaxf(body, eyes), _fminf(mouthTop, mouthBottom));
+	float2 d = make_float2(pacMan, 0.13f);
+	*P = p;
+	
+	// Sweets
+	float3 q = make_float3(p.x, p.y, _fmod(p.z + v, k2) - k2 * 0.5f);
+	float gum = _fmaxf(length(q) - 6.0f, -p.z);
+	if (gum < d.x) {
+		d = make_float2(gum, 0.35f);
+		*P = q;
+	}
+	
+	// Ground
+	#ifdef GROUND
+	q = make_float3(p.x, p.y, p.z + v);
+	float ground = (q.y + 50.0f + 14.0f * _cosf(q.x * k1) * _cosf(q.z * k1)) * 0.7f;
+	if (ground < d.x) {
+		d = make_float2(ground, 0.55f);
+		*P = q;
+	}
+	#endif
+
+	// Ghost
+	#ifdef GHOST
+	v = VOXEL_RESOLUTION * _floor((130.0f + 60.0f * _cosf(iTime * 3.0f)) / VOXEL_RESOLUTION);
+	q = make_float3(p.x, p.y, p.z + v);
+	body = length(make_float3(q.x, _fmaxf(q.y - 4.0f, 0.0f), q.z));
+	body = _fmaxf(body - 28.0f, 22.0f - body);
+	eyes = 8.0f - length(make_float3(_fabs(q.x) - 12.0f, q.y - 10.0f, q.z - 22.0f));
+	float bottom = (q.y + 28.0f + 4.0f * _cosf(p.x * 0.4f) * _cosf(p.z * 0.4f)) * 0.7f;
+	float ghost = _fmaxf(_fmaxf(body, eyes), -bottom);
+	if (ghost < d.x) {
+		d = make_float2(ghost, 0.76f);
+		*P = q;
+	}
+	#endif
+	
+	// Scaling
+	d.x /= VOXEL_RESOLUTION;
+	return d;
+}
+
+// Distance to the (voxelized) scene
+__DEVICE__ float4 dist(float3 *p, float3 ray, float voxelized, float rayLengthMax, float iTime, float* glowCounter)
+{
+	float3 P = *p;
+	float2 d = make_float2(1.0f / 0.0f, 0.0f);
+    float rayLength = 0.0f;
+	float rayLengthInVoxel = 0.0f;
+	float rayLengthCheckVoxel = 0.0f;
+	float3 raySign = sign(ray);
+	float3 rayDeltaVoxel = divide(raySign, ray);
+	for (float rayStep = 0.0f; rayStep < RAY_STEP_MAX; ++rayStep) {
+		if (rayLength < rayLengthInVoxel) {
+			d.x = distVoxel(minus(fract(add(*p, 0.5f)), 0.5f), glowCounter);
+			if (d.x < DELTA) {
+				break;
+			}
+		} else if (rayLength < rayLengthCheckVoxel) {
+			float3 rayDelta = multi(minus(0.5f, multi(raySign, (minus(fract(add(*p, 0.5f)), 0.5f)))), rayDeltaVoxel);
+			float dNext = _fminf(rayDelta.x, _fminf(rayDelta.y, rayDelta.z));
+			d = distScene (FLOOR(add(*p, 0.5f)), &P, iTime, glowCounter);
+			if (d.x < 0.0f) {
+				rayDelta = minus(rayDeltaVoxel, rayDelta);
+				d.x = _fmaxf(rayLengthInVoxel - rayLength, DELTA - _fminf(rayDelta.x, _fminf(rayDelta.y, rayDelta.z)));
+				rayLengthInVoxel = rayLength + dNext;
+			} else {
+				d.x = DELTA + dNext;
+			}
+		} else {
+			d = distScene(*p, &P, iTime, glowCounter);
+			if (voxelized > 0.5f) {
+				if (d.x < SQRT3 * 0.5f) {
+					rayLengthCheckVoxel = rayLength + _fabs(d.x) + SQRT3 * 0.5f;
+					d.x = _fmaxf(rayLengthInVoxel - rayLength + DELTA, d.x - SQRT3 * 0.5f);
+				}
+			} else if (d.x < DELTA) {
+				break;
+			}
+		}
+		rayLength += d.x;
+		if (rayLength > rayLengthMax) {
+			break;
+		}
+		*p = add(*p, multi(d.x, ray));
+    }
+	return make_float4(d.x, d.y, rayLength, rand(P));
+}
+
+// Normal at a given point
+__DEVICE__ float3 normal (float3 p, float voxelized, float iTime, float *glowCounter)
+{
+	float2 h = make_float2(DELTA, -DELTA);
+	float3 n;
+	if (voxelized > 0.5f) {
+		p = minus(fract(add(p, 0.5f)), 0.5f);
+		n = add(multi(make_float3(h.x, h.x, h.x), distVoxel(add(p, make_float3(h.x, h.x, h.x)), glowCounter)),
+			multi(make_float3(h.x, h.y, h.y), distVoxel(add(p, make_float3(h.x, h.y, h.y)), glowCounter)),
+			multi(make_float3(h.y, h.x, h.y), distVoxel(add(p, make_float3(h.y, h.x, h.y)), glowCounter)),
+			multi(make_float3(h.y, h.y, h.x), distVoxel(add(p, make_float3(h.y, h.y, h.x)), glowCounter)));
+			} else {
+		n = add(multi(make_float3(h.x, h.x, h.x), distScene(add(p, make_float3(h.x, h.x, h.x)), &n, iTime, glowCounter).x),
+			multi(make_float3(h.x, h.y, h.y), distScene(add(p, make_float3(h.x, h.y, h.y)), &n, iTime, glowCounter).x),
+			multi(make_float3(h.y, h.x, h.y), distScene(add(p, make_float3(h.y, h.x, h.y)), &n, iTime, glowCounter).x),
+			multi(make_float3(h.y, h.y, h.x), distScene(add(p, make_float3(h.y, h.y, h.x)), &n, iTime, glowCounter).x));
+	}
+	return normalize(n);
+}
+
+// HSV to RGB
+__DEVICE__ float3 hsv2rgb(float3 hsv)
+{
+	#ifdef HSV2RGB_SAFE
+	hsv.y = _saturatef(hsv.y);
+	hsv.z = _saturatef(hsv.z);
+	#endif
+	#ifdef HSV2RGB_FAST
+	float X = hsv.z * (1.0f + 0.5f * hsv.y * (_cosf(2.0f * PI * (hsv.x + 0.0f)) - 1.0f));
+	float Y = hsv.z * (1.0f + 0.5f * hsv.y * (_cosf(2.0f * PI * (hsv.x + 2.0f / 3.0f)) - 1.0f));
+	float Z = hsv.z * (1.0f + 0.5f * hsv.y * (_cosf(2.0f * PI * (hsv.x + 1.0f / 3.0f)) - 1.0f));
+	return make_float3(X, Y, Z);
+	#else
+	float X1 = hsv.z * (1.0f + hsv.y * _clampf(_fabs(fract(hsv.x + 0.0f) * 6.0f - 3.0f) - 2.0f, -1.0, 0.0f));
+	float Y1 = hsv.z * (1.0f + hsv.y * _clampf(_fabs(fract(hsv.x + 2.0f / 3.0f) * 6.0f - 3.0f) - 2.0f, -1.0, 0.0f));
+	float Z1 = hsv.z * (1.0f + hsv.y * _clampf(_fabs(fract(hsv.x + 1.0f / 3.0f) * 6.0f - 3.0f) - 2.0f, -1.0, 0.0f));
+	return make_float3(X1, Y1, Z1);
+	#endif
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{
+ 	//float iTime = _tex2D(p_TexR, 500, 500) / 24.0f;
+ 	float iTime = 1.0f + _tex2D(p_TexR, 500, 500) * 5.0f;
+	p_Y = p_Height - p_Y;
+	
+	float2 frag;
+	frag.x = (2.0f * p_X - p_Width) / p_Height;
+	frag.y = (2.0f * p_Y - p_Height) / p_Height;
+	frag.x *= -1.0f;
+	
+	// Define the rendering mode
+	float modeTiming = iTime * 0.234f;
+	float modeAngle = PI * _cosf(iTime * 0.2f);
+	modeAngle = dot(minus(frag, make_float2(_cosf(iTime * 2.0f), 0.0f)), make_float2(_cosf(modeAngle), _sinf(modeAngle)));
+	
+	float modeVoxel = step(0.5f, fract(modeTiming / (4.0f * PI)));
+	modeTiming = _cosf(modeTiming);
+	
+	float mode3D = smoothstep(0.8f, 0.5f, modeTiming);
+	float modeSwitch = smoothstep(0.995f, 1.0f, modeTiming) + smoothstep(0.02f, 0.0f, _fabs(modeAngle)) * (1.0f - modeVoxel);
+	modeVoxel += step(0.0f, modeAngle) * (1.0f - modeVoxel);
+	
+	// Define the ray corresponding to this fragment
+	float3 ray = normalize(make_float3(frag.x, frag.y, mix(8.0f, CAMERA_FOCAL_LENGTH, mode3D)));
+
+	// Compute the orientation of the camera
+	float yawAngle = PI * (1.2f + 0.2f * _cosf(iTime * 0.5f));
+	float pitchAngle = PI * (0.1f * _cosf(iTime * 0.3f) - 0.05f);
+	
+	#ifdef MOUSE
+	yawAngle += 4.0 * PI * 0.0f / p_Width;
+	pitchAngle += PI * 0.3 * (1.0 - 50.0f / p_Height);
+	#endif
+	
+	yawAngle = mix(PI * 1.5f, yawAngle, mode3D);
+	pitchAngle *= mode3D;
+
+	float cosYaw = _cosf(yawAngle);
+	float sinYaw = _sinf(yawAngle);
+	float cosPitch = _cosf(pitchAngle);
+	float sinPitch = _sinf(pitchAngle);
+
+	float3 cameraOrientation[3];
+	cameraOrientation[0] = make_float3(cosYaw, 0.0f, -sinYaw);
+	cameraOrientation[1] = make_float3(sinYaw * sinPitch, cosPitch, cosYaw * sinPitch);
+	cameraOrientation[2] = make_float3(sinYaw * cosPitch, -sinPitch, cosYaw * cosPitch);
+	
+    ray = mult_f3_f33(ray, cameraOrientation);
+
+	// Compute the origin of the ray
+	float cameraDist = mix(300.0f, 95.0f + 50.0f * _cosf(iTime * 0.8f), mode3D);
+	
+	float origin1 = (cameraOrientation[2].x * cameraDist) /  VOXEL_RESOLUTION;
+	float origin2 = (0.0f - cameraOrientation[2].y * cameraDist) /  VOXEL_RESOLUTION;
+	float origin3 = (_sinf(iTime * 0.2f) - cameraOrientation[2].z * cameraDist) /  VOXEL_RESOLUTION;
+	float3 origin = make_float3(origin1, origin2, origin3);
+	
+	// Compute the distance to the scene
+	float glowCounter = 0.0f;
+	float4 d = dist(&origin, ray, modeVoxel, RAY_LENGTH_MAX / VOXEL_RESOLUTION, iTime, &glowCounter);
+
+	// Set the background color
+	float3 finalColor = hsv2rgb(make_float3(0.2f * ray.y + 0.4f * modeVoxel - 0.37f, 1.0f, 1.0f + mode3D * BACKGROUND));
+	float3 glowColor = multi(make_float3(1.0f, 0.3f, 0.0f), GLOW * glowCounter / RAY_STEP_MAX);
+	
+	if (d.x < DELTA) {
+
+	// Set the object color
+	float3 color = hsv2rgb(make_float3(d.y + 0.1f * d.w * modeVoxel, 0.5f + 0.5f * modeVoxel, 1.0f));
+	
+	// Lighting
+	float3 l = normalize(mix(make_float3(1.0f, 0.0f, 0.0f), make_float3(1.25f + _cosf(iTime * 0.2f), 1.0f, 1.0f), mode3D));
+	#ifdef VOXEL_LIGHTING
+	if (modeVoxel > 0.5f) {
+		float3 n = normal(FLOOR(add(origin, 0.5f)), 0.0f, iTime, &glowCounter);
+		float diffuse = _fmaxf(0.0f, dot(n, l));
+		float specular = _powf(_fmaxf(0.0f, dot (reflect(ray, n), l)), SPECULAR_POWER) * SPECULAR_INTENSITY;
+		color = add(multi((AMBIENT + diffuse), color), specular);
+	}
+	#endif
+	float3 n = normal(origin, modeVoxel, iTime, &glowCounter);
+	float diffuse = dot(n, l);
+	float specular;
+	if (diffuse < 0.0f) {
+		diffuse = 0.0f;
+		specular = 0.0f;
+	} else {
+		specular = _powf(_fmaxf(0.0f, dot(reflect(ray, n), l)), SPECULAR_POWER) * SPECULAR_INTENSITY;
+	#ifdef SHADOW
+		origin = add(origin, multi(n, DELTA * 2.0f));
+		float4 shadow = dist(&origin, l, modeVoxel, SHADOW_LENGTH / VOXEL_RESOLUTION, iTime, &glowCounter);
+		if (shadow.x < DELTA) {
+			shadow.z = _powf(_fminf(1.0f, shadow.z * VOXEL_RESOLUTION / SHADOW_LENGTH), SHADOW_POWER);
+			diffuse *= shadow.z;
+			specular *= shadow.z;
+		}
+	#endif
+	}
+	color = add(multi((AMBIENT + diffuse), color), specular);
+
+	// Fading
+	float fade = _powf(_fmaxf(0.0f, 1.0f - d.z * VOXEL_RESOLUTION / RAY_LENGTH_MAX), FADE_POWER);
+	finalColor = mix(finalColor, color, fade);
+	}
+
+	// Set the fragment color	
+	finalColor = mix(add(POW(finalColor, GAMMA), glowColor), make_float3(1.0f, 1.0f, 1.0f), modeSwitch);
+	
+	#ifdef SPOOKY
+	glowCounter *= 0.01f;
+	finalColor.x = glowCounter;
+	finalColor.y = glowCounter;
+	finalColor.z = glowCounter;
+	#endif
+	
+	return make_float3(finalColor.x, finalColor.y, finalColor.z);
+
+}

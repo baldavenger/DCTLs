@@ -1,0 +1,29 @@
+// Noise decay DCTL
+
+__DEVICE__ float fract(float A)
+{
+float B;
+B = A - _floor(A);
+return B;
+}
+
+__DEVICE__ float rand(float2 x)
+{
+return fract(_sinf(x.x * x.y * 100000.0f) * 100000.0f);
+}
+	 
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{
+
+//float iTime = 1.0f + _tex2D(p_TexR, 500, 500) / 24.0f;
+float iTime = _tex2D(p_TexR, 500, 500) * 100.0f;
+
+float X = (float)p_X + 1.0f;
+float Y = (float)(p_Height - p_Y) + 1.0f;
+float2 resolution = make_float2((float)p_Width, (float)p_Height);
+float2 position = make_float2(X/resolution.x, Y/resolution.y);
+	
+float c = fract(rand(position) + iTime * 0.1f); 
+return make_float3(c, c, c);
+
+}

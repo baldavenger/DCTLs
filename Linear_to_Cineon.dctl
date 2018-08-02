@@ -1,0 +1,14 @@
+// Linear to Cineon
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+
+    const float r = (((_log10f(p_R * (1 -.0108) + .0108)) * 300) + 685) / 1023;
+
+    const float g = (((_log10f(p_G * (1 -.0108) + .0108)) * 300) + 685) / 1023;
+
+    const float b = (((_log10f(p_B * (1 -.0108) + .0108)) * 300) + 685) / 1023;
+
+    return make_float3(r, g, b);
+
+}

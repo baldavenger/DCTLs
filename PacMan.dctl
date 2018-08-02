@@ -1,0 +1,36 @@
+// PacMan DCTL
+
+__DEVICE__ float length(float2 A)
+{
+float B = _sqrtf(A.x * A.x + A.y * A.y);
+return B;
+}
+
+__DEVICE__ float2 minus(float2 A, float2 B)
+{
+float2 C;
+C.x = A.x - B.x;
+C.y = A.y - B.y;
+return C;
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{ 
+
+float2 f;
+f.x = (float)p_X / p_Width;
+f.y = (float)p_Y / p_Width;
+f.y -= 0.281f;
+float t = _tex2D(p_TexR, 500, 500);
+
+float2 p;
+p.x = f.x - _fmod(t / 2.0f, 1.4f) - 0.2f;
+p.y = f.y;
+float C1 = length(p) < 0.16f 
+&& length(minus(p, make_float2(0.0f, -0.08f))) > 0.025f 
+&& _fabs(_atan2f(p.y, p.x)) > _fabs(_cosf(t * 10.0f)) * 0.8f 
+|| length(make_float2(_fmod(f.x, 0.125f) - 0.062f, f.y)) < 0.018f && p.x > 0.0f ? 1.0f : 0.0f;
+
+return make_float3(C1, C1, 0.2f);
+
+}

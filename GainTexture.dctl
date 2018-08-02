@@ -1,0 +1,8 @@
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{
+    const float r = _tex2D(p_TexR, p_X, p_Y) * 2.0f;
+    const float g = _tex2D(p_TexG, p_X, p_Y) * 2.0f;
+    const float b = _tex2D(p_TexB, p_X, p_Y) * 2.0f;
+
+    return make_float3(r, g, b);
+}

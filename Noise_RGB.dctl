@@ -1,0 +1,75 @@
+// Noise RGB fast DCTL
+
+#define RGB_NOISE // disable for monochromatic noise
+
+__DEVICE__ float dot(float2 A, float2 B)
+{
+float C = A.x * B.x + A.y * B.y;
+return C;
+}
+
+__DEVICE__ float fract(float A)
+{
+float B;
+B = A - _floor(A);
+return B;
+}
+
+__DEVICE__ float2 multi(float2 A, float B)
+{
+float2 C;
+C.x = A.x * B;
+C.y = A.y * B;
+return C;
+}
+
+__DEVICE__ float mix(float A, float B, float C)
+{
+float D = A * (1.0f - C) + B * C;
+return D;
+}
+
+__DEVICE__ float rand(float x)
+{
+return fract(_sinf(x) * 100000.0f);
+}
+
+__DEVICE__ float func(float x)
+{
+return rand(_floor(x));
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{
+
+//float iTime = 1.0f + _tex2D(p_TexR, 500, 500) / 24.0f;
+float iTime = _tex2D(p_TexR, 500, 500) * 20.0f;
+
+float X = (float)p_X + 1.0f;
+float Y = (float)(p_Height - p_Y) + 1.0f;
+float2 resolution = make_float2((float)p_Width, (float)p_Height);
+float2 position = make_float2(X/resolution.x, Y/resolution.y);
+
+float x = position.x * position.y * 100000.0f + iTime;
+
+float f = fract(x);
+float i = _floor(x);
+
+x *= 100.0f;
+
+#ifdef RGB_NOISE
+
+float r, g, b;
+r = rand(x);
+g = rand(x * iTime);
+b = rand(x + iTime);
+return make_float3(r, g, b);
+
+#else
+
+float r = rand(x);
+return make_float3(r, r, r);
+
+#endif
+
+}

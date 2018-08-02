@@ -1,0 +1,15 @@
+// Luminance Mask
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+    const float L = (p_R * 0.2126f) + (p_G * 0.7152f) + (p_B * 0.0722f);
+
+    const float r = (L) < 0 ? 0 : ((L) > 1 ? 1  - (((L) - 1) / 0.33f) : (L));
+    
+    const float g = (L) < 0 ? 0 : ((L) > 1 ? 1  - (((L) - 1) / 0.33f) : (L));
+ 
+    const float b = (L) < 0 ? 0 : ((L) > 1 ? 1  - (((L) - 1) / 0.33f) : (L));
+
+    return make_float3(r, g, b);
+}
+

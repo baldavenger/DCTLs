@@ -1,0 +1,158 @@
+// Key Of Solomon DCTL
+
+__CONSTANT__ float PI = 3.14159265359f;
+
+__DEVICE__ float length(float2 A)
+{
+float B = _sqrtf(A.x * A.x + A.y * A.y);
+return B;
+}
+
+__DEVICE__ float2 minus(float2 A, float2 B)
+{
+float2 C;
+C.x = A.x - B.x;
+C.y = A.y - B.y;
+return C;
+}
+
+__DEVICE__ float2 rotate(float2 p, float rad) {
+    float P1 = p.x * _cosf(rad) + p.y * _sinf(rad);
+    float P2 = p.x * -_sinf(rad) + p.y * _cosf(rad);
+    return make_float2(P1, P2);
+}
+
+__DEVICE__ float2 translate(float2 p, float2 diff) {
+    return make_float2(p.x - diff.x, p.y - diff.y);
+}
+
+__DEVICE__ float2 scale(float2 p, float r) {
+    return make_float2(p.x * r, p.y * r);
+}
+
+__DEVICE__ float circle(float pre, float2 p, float r1, float r2, float power) {
+    float leng = length(p);
+    if (r1<leng && leng<r2) pre = 0.0f;
+    float d = _fminf(_fabs(leng-r1), _fabs(leng-r2));
+    float res = power / d;
+    return _clampf(pre + res, 0.0f, 1.0f);
+}
+
+__DEVICE__ float rectangle(float pre, float2 p, float2 half1, float2 half2, float power) {
+    p = make_float2(_fabs(p.x), _fabs(p.y));
+    if ((half1.x < p.x || half1.y < p.y) && (p.x < half2.x && p.y < half2.y)) {
+        pre = _fmaxf(0.01f, pre);
+    }
+    float dx1 = (p.y < half1.y) ? _fabs(half1.x - p.x) : length(minus(p, half1));
+    float dx2 = (p.y < half2.y) ? _fabs(half2.x - p.x) : length(minus(p, half2));
+    float dy1 = (p.x < half1.x) ? _fabs(half1.y - p.y) : length(minus(p, half1));
+    float dy2 = (p.x < half2.x) ? _fabs(half2.y - p.y) : length(minus(p, half2));
+    float d = _fminf(_fminf(dx1, dx2), _fminf(dy1, dy2));
+    float res = power / d;
+	
+    return _clampf(pre + res, 0.0f, 1.0f);
+}
+
+__DEVICE__ float radiation(float pre, float2 p, float r1, float r2, int num, float power) {
+    float angle = 2.0f * PI / float(num);
+    float d = 1e10;
+    for(int i=0; i<360; i++) {
+        if (i>=num) break;
+        float _d = (r1 < p.y && p.y < r2) ? 
+            _fabs(p.x) : 
+        	_fminf(length(minus(p, make_float2(0.0f, r1))), length(minus(p, make_float2(0.0f, r2))));
+        d = _fminf(d, _d);
+        p = rotate(p, angle);
+    }
+    float res = power / d;
+    return _clampf(pre + res, 0.0f, 1.0f);
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{
+	float iGlobalTime = _tex2D(p_TexR, 500, 500) * 100 + 10.0f;
+	float2 p;
+	p.x = (float)(p_Width - p_X * 2) / 1000;
+	p.y = (float)(p_Height - p_Y * 2) / 1000;
+	
+	float dest = 0.0f;
+    p = scale(p, _sinf(PI * iGlobalTime / 10.0f) * 0.02f + 1.1f);
+    {
+        float2 q = p;
+        q = rotate(q, iGlobalTime * PI / 6.0f);
+        dest = circle(dest, q, 0.85f, 0.9f, 0.006f);
+        dest = radiation(dest, q, 0.87f, 0.88f, 36, 0.0008f);
+    }
+    {
+        float2 q = p;
+        q = rotate(q, iGlobalTime * PI / 6.0f);
+        const int n = 6;
+        float angle = PI / float(n);
+        q = rotate(q, _floor(_atan2f(q.x, q.y)/angle + 0.5f) * angle);
+        for(int i=0; i<n; i++) {
+            dest = rectangle(dest, q, make_float2(0.85f / _sqrtf(2.0f), 0.85f / _sqrtf(2.0f)), make_float2(0.85f / _sqrtf(2.0f), 0.85f / _sqrtf(2.0f)), 0.0015f);
+            q = rotate(q, angle);
+        }
+    }
+    {
+        float2 q = p;
+        q = rotate(q, iGlobalTime * PI / 6.0f);
+        const int n = 12;
+        q = rotate(q, 2.0f * PI / float(n) / 2.0f);
+        float angle = 2.0f * PI / float(n);
+        for(int i=0; i<n; i++) {
+            dest = circle(dest, minus(q, make_float2(0.0f, 0.875f)), 0.001f, 0.05f, 0.004f);
+            dest = circle(dest, minus(q, make_float2(0.0f, 0.875f)), 0.001f, 0.001f, 0.008f);
+            q = rotate(q, angle);
+        }
+    }
+    {
+        float2 q = p;
+        dest = circle(dest, q, 0.5f, 0.55f, 0.002f);
+    }
+    {
+        float2 q = p;
+        q = rotate(q, -iGlobalTime * PI / 6.0f);
+        const int n = 3;
+        float angle = PI / float(n);
+        q = rotate(q, _floor(_atan2f(q.x, q.y) / angle + 0.5f) * angle);
+        for(int i=0; i<n; i++) {
+            dest = rectangle(dest, q, make_float2(0.36f, 0.36f), make_float2(0.36f, 0.36f), 0.0015f);
+            q = rotate(q, angle);
+        }
+    }
+    {
+        float2 q = p;
+        q = rotate(q, -iGlobalTime * PI / 6.0f);
+        const int n = 12;
+        q = rotate(q, 2.0f * PI / float(n) / 2.0f);
+        float angle = 2.0f * PI / float(n);
+        for(int i=0; i<n; i++) {
+            dest = circle(dest, minus(q, make_float2(0.0f, 0.53f)), 0.001f, 0.035f, 0.004f);
+            dest = circle(dest, minus(q, make_float2(0.0f, 0.53f)), 0.001f, 0.001f, 0.001f);
+            q = rotate(q, angle);
+        }
+    }
+    {
+        float2 q = p;
+        q = rotate(q, iGlobalTime * PI / 6.0f);
+        dest = radiation(dest, q, 0.25f, 0.3f, 12, 0.005f);
+    }
+    {
+        float2 q = p;
+    	q = scale(q, _sinf(PI * iGlobalTime / 1.0f) * 0.04f + 1.1f);
+        q = rotate(q, -iGlobalTime * PI / 6.0f);
+        for(float i=0.0f; i<6.0f; i++) {
+            float r = 0.13f - i * 0.01f;
+            q = translate(q, make_float2(0.1f, 0.0f));
+        	dest = circle(dest, q, r, r, 0.002f);
+        	q = translate(q, make_float2(-0.1f, 0.0f));
+        	q = rotate(q, -iGlobalTime * PI / 12.0f);
+        }
+        dest = circle(dest, q, 0.04f, 0.04f, 0.004f);
+    }
+    float C = _powf(dest, 2.5f); //glow
+    
+    return make_float3(C, C * 0.95f, C * 0.8f);
+
+}

@@ -1,0 +1,823 @@
+// Palantir DCTL
+
+
+#define PI 					3.14159265359f
+#define FAR 				20.0f
+#define EPS 				0.005f
+
+#define SPHERE_EXTERIOR 	1.0f
+#define SPHERE_INTERIOR 	2.0f
+#define FLOOR 				3.0f
+#define SR 					0.2f
+
+#define CA 					make_float3(0.5f, 0.5f, 0.5f)
+#define CB 					make_float3(0.5f, 0.5f, 0.5f)
+#define CC 					make_float3(1.0f, 1.0f, 1.0f)
+#define CD 					make_float3(0.0f, 0.33f, 0.67f)
+
+__DEVICE__ float T;
+
+#define CT 					T/14.0f
+
+__CONSTANT__ float4 sphere = {0.0f, 0.0f, 0.0f, 1.0f};
+
+typedef struct
+{
+float t;
+float id;
+float3 n;
+float stn;
+float stf;
+} Scene;
+
+__DEVICE__ Scene make_scene(float A, float B, float3 C, float D, float E)
+{
+Scene F;
+F.t = A;
+F.id = B;
+F.n = C;
+F.stn = D;
+F.stf = E;
+return F;
+}
+
+typedef struct
+{
+float2 c0, c1;
+} mat2;
+
+__DEVICE__ mat2 make_mat2(float2 A, float2 B)
+{
+mat2 C;
+C.c0 = A;
+C.c1 = B;
+return C;
+}
+
+__DEVICE__ mat2 transpose(mat2 A)
+{
+mat2 B;
+B.c0 = make_float2(A.c0.x, A.c1.x);
+B.c1 = make_float2(A.c0.y, A.c1.y);
+return B;
+}
+
+__DEVICE__ float2 multi(float2 In, mat2 N)
+{
+float2 out;
+out.x = In.x * N.c0.x + In.y * N.c0.y;
+out.y = In.x * N.c1.x + In.y * N.c1.y;
+return out;
+}
+
+__DEVICE__ float3 abs(float3 A)
+{
+float3 B;
+B.x = _fabs(A.x);
+B.y = _fabs(A.y);
+B.z = _fabs(A.z);
+return B;
+}
+
+__DEVICE__ float2 add(float2 A, float2 B)
+{
+float2 C;
+C.x = A.x + B.x;
+C.y = A.y + B.y;
+return C;
+}
+
+__DEVICE__ float3 add(float3 A, float B)
+{
+float3 C;
+C.x = A.x + B;
+C.y = A.y + B;
+C.z = A.z + B;
+return C;
+}
+
+__DEVICE__ float3 add(float3 A, float3 B)
+{
+float3 C;
+C.x = A.x + B.x;
+C.y = A.y + B.y;
+C.z = A.z + B.z;
+return C;
+}
+
+__DEVICE__ float3 add(float3 A, float3 B, float3 C)
+{
+float3 D;
+D.x = A.x + B.x + C.x;
+D.y = A.y + B.y + C.y;
+D.z = A.z + B.z + C.z;
+return D;
+}
+
+__DEVICE__ float3 add(float3 A, float3 B, float3 C, float3 D)
+{
+float3 E;
+E.x = A.x + B.x + C.x + D.x;
+E.y = A.y + B.y + C.y + D.y;
+E.z = A.z + B.z + C.z + D.z;
+return E;
+}
+
+__DEVICE__ float3 add(float3 A, float3 B, float3 C, float3 D, float3 E)
+{
+float3 F;
+F.x = A.x + B.x + C.x + D.x + E.x;
+F.y = A.y + B.y + C.y + D.y + E.y;
+F.z = A.z + B.z + C.z + D.z + E.z;
+return F;
+}
+
+__DEVICE__ float3 add(float3 A, float3 B, float3 C, float3 D, float3 E, float3 F)
+{
+float3 G;
+G.x = A.x + B.x + C.x + D.x + E.x + F.x;
+G.y = A.y + B.y + C.y + D.y + E.y + F.y;
+G.z = A.z + B.z + C.z + D.z + E.z + F.z;
+return G;
+}
+
+__DEVICE__ float4 add(float4 A, float B)
+{
+float4 C;
+C.x = A.x + B;
+C.y = A.y + B;
+C.z = A.z + B;
+C.w = A.w + B;
+return C;
+}
+
+__DEVICE__ float3 cos(float3 A)
+{
+float3 B;
+B.x = _cosf(A.x);
+B.y = _cosf(A.y);
+B.z = _cosf(A.z);
+return B;
+}
+
+__DEVICE__ float3 cross(float3 A, float3 B)
+{
+float3 C;
+C.x = A.y * B.z - A.z * B.y;
+C.y = A.z * B.x - A.x * B.z;
+C.z = A.x * B.y - A.y * B.x;
+return C;
+}
+
+__DEVICE__ float2 divide(float2 A, float B)
+{
+float2 C;
+C.x = A.x / B;
+C.y = A.y / B;
+return C;
+}
+
+__DEVICE__ float3 divide(float3 A, float B)
+{
+float3 C;
+C.x = A.x / B;
+C.y = A.y / B;
+C.z = A.z / B;
+return C;
+}
+
+__DEVICE__ float3 divide(float3 A, float3 B)
+{
+float3 C;
+C.x = A.x / B.x;
+C.y = A.y / B.y;
+C.z = A.z / B.z;
+return C;
+}
+
+__DEVICE__ float dot(float3 A, float3 B)
+{
+float C = A.x * B.x + A.y * B.y + A.z * B.z;
+return C;
+}
+
+__DEVICE__ float3 floor(float3 A)
+{
+float3 B;
+B.x = _floor(A.x);
+B.y = _floor(A.y);
+B.z = _floor(A.z);
+return B;
+}
+
+__DEVICE__ float fract(float A)
+{
+float B;
+B = A - _floor(A);
+return B;
+}
+
+__DEVICE__ float3 fract(float3 A)
+{
+float3 B;
+B.x = A.x - _floor(A.x);
+B.y = A.y - _floor(A.y);
+B.z = A.z - _floor(A.z);
+return B;
+}
+
+__DEVICE__ float4 fract(float4 A)
+{
+float4 B;
+B.x = A.x - _floor(A.x);
+B.y = A.y - _floor(A.y);
+B.z = A.z - _floor(A.z);
+B.w = A.w - _floor(A.w);
+return B;
+}
+
+__DEVICE__ float length(float2 A)
+{
+float B = _sqrtf(A.x * A.x + A.y * A.y);
+return B;
+}
+
+__DEVICE__ float length(float3 A)
+{
+float B = _sqrtf(A.x * A.x + A.y * A.y + A.z * A.z);
+return B;
+}
+
+__DEVICE__ float3 make_float3(float A)
+{
+return make_float3(A, A, A);
+}
+
+__DEVICE__ float3 make_float3(float2 A, float B)
+{
+return make_float3(A.x, A.y, B);
+}
+
+__DEVICE__ float3 make_float3(float A, float2 B)
+{
+return make_float3(A, B.x, B.y);
+}
+
+__DEVICE__ float4 make_float4(float A)
+{
+return make_float4(A, A, A, A);
+}
+
+__DEVICE__ float4 make_float4(float A, float3 B)
+{
+return make_float4(A, B.x, B.y, B.z);
+}
+
+__DEVICE__ float4 make_float4(float3 A, float B)
+{
+return make_float4(A.x, A.y, A.z, B);
+}
+
+__DEVICE__ float3 Max(float3 A, float3 B)
+{
+float3 C;
+C.x = _fmaxf(A.x, B.x);
+C.y = _fmaxf(A.y, B.y);
+C.z = _fmaxf(A.z, B.z);
+return C;
+}
+
+__DEVICE__ float3 minus(float A, float3 B)
+{
+float3 C;
+C.x = A - B.x;
+C.y = A - B.y;
+C.z = A - B.z;
+return C;
+}
+
+__DEVICE__ float3 minus(float3 A, float B)
+{
+float3 C;
+C.x = A.x - B;
+C.y = A.y - B;
+C.z = A.z - B;
+return C;
+}
+
+__DEVICE__ float3 minus(float3 A, float3 B)
+{
+float3 C;
+C.x = A.x - B.x;
+C.y = A.y - B.y;
+C.z = A.z - B.z;
+return C;
+}
+
+__DEVICE__ float mix(float A, float B, float C)
+{
+float D;
+D = A * (1.0f - C) + B * C;
+return D;
+}
+
+__DEVICE__ float2 mix(float2 A, float2 B, float C)
+{
+float2 D;
+D.x = A.x * (1.0f - C) + B.x * C;
+D.y = A.y * (1.0f - C) + B.y * C;
+return D;
+}
+
+__DEVICE__ float3 mix(float3 A, float3 B, float C)
+{
+float3 D;
+D.x = A.x * (1.0f - C) + B.x * C;
+D.y = A.y * (1.0f - C) + B.y * C;
+D.z = A.z * (1.0f - C) + B.z * C;
+return D;
+}
+
+__DEVICE__ float4 mix(float4 A, float4 B, float C)
+{
+float4 D;
+D.x = A.x * (1.0f - C) + B.x * C;
+D.y = A.y * (1.0f - C) + B.y * C;
+D.z = A.z * (1.0f - C) + B.z * C;
+D.w = A.w * (1.0f - C) + B.w * C;
+return D;
+}
+
+__DEVICE__ float2 multi(float2 A, float B)
+{
+float2 C;
+C.x = A.x * B;
+C.y = A.y * B;
+return C;
+}
+
+__DEVICE__ float3 multi(float A, float3 B)
+{
+float3 C;
+C.x = A * B.x;
+C.y = A * B.y;
+C.z = A * B.z;
+return C;
+}
+
+__DEVICE__ float3 multi(float3 A, float B)
+{
+float3 C;
+C.x = A.x * B;
+C.y = A.y * B;
+C.z = A.z * B;
+return C;
+}
+
+__DEVICE__ float3 multi(float3 A, float3 B)
+{
+float3 C;
+C.x = A.x * B.x;
+C.y = A.y * B.y;
+C.z = A.z * B.z;
+return C;
+}
+
+__DEVICE__ float4 multi(float4 A, float B)
+{
+float4 C;
+C.x = A.x * B;
+C.y = A.y * B;
+C.z = A.z * B;
+C.w = A.w * B;
+return C;
+}
+
+__DEVICE__ float3 normalize(float3 A)
+{
+float3 B;
+float C = _sqrtf((A.x * A.x) + (A.y * A.y) + (A.z * A.z));
+B.x = A.x / C;
+B.y = A.y / C;
+B.z = A.z / C;
+return B;
+}
+
+__DEVICE__ float3 Pow(float3 A, float3 B)
+{
+float3 C;
+C.x = _powf(A.x, B.x);
+C.y = _powf(A.y, B.y);
+C.z = _powf(A.z, B.z);
+return C;
+}
+
+__DEVICE__ float3 reflect(float3 A, float3 B)
+{
+float3 C;
+C.x = A.x - 2.0f * dot(B, A) * B.x;
+C.y = A.y - 2.0f * dot(B, A) * B.y;
+C.z = A.z - 2.0f * dot(B, A) * B.z;
+return C;
+}
+
+__DEVICE__ float3 Saturate(float3 A)
+{
+float3 B;
+B.x = _saturatef(A.x);
+B.y = _saturatef(A.y);
+B.z = _saturatef(A.z);
+return B;
+}
+
+__DEVICE__ float3 sin(float3 A)
+{
+float3 B;
+B.x = _sinf(A.x);
+B.y = _sinf(A.y);
+B.z = _sinf(A.z);
+return B;
+}
+
+__DEVICE__ float4 sin(float4 A)
+{
+float4 B;
+B.x = _sinf(A.x);
+B.y = _sinf(A.y);
+B.z = _sinf(A.z);
+B.w = _sinf(A.w);
+return B;
+}
+
+__DEVICE__ float step(float A, float B)
+{
+float C;
+C = B < A ? 0.0f : 1.0f;
+return C;
+}
+
+__DEVICE__ float3 step(float3 A, float3 B)
+{
+float3 C;
+C.x = B.x < A.x ? 0.0f : 1.0f;
+C.y = B.y < A.y ? 0.0f : 1.0f;
+C.z = B.z < A.z ? 0.0f : 1.0f;
+return C;
+}
+
+__DEVICE__ float smoothstep(float edge0, float edge1, float x)
+{
+float t = _saturatef((x - edge0) / (edge1 - edge0));
+return t * t * (3.0f - 2.0f * t);
+}
+
+__DEVICE__ mat2 rot(float x)
+{
+return make_mat2(make_float2(_cosf(x), _sinf(x)), make_float2(-_sinf(x), _cosf(x)));
+}
+
+__DEVICE__ float3 palette(float t, float3 a, float3 b, float3 c, float3 d)
+{
+return add(a, multi(b, cos(multi(6.28318f, (add(multi(c, t), d))))));
+}
+
+__DEVICE__ float3 glowColour()
+{
+return palette(T * 0.1f, CA, CB, CC, CD);
+}
+
+__DEVICE__ float2 csqr(float2 a)
+{
+return make_float2(a.x * a.x - a.y * a.y, 2.0f * a.x * a.y);
+}
+
+__DEVICE__ float noise(float3 rp)
+{
+float3 ip = floor(rp);
+rp = minus(rp, ip); 
+float3 s = make_float3(7.0f, 157.0f, 113.0f);
+float4 h = add(make_float4(0.0f, s.y, s.z, s.y + s.z), dot(ip, s));
+rp = multi(multi(rp, rp), minus(3.0f, multi(2.0f, rp))); 
+h = mix(fract(multi(sin(h), 43758.5f)), fract(multi(sin(add(h, s.x)), 43758.5f)), rp.x);
+float2 hxy = mix(make_float2(h.x, h.z), make_float2(h.y, h.w), rp.y);
+return mix(hxy.x, hxy.y, rp.z); 
+}
+
+__DEVICE__ float fbm(float3 x)
+{
+float r = 0.0f;
+float w = 1.0f;
+float s = 1.0f;
+for (int i = 0; i < 5; i++) {
+w *= 0.5f;
+s *= 2.0f;
+r += w * noise(multi(s, x));
+}
+return r;
+}
+
+__DEVICE__ float tex(float3 rp)
+{
+float2 rpxy = multi(make_float2(rp.x, rp.y), rot(T));
+if (rpxy.x > 0.3f && rpxy.x < 0.5f) return 0.0f;
+return 1.0f;
+}        
+
+__DEVICE__ float pattern(float3 rp)
+{
+float3 f = abs(rp);
+f = multi(step(make_float3(f.z, f.x, f.y), f), step(make_float3(f.y, f.z, f.x), f)); 
+f = make_float3(f.x > 0.5f ? divide(make_float2(rp.y, rp.z), rp.x) : f.y > 0.5f ? divide(make_float2(rp.x, rp.z), rp.y) : divide(make_float2(rp.x, rp.y), rp.z), f.z); 
+return tex(f);
+}
+
+__DEVICE__ float4 sphIntersect(float3 ro, float3 rd, float4 sph)
+{
+float3 oc = minus(ro, make_float3(sph.x, sph.y, sph.z));
+float b = dot(oc, rd);
+float c = dot(oc, oc) - sph.w * sph.w;
+float h = b * b - c;
+if (h < 0.0f) return make_float4(0.0f);
+h = _sqrtf(h);
+float tN = -b - h;
+float tNF = tN;
+if (pattern(add(ro, multi(rd, tNF))) == 0.0f) tNF = 0.0f;
+float tF = -b + h;
+float tFF = tF;
+if (pattern(add(ro, multi(rd, tFF))) == 0.0f) tFF = 0.0f;
+return make_float4(tNF, tFF, tN, tF);
+}
+
+__DEVICE__ float3 sphNormal(float3 pos, float4 sph)
+{
+return normalize(minus(pos, make_float3(sph.x, sph.y, sph.z)));
+}
+
+__DEVICE__ float sphSoftShadow(float3 ro, float3 rd, float4 sph, float k)
+{
+float3 oc = minus(ro, make_float3(sph.x, sph.y, sph.z));
+float b = dot(oc, rd);
+float c = dot(oc, oc) - sph.w * sph.w;
+float h = b * b - c;
+
+float d = _sqrtf( _fmaxf(0.0f, sph.w * sph.w - h)) - sph.w;
+float tN = -b - _sqrtf( _fmaxf(h, 0.0f));
+float tF = -b + _sqrtf( _fmaxf(h, 0.0f));
+if ((pattern(add(ro, multi(rd, tN))) + pattern(add(ro, multi(rd, tF)))) == 0.0f) return 1.0f;
+if (tN > 0.0f) return smoothstep(0.0f, 1.0f, 4.0f * k * d / tN) * 1.0f;
+return 1.0f;
+}
+
+__DEVICE__ float sphOcclusion(float3 pos, float3 nor, float4 sph)
+{
+float3 r = minus(make_float3(sph.x, sph.y, sph.z), pos);
+float l = length(r);
+float d = dot(nor, r);
+float res = d;
+
+if (d < sph.w) res = _powf(_saturatef((d + sph.w) / (2.0f * sph.w)), 1.5f) * sph.w;
+
+return _saturatef(res * (sph.w * sph.w) / (l * l * l));
+}
+
+__DEVICE__ float planeIntersection(float3 ro, float3 rd, float3 n, float3 o)
+{
+return dot(minus(o, ro), n) / dot(rd, n);
+}
+
+__DEVICE__ float map(float3 rp)
+{
+return _fminf(length(rp) - sphere.w, rp.y + 1.0f);
+}
+
+__DEVICE__ float3 vMarch(float3 ro, float3 rd)
+{
+
+float3 pc = make_float3(0.0f);
+float t = 0.0f;
+
+for (int i = 0; i < 96; i++) {
+
+float3 rp = add(ro, multi(rd, t));
+float ns = map(rp);
+float fz = pattern(rp);
+
+if ((ns < EPS && fz > 0.0f) || t > FAR) break;
+
+float3 ld = normalize(multi(rp, -1.0f));
+float lt = length(rp);
+if (sphIntersect(rp, ld, sphere).x == 0.0f || lt < sphere.w) {
+lt -= SR;
+pc = add(pc, multi(glowColour(), 0.1f / (1.0f + lt * lt * 12.0f)));
+}
+
+t += 0.05f;
+}
+
+return pc;
+}
+
+__DEVICE__ float fractal(float3 rp)
+{
+
+float res = 0.0f;
+float x = 0.8f + _sinf(T * 0.2f) * 0.3f;
+
+rp = make_float3(rp.x, multi(make_float2(rp.y, rp.z), rot(T)));
+
+float3 c = rp;
+
+for (int i = 0; i < 10; ++i) {
+rp = minus(divide(multi(x, abs(rp)), dot(rp, rp)), x);
+rp = make_float3(rp.x, csqr(make_float2(rp.y, rp.z)));
+rp = make_float3(rp.z, rp.x, rp.y);
+res += _expf(-99.0f * _fabs(dot(rp, c)));   
+}
+
+return res;
+}
+
+__DEVICE__ float3 fractalMarch(float3 ro, float3 rd, float maxt)
+{
+
+float3 pc = make_float3(0.0f);
+float t = 0.0f;
+float ns = 0.0f;
+
+for (int i = 0; i < 64; i++) {
+
+float3 rp = add(ro, multi(t, rd));
+float lt = length(rp) - SR;
+
+ns = fractal(rp); 
+
+if (lt < EPS || t > maxt) break;
+t += 0.02f * _expf(-2.0f * ns);
+
+pc = multi(add(pc, multi(0.08f * ns, glowColour())), 0.99f / (1.0f + lt * lt * 1.0f));
+pc = add(pc, divide(multi(0.1f, glowColour()), (1.0f + lt * lt)));  
+} 
+
+return pc;
+}
+
+__DEVICE__ Scene drawScene(float3 ro, float3 rd)
+{
+float mint = FAR;
+float3 minn = make_float3(0.0f);
+float id = 0.0f;
+
+float3 fo = make_float3(0.0f, -1.0f, 0.0f);
+float3 fn = make_float3(0.0f, 1.0f, 0.0f);
+float ft = planeIntersection(ro, rd, fn, fo);
+if (ft > 0.0 && ft < FAR) {
+mint = ft;
+id = FLOOR;
+minn = fn;
+}    
+
+float4 si = sphIntersect(ro, rd, sphere);
+if (si.x > 0.0f && si.x < mint) {        
+float3 rp = add(ro, multi(rd, si.x));
+mint = si.x;
+id = SPHERE_EXTERIOR;
+minn = sphNormal(rp, sphere);
+} else if (si.y > 0.0f && si.y < mint) {        
+float3 rp = add(ro, multi(rd, si.y));
+mint = si.y;
+id = SPHERE_INTERIOR;
+minn = multi(sphNormal(rp, sphere), -1.0f);
+}
+
+return make_scene(mint, id, minn, si.z, si.w);
+}
+
+__DEVICE__ float3 clouds(float3 rd)
+{
+float2 uv = divide(make_float2(rd.x, rd.z), (rd.y + 0.6f));
+float nz = fbm(make_float3(add(multi(make_float2(uv.y, uv.x), 1.4f), make_float2(CT, 0.0f)), CT)) * 1.5f;
+return Saturate(multi(Pow(make_float3(nz), make_float3(4.0f)), rd.y));
+}
+
+__DEVICE__ float3 pri(float3 x)
+{
+float3 h = minus(fract(divide(x, 2.0f)), 0.5f);
+return add(multi(x, 0.5f), multi(h, minus(1.0f, multi(2.0f, abs(h)))));
+}
+
+__DEVICE__ float checkersTextureGradTri(float3 p, float3 ddx, float3 ddy)
+{
+p.z += T;
+float3 w = add(Max(abs(ddx), abs(ddy)), 0.01f);
+float3 i = divide(add(pri(add(p, w)), multi(-2.0f, pri(p)), pri(minus(p, w))), multi(w, w));
+return 0.5f - 0.5f * i.x * i.y * i.z;
+}
+
+__DEVICE__ float3 texCoords(float3 p)
+{
+return multi(5.0f, p);
+}
+
+__DEVICE__ float3 colourScene(float3 ro, float3 rd, Scene scene)
+{
+
+float3 pc = multi(clouds(rd), glowColour());
+float3 gc = make_float3(0.0f);
+float3 lp = make_float3(4.0f, 5.0f, -2.0f);
+
+float3 rp = add(ro, multi(rd, scene.t));
+
+float3 ld = normalize(minus(lp, rp));
+float lt = length(minus(lp, rp));
+float atten = 1.0f / (1.0f + lt * lt * 0.051f);
+
+if (scene.stn > 0.0f) {
+gc = fractalMarch(add(ro, multi(rd, scene.stn)), rd, scene.stf - scene.stn);
+pc = gc;
+}
+
+if (scene.id == FLOOR) {
+
+// calc texture sampling footprint	
+float3 uvw = texCoords(multi(rp, 0.15f));
+float3 ddx_uvw = make_float3(0.0f); //dFdx(uvw); 
+float3 ddy_uvw = make_float3(0.0f); //dFdy(uvw);
+float fc = checkersTextureGradTri(uvw, ddx_uvw, ddy_uvw);
+
+float diff = _fmaxf(dot(ld, scene.n), 0.05f);
+float ao = 1.0f - sphOcclusion(rp, scene.n, sphere);  
+float spec = _powf(_fmaxf(dot(reflect(multi(ld, -1.0f), scene.n), multi(rd, -1.0f)), 0.0f), 32.0f);
+float sh = sphSoftShadow(rp, ld, sphere, 2.0f);
+
+pc = add(pc, multi(glowColour(), fc * diff * atten));
+pc = add(pc, multi(make_float3(1.0f), spec));
+pc = multi(pc, ao * sh); 
+
+float3 gld = normalize(multi(rp, -1.0f));
+if (sphIntersect(rp, gld, sphere).x == 0.0f) {
+pc = add(pc, divide(glowColour(), 1.0f + length(rp) * length(rp)));    
+}
+}
+
+if (scene.id == SPHERE_EXTERIOR) {
+
+float ao = 0.5f + 0.5f * scene.n.y;
+float spec = _powf(_fmaxf(dot(reflect(multi(ld, -1.0f), scene.n), multi(rd, -1.0f)), 0.0f), 32.0f);
+float fres = _powf(_saturatef(dot(scene.n, rd) + 1.0f), 2.0f);
+
+pc = multi(pc, 0.4f * (1.0f - fres));
+pc = add(pc, multi(make_float3(1.0f), fres * 0.2f));
+pc = multi(pc, ao);
+pc = add(pc, multi(make_float3(1.0f), spec));
+}
+
+if (scene.id == SPHERE_INTERIOR) {
+float ao = 0.5f + 0.5f * scene.n.y;
+float ilt = length(rp) - SR;
+pc = add(pc, multi(glowColour(), ao / (1.0f + ilt * ilt)));
+}
+
+return pc;
+}
+
+__DEVICE__ void setupCamera(float2 uv, float3 *ro, float3 *rd)
+{
+float3 Ro = make_float3(0.0f, 0.0f, -4.0f);
+float3 lookAt = add(Ro, make_float3(0.0f, 0.0f, 4.0f));
+
+Ro = make_float3(multi(make_float2(Ro.x, Ro.z), rot(T * 0.4f)), Ro.y);
+Ro = make_float3(Ro.x, Ro.z, Ro.y);
+float FOV = PI / 4.0f;
+float3 forward = normalize(minus(lookAt, Ro));
+float3 right = normalize(make_float3(forward.z, 0.0f, -forward.x)); 
+float3 up = cross(forward, right);
+*ro = Ro;
+*rd = normalize(add(forward, multi(right, FOV * uv.x), multi(up, FOV * uv.y)));
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{
+float iTime = _tex2D(p_TexR, 500, 500) / 24;
+//float iTime = _tex2D(p_TexR, 500, 500) * 10;
+T = iTime;
+
+float X = (float)p_X;
+float Y = (float)(p_Height - p_Y);
+float2 resolution = make_float2((float)p_Width, (float)p_Height);
+
+float3 pc = make_float3(0.0f);
+
+float2 uv;
+uv.x = (X - resolution.x * 0.5f) / resolution.y;
+uv.y = (Y - resolution.y * 0.5f) / resolution.y;
+float3 ro, rd;
+setupCamera(uv, &ro, &rd);
+
+Scene scene = drawScene(ro, rd);
+pc = colourScene(ro, rd, scene);    
+
+pc = add(pc, vMarch(ro, rd));
+
+return pc;
+
+}

@@ -1,0 +1,39 @@
+// Median Filter for AB channels
+
+__DEVICE__ float median(float p_Table[], int m) {
+float temp;
+int i, j;
+for(i = 0; i < m - 1; i++) {
+for(j = i + 1; j < m; j++) {
+if(p_Table[j] < p_Table[i]) {
+temp = p_Table[i];
+p_Table[i] = p_Table[j];
+p_Table[j] = temp; }}}
+return p_Table[(m - 1) / 2]; }
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{
+
+// Enter length for sample area e.g. 3 for 3x3, 5 for 5x5, 7 for 7x7, etc.
+
+int length = 5;
+int area = length * length;
+
+float pixLAB[3];
+float TableA[area], TableB[area];
+
+for (int i = 0; i < area; ++i) {
+int offset = (length - 1) / 2;
+int xx = (i >= length ? _fmod(i, length/1.0f) : i) - offset;
+int yy = _floor(i / (length/1.0f)) - offset;
+TableA[i] = _tex2D(p_TexG, p_X + xx, p_Y + yy);
+TableB[i] = _tex2D(p_TexB, p_X + xx, p_Y + yy);
+}
+
+for (int c = 0; c < 3; ++c) {
+pixLAB[c] = c == 0 ? _tex2D(p_TexR, p_X, p_Y) : c == 1 ? median(TableA, area) : median(TableB, area);
+}
+
+return make_float3(pixLAB[0], pixLAB[1], pixLAB[2]);
+
+}

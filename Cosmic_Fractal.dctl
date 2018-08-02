@@ -1,0 +1,225 @@
+// Cosmic Fractal DCTL
+
+__CONSTANT__ float paramSpeed = 1000.0f;
+__CONSTANT__ bool UseLigthModulation = false;
+
+__DEVICE__ float dot(float3 A, float3 B)
+{
+float C = A.x * B.x + A.y * B.y + A.z * B.z;
+return C;
+}
+
+__DEVICE__ float fract(float A)
+{
+float B;
+B = A -_floor(A);
+return B;
+}
+
+__DEVICE__ float2 fract(float2 A)
+{
+float2 B;
+B.x = A.x -_floor(A.x);
+B.y = A.y -_floor(A.y);
+return B;
+}
+
+__DEVICE__ float3 fract(float3 A)
+{
+float3 B;
+B.x = A.x -_floor(A.x);
+B.y = A.y -_floor(A.y);
+B.z = A.z -_floor(A.z);
+return B;
+}
+
+__DEVICE__ float3 abs3(float3 A)
+{
+float3 B;
+B.x = _fabs(A.x);
+B.y = _fabs(A.y);
+B.z = _fabs(A.z);
+return B;
+}
+
+__DEVICE__ float3 div3(float3 A, float B)
+{
+float3 C;
+C.x = A.x / B;
+C.y = A.y / B;
+C.z = A.z / B;
+return C;
+}
+
+__DEVICE__ float3 add3(float3 A, float3 B)
+{
+float3 C;
+C.x = A.x + B.x;
+C.y = A.y + B.y;
+C.z = A.z + B.z;
+return C;
+}
+
+__DEVICE__ float4 add4(float4 A, float4 B)
+{
+float4 C;
+C.x = A.x + B.x;
+C.y = A.y + B.y;
+C.z = A.z + B.z;
+C.w = A.w + B.w;
+return C;
+}
+
+__DEVICE__ float2 multi2(float A, float2 B)
+{
+float2 C;
+C.x = A * B.x;
+C.y = A * B.y;
+return C;
+}
+
+
+__DEVICE__ float3 multi3(float A, float3 B)
+{
+float3 C;
+C.x = A * B.x;
+C.y = A * B.y;
+C.z = A * B.z;
+return C;
+}
+
+__DEVICE__ float4 multi4(float A, float4 B)
+{
+float4 C;
+C.x = A * B.x;
+C.y = A * B.y;
+C.z = A * B.z;
+C.w = A * B.w;
+return C;
+}
+
+__DEVICE__ float mix1(float A, float B, float C)
+{
+float D;
+D = A * (1.0f - C) + B * C;
+return D;
+}
+
+__DEVICE__ float3 mix3(float3 A, float3 B, float C)
+{
+float3 D;
+D.x = A.x * (1.0f - C) + B.x * C;
+D.y = A.y * (1.0f - C) + B.y * C;
+D.z = A.z * (1.0f - C) + B.z * C;
+return D;
+}
+
+__DEVICE__ float field(float3 p, float s, float iTime)
+{
+	float strength = 7.0f + 0.03f * _logf(1.e-6 + fract(_sinf(iTime * paramSpeed / 100.0f) * 4373.11f));
+	float accum = s/4.0f;
+	float prev = 0.0f;
+	float tw = 0.0f;
+	for (int i = 0; i < 26; ++i) {
+		float mag = dot(p, p);
+		p = add3(div3(abs3(p), mag), make_float3(-0.5f, -0.4f, -1.5f));
+		float w = _expf(-float(i) / 7.0f);
+		accum += w * _expf(-strength * _powf(_fabs(mag - prev), 2.2f));
+		tw += w;
+		prev = mag;
+	}
+	return _fmaxf(0.0f, 5.0f * accum / tw - 0.7f);
+}
+
+__DEVICE__ float field2(float3 p, float s, float iTime)
+{
+	float strength = 7.0f + 0.03f * _logf(1.e-6 + fract(_sinf(iTime * paramSpeed / 100.0f) * 4373.11f));
+	float accum = s/4.0f;
+	float prev = 0.0f;
+	float tw = 0.0f;
+	for (int i = 0; i < 18; ++i) {
+		float mag = dot(p, p);
+		p = add3(div3(abs3(p), mag), make_float3(-0.5f, -0.4f, -1.5f));
+		float w = _expf(-float(i) / 7.0f);
+		accum += w * _expf(-strength * _powf(_fabs(mag - prev), 2.2f));
+		tw += w;
+		prev = mag;
+	}
+	return _fmaxf(0.0f, 5.0f * accum / tw - 0.7f);
+}
+
+__DEVICE__ float3 nrand3(float2 co)
+{
+	float3 a = fract( multi3(_cosf( co.x * 8.3e-3 + co.y ), make_float3(1.3e5, 4.7e5, 2.9e5)) );
+	float3 b = fract( multi3(_sinf( co.x * 0.3e-3 + co.y ), make_float3(8.1e5, 1.0e5, 0.1e5)) );
+	float3 c = mix3(a, b, 0.5f);
+	return c;
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{
+    
+    float yo = _tex2D(p_TexR, 500, 500) * 100;
+    float iTime = yo;
+    
+    float2 UV;
+    UV.x = 2.0f * (float)p_X / p_Width - 1;
+    UV.y = 2.0f * (float)p_Y / p_Height - 1;
+	float2 UVS;
+	UVS.x = UV.x * p_Width / _fmaxf(p_Width, p_Height);
+	UVS.y = UV.y * p_Height / _fmaxf(p_Width, p_Height);
+	float3 p = add3(make_float3(UVS.x / 4.0f, UVS.y / 4.0f, 0.0f), make_float3(1.0f, -1.3f, 0.0f));
+	p = add3(p, multi3(0.2f, make_float3(_sinf(iTime * paramSpeed / 100.0f / 16.0f), _sinf(iTime * paramSpeed / 100.0f / 12.0f), _sinf(iTime * paramSpeed / 100.0f / 128.0f))));
+	
+	float freqs[4];
+    if(UseLigthModulation)
+    {
+    //float yo = _tex2D(p_TexR, 500, 500) * 1000;
+	freqs[0] = _tex2D(p_TexR, (int)(0.01f * p_Width), (int)(p_Height * 0.25f) );
+	freqs[1] = _tex2D(p_TexR, (int)(0.07f * p_Width), (int)(p_Height * 0.25f) );
+	freqs[2] = _tex2D(p_TexR, (int)(0.15f * p_Width), (int)(p_Height * 0.25f) );
+	freqs[3] = _tex2D(p_TexR, (int)(0.30f * p_Width), (int)(p_Height * 0.25f) );
+    }
+    else
+    {
+    freqs[0] = 0.5f;
+    freqs[1] = 0.5f;
+    freqs[2] = 0.5f;
+    freqs[3] = 0.5f;
+    }
+	
+	float t = field(p, freqs[2], iTime);
+	float v = (1.0f - _expf((_fabs(UV.x) - 1.0f) * 6.0f)) * (1.0f - _expf((_fabs(UV.y) - 1.0f) * 6.0f));
+	
+    //Second Layer
+	float3 p2 = add3(make_float3(UVS.x / (4.0f + _sinf(iTime * paramSpeed / 100.0f * 0.11f)* 0.2f + 0.2f + _sinf(iTime * paramSpeed / 100.0f * 0.15f) * 0.3f + 0.4f), 
+	UVS.y / (4.0f + _sinf(iTime * paramSpeed / 100.0f * 0.11f)* 0.2f + 0.2f + _sinf(iTime * paramSpeed / 100.0f * 0.15f) * 0.3f + 0.4f), 1.5f), make_float3(2.0f, -1.3f, -1.0f));
+	p2 = add3(p2, multi3(0.25f, make_float3(_sinf(iTime * paramSpeed / 100.0f / 16.0f), _sinf(iTime * paramSpeed / 100.0f / 12.0f), _sinf(iTime * paramSpeed / 100.0f / 128.0f))));
+	float t2 = field2(p2,freqs[3], iTime);
+	float4 c2 = multi4(mix1(0.4f, 1.0f, v), make_float4(1.3f * t2 * t2 * t2 ,1.8f * t2 * t2, t2 * freqs[0], t2));
+	
+	float2 seed;
+	seed.x = 2.0f * p.x;
+	seed.y = 2.0f * p.y;
+	seed.x = _floor((float)p_Width * seed.x);
+	seed.y = _floor((float)p_Width * seed.y);
+	float3 rnd = nrand3( seed );
+	float4 starcolor = make_float4(_powf(rnd.y, 40.0f), _powf(rnd.y, 40.0f), _powf(rnd.y, 40.0f), _powf(rnd.y, 40.0f));
+	
+	float2 seed2;
+	seed2.x = 2.0f * p2.x;
+	seed2.y = 2.0f * p2.y;
+	seed2.x = _floor((float)p_Width * seed2.x);
+	seed2.y = _floor((float)p_Width * seed2.y);
+	float3 rnd2 = nrand3( seed2 );
+	starcolor.x += _powf(rnd2.y, 40.0f);
+	starcolor.y += _powf(rnd2.y, 40.0f);
+	starcolor.z += _powf(rnd2.y, 40.0f);
+	starcolor.w += _powf(rnd2.y, 40.0f);
+	
+	float4 OUT;
+	OUT = add4(add4(multi4(mix1(freqs[3] - 0.3f, 1.0f, v), make_float4(1.5f * freqs[2] * t * t* t , 1.2f * freqs[1] * t * t, freqs[3] * t, 1.0f)), c2), starcolor);
+
+	return make_float3(OUT.x, OUT.y, OUT.z);
+ 
+}

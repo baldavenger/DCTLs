@@ -1,0 +1,580 @@
+// Protophore DCTL
+
+#define RECURSION_LEVELS 	4
+#define RETRACT 			1 
+#define INNER 				0.333f
+#define OUTNESS 			1.414f
+#define PI			 		3.14159265f
+
+//#define SPLIT_ANIM
+
+__DEVICE__ float2 abs(float2 A)
+{
+float2 B;
+B.x = _fabs(A.x);
+B.y = _fabs(A.y);
+return B;
+}
+
+__DEVICE__ float3 abs(float3 A)
+{
+float3 B;
+B.x = _fabs(A.x);
+B.y = _fabs(A.y);
+B.z = _fabs(A.z);
+return B;
+}
+
+__DEVICE__ float2 add(float A, float2 B)
+{
+float2 C;
+C.x = A + B.x;
+C.y = A + B.y;
+return C;
+}
+
+__DEVICE__ float2 add(float2 A, float B)
+{
+float2 C;
+C.x = A.x + B;
+C.y = A.y + B;
+return C;
+}
+
+__DEVICE__ float2 add(float2 A, float2 B)
+{
+float2 C;
+C.x = A.x + B.x;
+C.y = A.y + B.y;
+return C;
+}
+
+__DEVICE__ float3 add(float3 A, float B)
+{
+float3 C;
+C.x = A.x + B;
+C.y = A.y + B;
+C.z = A.z + B;
+return C;
+}
+
+__DEVICE__ float3 add(float3 A, float3 B)
+{
+float3 C;
+C.x = A.x + B.x;
+C.y = A.y + B.y;
+C.z = A.z + B.z;
+return C;
+}
+
+__DEVICE__ float2 divide(float2 A, float B)
+{
+float2 C;
+C.x = A.x / B;
+C.y = A.y / B;
+return C;
+}
+
+__DEVICE__ float2 divide(float2 A, float2 B)
+{
+float2 C;
+C.x = A.x / B.x;
+C.y = A.y / B.y;
+return C;
+}
+
+__DEVICE__ float4 divide(float4 A, float B)
+{
+float4 C;
+C.x = A.x / B;
+C.y = A.y / B;
+C.z = A.z / B;
+C.w = A.w / B;
+return C;
+}
+
+__DEVICE__ float3 cross(float3 A, float3 B)
+{
+float3 C;
+C.x = A.y * B.z - A.z * B.y;
+C.y = A.z * B.x - A.x * B.z;
+C.z = A.x * B.y - A.y * B.x;
+return C;
+}
+
+__DEVICE__ float dot(float2 A, float2 B)
+{
+float C = A.x * B.x + A.y * B.y;
+return C;
+}
+
+__DEVICE__ float dot(float3 A, float3 B)
+{
+float C = A.x * B.x + A.y * B.y + A.z * B.z;
+return C;
+}
+
+__DEVICE__ float3 floor(float3 A)
+{
+float3 B;
+B.x = _floor(A.x);
+B.y = _floor(A.y);
+B.z = _floor(A.z);
+return B;
+}
+
+__DEVICE__ float fract(float A)
+{
+float B;
+B = A - _floor(A);
+return B;
+}
+
+__DEVICE__ float3 fract(float3 A)
+{
+float3 B;
+B.x = A.x - _floor(A.x);
+B.y = A.y - _floor(A.y);
+B.z = A.z - _floor(A.z);
+return B;
+}
+
+__DEVICE__ float length(float2 A)
+{
+float B = _sqrtf(A.x * A.x + A.y * A.y);
+return B;
+}
+
+
+__DEVICE__ float length(float3 A)
+{
+float B = _sqrtf(A.x * A.x + A.y * A.y + A.z * A.z);
+return B;
+}
+
+__DEVICE__ float2 max(float2 A, float B)
+{
+float2 C;
+C.x = _fmaxf(A.x, B);
+C.y = _fmaxf(A.y, B);
+return C;
+}
+
+__DEVICE__ float2 max(float2 A, float2 B)
+{
+float2 C;
+C.x = _fmaxf(A.x, B.x);
+C.y = _fmaxf(A.y, B.y);
+return C;
+}
+
+__DEVICE__ float2 min(float2 A, float2 B)
+{
+float2 C;
+C.x = _fminf(A.x, B.x);
+C.y = _fminf(A.y, B.y);
+return C;
+}
+
+__DEVICE__ float2 minus(float2 A, float2 B)
+{
+float2 C;
+C.x = A.x - B.x;
+C.y = A.y - B.y;
+return C;
+}
+
+__DEVICE__ float3 minus(float A, float3 B)
+{
+float3 C;
+C.x = A - B.x;
+C.y = A - B.y;
+C.z = A - B.z;
+return C;
+}
+
+__DEVICE__ float3 minus(float3 A, float3 B)
+{
+float3 C;
+C.x = A.x - B.x;
+C.y = A.y - B.y;
+C.z = A.z - B.z;
+return C;
+}
+
+__DEVICE__ float mix(float A, float B, float C)
+{
+float D = A * (1.0f - C) + B * C;
+return D;
+}
+
+__DEVICE__ float3 mix(float3 A, float3 B, float C)
+{
+float3 D;
+D.x = A.x * (1.0f - C) + B.x * C;
+D.y = A.y * (1.0f - C) + B.y * C;
+D.z = A.z * (1.0f - C) + B.z * C;
+return D;
+}
+
+__DEVICE__ float2 multi(float A, float2 B)
+{
+float2 C;
+C.x = A * B.x;
+C.y = A * B.y;
+return C;
+}
+
+__DEVICE__ float2 multi(float2 A, float B)
+{
+float2 C;
+C.x = A.x * B;
+C.y = A.y * B;
+return C;
+}
+
+__DEVICE__ float2 multi(float2 A, float2 B)
+{
+float2 C;
+C.x = A.x * B.x;
+C.y = A.y * B.y;
+return C;
+}
+
+__DEVICE__ float3 multi(float A, float3 B)
+{
+float3 C;
+C.x = A * B.x;
+C.y = A * B.y;
+C.z = A * B.z;
+return C;
+}
+
+__DEVICE__ float3 multi(float3 A, float B)
+{
+float3 C;
+C.x = A.x * B;
+C.y = A.y * B;
+C.z = A.z * B;
+return C;
+}
+
+__DEVICE__ float3 multi(float3 A, float3 B)
+{
+float3 C;
+C.x = A.x * B.x;
+C.y = A.y * B.y;
+C.z = A.z * B.z;
+return C;
+}
+
+__DEVICE__ float4 multi(float4 A, float B)
+{
+float4 C;
+C.x = A.x * B;
+C.y = A.y * B;
+C.z = A.z * B;
+C.w = A.w * B;
+return C;
+}
+
+__DEVICE__ float3 multi(float3 A[3], float3 In)
+{
+float3 out;
+out.x = In.x * A[0].x + In.y * A[0].y + In.z * A[0].z;
+out.y = In.x * A[1].x + In.y * A[1].y + In.z * A[1].z;
+out.z = In.x * A[2].x + In.y * A[2].y + In.z * A[2].z;
+return out;
+}
+
+__DEVICE__ float3 normalize(float3 A)
+{
+float3 B;
+float C = _sqrtf((A.x * A.x) + (A.y * A.y) + (A.z * A.z));
+B.x = A.x / C;
+B.y = A.y / C;
+B.z = A.z / C;
+return B;
+}
+
+__DEVICE__ float3 reflect(float3 A, float3 B)
+{
+float3 C;
+C.x = A.x - 2.0f * dot(B, A) * B.x;
+C.y = A.y - 2.0f * dot(B, A) * B.y;
+C.z = A.z - 2.0f * dot(B, A) * B.z;
+return C;
+}
+
+__DEVICE__ float sign(float A)
+{
+float B;
+B = A < 0.0f ? -1.0f : A > 0.0f ? 1.0f : 0.0f;
+return B;
+}
+
+__DEVICE__ float step(float A, float B)
+{
+float C;
+C = B < A ? 0.0f : 1.0f;
+return C;
+}
+
+__DEVICE__ float smoothstep(float edge0, float edge1, float x)
+{
+float t = _saturatef((x - edge0) / (edge1 - edge0));
+return t * t * (3.0f - 2.0f * t);
+}
+
+__DEVICE__ float3 RotateX(float3 v, float rad)
+{
+float Cos = _cosf(rad);
+float Sin = _sinf(rad);
+return make_float3(v.x, Cos * v.y + Sin * v.z, -Sin * v.y + Cos * v.z);
+}
+
+__DEVICE__ float3 RotateY(float3 v, float rad)
+{
+float Cos = _cosf(rad);
+float Sin = _sinf(rad);
+return make_float3(Cos * v.x - Sin * v.z, v.y, Sin * v.x + Cos * v.z);
+}
+
+__DEVICE__ float3 RotateZ(float3 v, float rad)
+{
+float Cos = _cosf(rad);
+float Sin = _sinf(rad);
+return make_float3(Cos * v.x + Sin * v.y, -Sin * v.x + Cos * v.y, v.z);
+}
+
+__DEVICE__ float3 GetEnvColor2(float3 rayDir, float3 sunDir)
+{
+
+float3 final = add(multi(make_float3(1.0f, 1.0f, 1.0f), dot(multi(rayDir, -1.0f), sunDir) * 0.5f), 0.5f);
+final = multi(final, 0.125f);
+
+if ((rayDir.y > _fabs(rayDir.x) * 1.0f) && (rayDir.y > _fabs(rayDir.z * 0.25f))) final = multi(make_float3(2.0f, 2.0f, 2.0f), rayDir.y);
+float roundBox = length(max(minus(abs(divide(make_float2(rayDir.x, rayDir.z), _fmaxf(0.0f, rayDir.y))), make_float2(0.9f, 4.0f)), 0.0f)) - 0.1f;
+final = add(final, multi(make_float3(0.8f, 0.8f, 0.8f), _powf(_saturatef(1.0f - roundBox * 0.5f), 6.0f)));
+final = add(final, multi(make_float3(8.0f, 6.0f, 7.0f), _saturatef(0.001f / (1.0f - _fabs(rayDir.x)))));
+final = add(final, multi(make_float3(8.0f, 7.0f, 6.0f), _saturatef(0.001f / (1.0f - _fabs(rayDir.z)))));
+return make_float3(final.x, final.y, final.z);
+}
+
+__DEVICE__ float smin( float a, float b, float k )
+{
+float h = _saturatef( 0.5f + 0.5f * (b - a) / k);
+return mix( b, a, h ) - k * h * (1.0f - h);
+}
+
+__DEVICE__ float2 matMin(float2 a, float2 b)
+{
+if (a.x < b.x) return a;
+else return b;
+}
+
+__DEVICE__ float2 sphereIter(float3 p, float radius, float subA, float teeth, float globalTeeth, float spinTime)
+{
+float finWidth = 0.1f;
+teeth = globalTeeth;
+
+float3 diagN = normalize(make_float3(-1.0f, -1.0f, -1.0f));
+float blender = 0.25f * RETRACT;
+float2 final = make_float2(1000000.0f, 0.0f);
+for (int i = 0; i < RECURSION_LEVELS; i++)
+{
+#ifdef SPLIT_ANIM
+p = RotateY(p, spinTime * sign(p.y) * 0.05f / blender);
+#endif
+float d = length(p) - radius * OUTNESS;
+#ifdef SPLIT_ANIM
+d = _fmaxf(d, -(_fmaxf(length(p) - radius * OUTNESS + 0.1f, _fabs(p.y) - finWidth * 0.25f)));
+#endif
+
+float3 corners = add(abs(p), multi(diagN, radius));
+float lenCorners = length(corners);
+float subtracter = lenCorners - radius * subA;
+
+float3 ap = multi(abs(multi(p, -1.0f)), 0.7071f);	// 1/sqrt(2) to keep distance field normalized
+
+subtracter = _fmaxf(subtracter, -(_fabs(ap.x - ap.y) - finWidth));
+subtracter = _fmaxf(subtracter, -(_fabs(ap.y - ap.z) - finWidth));
+subtracter = _fmaxf(subtracter, -(_fabs(ap.z - ap.x) - finWidth));
+subtracter = _fminf(subtracter, lenCorners - radius * subA + teeth);
+
+d = -smin(-d, subtracter, blender);
+final = matMin(final, make_float2(d, (float)i));
+
+#ifndef SPLIT_ANIM
+corners = RotateY(corners, spinTime * 0.25f / blender);
+#endif
+p = make_float3(corners.x, corners.z, -corners.y);
+radius *= INNER;
+teeth *= INNER;
+finWidth *= INNER;
+blender *= INNER;
+}
+
+float d = length(p) - radius * OUTNESS;
+final = matMin(final, make_float2(d, 6.0f));
+return final;
+}
+
+__DEVICE__ float2 DistanceToObject(float3 p, float cut, float teeth, float globalTeeth, float spinTime)
+{
+float2 distMat = sphereIter(p, 5.2f / OUTNESS, cut, teeth, globalTeeth, spinTime);
+return distMat;
+}
+
+__DEVICE__ float SphereIntersect(float3 pos, float3 dirVecPLZNormalizeMeFirst, float3 spherePos, float rad)
+{
+float3 radialVec = minus(pos, spherePos);
+float b = dot(radialVec, dirVecPLZNormalizeMeFirst);
+float c = dot(radialVec, radialVec) - rad * rad;
+float h = b * b - c;
+if (h < 0.0f) return -1.0f;
+return -b - _sqrtf(h);
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{
+
+//float iTime = _tex2D(p_TexR, 500, 500) / 24.0f;
+float iTime = _tex2D(p_TexR, 500, 500) * 20.0f;
+p_Y = p_Height - p_Y;
+float X = (float)p_X;
+float Y = (float)p_Y;
+float2 resolution = make_float2((float)p_Width, (float)p_Height);
+float2 uv = make_float2(X / resolution.x, Y / resolution.y);
+uv = add(multi(uv, 2.0f), -1.0f);
+uv = divide(uv, 1.7f);
+
+float localTime = iTime;
+float cut = 0.77f;
+float teeth = 1.0f;
+float globalTeeth = 1.0f;
+
+float3 camPos = make_float3(0.0f, 0.0f, 0.0f);
+float3 camLookat = make_float3(0.0f, 0.0f, 0.0f);
+float3 camUp = make_float3(0.0f, 1.0f, 0.0f);
+
+float2 iMouse = make_float2(1.0f, 1.0f);
+float mx = iMouse.x / resolution.x * PI * 2.0f - 0.7f + localTime * 3.1415 * 0.0625f * 0.666f;
+float my = -iMouse.y / resolution.y * 10.0f - _sinf(localTime * 0.31f) * 0.5f; //*PI/2.01;
+camPos = add(camPos, multi(make_float3(_cosf(my) * _cosf(mx), _sinf(my), _cosf(my) * _sinf(mx)), 12.2f));
+
+float3 camVec = normalize(minus(camLookat, camPos));
+float3 sideNorm = normalize(cross(camUp, camVec));
+float3 upNorm = cross(camVec, sideNorm);
+float3 worldFacing = add(camPos, camVec);
+float3 worldPix = add(add(worldFacing, multi(sideNorm, uv.x * (resolution.x / resolution.y))), multi(uv.y, upNorm));
+float3 rayVec = normalize(minus(worldPix, camPos));
+
+localTime = iTime * 0.5f;
+
+float rampStep = _fminf(3.0f, _fmaxf(1.0f, _fabs((fract(localTime) - 0.5f) * 1.0f) * 8.0f)) * 0.5f - 0.5f;
+rampStep = smoothstep(0.0f, 1.0f, rampStep);
+
+float step31 = (_fmaxf(0.0f, (fract(localTime + 0.125f) - 0.25f)) - _fminf(0.0f, (fract(localTime + 0.125f) - 0.25f)) * 3.0f) * 0.333f;
+
+float spinTime = step31 + localTime;
+globalTeeth = rampStep * 0.99f;
+cut = _fmaxf(0.48f, _fminf(0.77f, localTime));
+
+float2 distAndMat = make_float2(0.5f, 0.0f);
+float t = 0.0f;
+
+float maxDepth = 24.0f;
+float3 pos = make_float3(0.0f, 0.0f, 0.0f);
+float marchCount = 1.0f;
+
+float hit = SphereIntersect(camPos, rayVec, make_float3(0.0f, 0.0f, 0.0f), 5.6f);
+if (hit >= 0.0f)
+{
+t = hit;
+for (int i = 0; i < 290; i++)	
+{
+pos = add(camPos, multi(rayVec, t));
+distAndMat = DistanceToObject(pos, cut, teeth, globalTeeth, spinTime);
+t += distAndMat.x * 0.7f;
+if ((t > maxDepth) || (_fabs(distAndMat.x) < 0.0025f)) break;
+marchCount+= 1.0f;
+}
+}
+else
+{
+t = maxDepth + 1.0f;
+distAndMat.x = 1000000.0f;
+}
+
+float3 sunDir = normalize(make_float3(3.93f, 10.82f, -1.5f));
+float3 finalColor = make_float3(0.0f, 0.0f, 0.0f);
+
+if (t <= maxDepth)
+{
+float3 smallVec = make_float3(0.005f, 0.0f, 0.0f);
+float3 normalU = make_float3(distAndMat.x - DistanceToObject(minus(pos, make_float3(smallVec.x, smallVec.y, smallVec.y)), cut, teeth, globalTeeth, spinTime).x,
+			 distAndMat.x - DistanceToObject(minus(pos, make_float3(smallVec.y, smallVec.x, smallVec.y)), cut, teeth, globalTeeth, spinTime).x,
+			 distAndMat.x - DistanceToObject(minus(pos, make_float3(smallVec.y, smallVec.y, smallVec.x)), cut, teeth, globalTeeth, spinTime).x);
+
+float3 normal = normalize(normalU);
+
+float ambientS = 1.0f;
+ambientS *= _saturatef(DistanceToObject(add(pos, multi(normal, 0.1f)), cut, teeth, globalTeeth, spinTime).x * 10.0f);
+ambientS *= _saturatef(DistanceToObject(add(pos, multi(normal, 0.2f)), cut, teeth, globalTeeth, spinTime).x * 5.0f);
+ambientS *= _saturatef(DistanceToObject(add(pos, multi(normal, 0.4f)), cut, teeth, globalTeeth, spinTime).x * 2.5f);
+ambientS *= _saturatef(DistanceToObject(add(pos, multi(normal, 0.8f)), cut, teeth, globalTeeth, spinTime).x * 1.25f);
+
+float ambient = ambientS * _saturatef(DistanceToObject(add(pos, multi(normal, 1.6f)), cut, teeth, globalTeeth, spinTime).x * 1.25f * 0.5f);
+ambient *= _saturatef(DistanceToObject(add(pos, multi(normal, 3.2f)), cut, teeth, globalTeeth, spinTime).x * 1.25f * 0.25f);
+ambient *= _saturatef(DistanceToObject(add(pos, multi(normal, 6.4f)), cut, teeth, globalTeeth, spinTime).x * 1.25f * 0.125f);
+ambient = _fmaxf(0.035f, _powf(ambient, 0.3f));
+ambient = _saturatef(ambient);
+
+float3 ref = reflect(rayVec, normal);
+ref = normalize(ref);
+
+float sunShadow = 1.0f;
+float iter = 0.1f;
+float3 nudgePos = add(pos, multi(normal, 0.02f));
+for (int i = 0; i < 40; i++)
+{
+float tempDist = DistanceToObject(add(nudgePos, multi(ref, iter)), cut, teeth, globalTeeth, spinTime).x;
+sunShadow *= _saturatef(tempDist * 50.0f);
+if (tempDist <= 0.0f) break;
+iter += _fmaxf(0.00f, tempDist) * 1.0f;
+if (iter > 4.2f) break;
+}
+sunShadow = saturate(sunShadow);
+
+float3 texColor;
+texColor = make_float3(1.0f, 1.0f, 1.0f);// float3(0.65, 0.5, 0.4)*0.1;
+texColor = multi(make_float3(0.85f, 0.945f - distAndMat.y * 0.15f, 0.93f + distAndMat.y * 0.35f), 0.951f);
+if (distAndMat.y == 6.0f) texColor = multi(make_float3(0.91f, 0.1f, 0.41f), 10.5f);
+
+texColor.x = _fmaxf(texColor.x, 0.0f) * 0.25f;
+texColor.y = _fmaxf(texColor.y, 0.0f) * 0.25f;
+texColor.z = _fmaxf(texColor.z, 0.0f) * 0.25f;
+
+float3 lightColor = make_float3(0.0f, 0.0f, 0.0f);// sunCol * saturate(dot(sunDir, normal)) * sunShadow*14.0;
+lightColor = add(lightColor, multi(make_float3(0.1f, 0.35f, 0.95f), (normal.y * 0.5f + 0.5f) * ambient * 0.2f));
+lightColor = add(lightColor, multi(make_float3(1.0f, 1.0f, 1.0f), ((-normal.y) * 0.5f + 0.5f) * ambient * 0.2f));
+
+finalColor = multi(texColor, lightColor);
+
+float3 refColor = multi(GetEnvColor2(ref, sunDir), sunShadow);
+finalColor = add(finalColor, multi(refColor, 0.35 * ambient)); // * sunCol * sunShadow * 9.0 * texColor.g;
+
+finalColor = mix(add(make_float3(1.0f, 0.41f, 0.41f), make_float3(1.0f, 1.0f, 1.0f)), finalColor, _expf(-t * 0.0007f));
+}
+else
+{
+finalColor = GetEnvColor2(rayVec, sunDir);
+}
+
+finalColor.x = _sqrtf(_saturatef(finalColor.x));
+finalColor.y = _sqrtf(_saturatef(finalColor.y));
+finalColor.z = _sqrtf(_saturatef(finalColor.z));
+
+return finalColor;
+}

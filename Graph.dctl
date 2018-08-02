@@ -1,0 +1,351 @@
+// Graph DCTL
+
+//	-Define simple_mode for faster compilation time	(simple plotting of a single function)
+//	-When no toggle is on, only panning.
+//	-Keys X/C/F are each toggles for curve info, derivative X position, Y position, in that order.
+//	-Keys S/D/F are for zero crossing detection.
+//	-Keys 1/2 are zooming toggles, they can be combined for added effect.
+
+
+//#define simple_mode
+#define numfunc 3
+
+#define decimalPlace 4.0f
+
+#define baseScale 10.0f
+#define thickness 2.5f
+
+#define color1 make_float3(0.1f, 0.5f, 0.0f)
+#define color2 make_float3(0.1f, 0.3f, 0.9f)
+#define color3 make_float3(0.6f, 0.1f, 0.6f)
+
+__CONSTANT__ bool KEY_1 = false;
+__CONSTANT__ bool KEY_2 = false;
+__CONSTANT__ bool KEY_X = true;
+__CONSTANT__ bool KEY_C = false;
+__CONSTANT__ bool KEY_V = false;
+__CONSTANT__ bool KEY_S = false;
+__CONSTANT__ bool KEY_D = false;
+__CONSTANT__ bool KEY_F = false;
+
+__DEVICE__ float2 divide(float2 A, float2 B)
+{
+float2 C;
+C.x = A.x / B.x;
+C.y = A.y / B.y;
+return C;
+}
+
+__DEVICE__ float fract(float A)
+{
+float B;
+B = A - _floor(A);
+return B;
+}
+
+__DEVICE__ float length(float2 A)
+{
+float B = _sqrtf(A.x * A.x + A.y * A.y);
+return B;
+}
+
+__DEVICE__ float2 minus(float2 A, float B)
+{
+float2 C;
+C.x = A.x - B;
+C.y = A.y - B;
+return C;
+}
+
+__DEVICE__ float2 minus(float2 A, float2 B)
+{
+float2 C;
+C.x = A.x - B.x;
+C.y = A.y - B.y;
+return C;
+}
+
+__DEVICE__ float3 minus(float A, float3 B)
+{
+float3 C;
+C.x = A - B.x;
+C.y = A - B.y;
+C.z = A - B.z;
+return C;
+}
+
+__DEVICE__ float3 minus(float3 A, float B)
+{
+float3 C;
+C.x = A.x - B;
+C.y = A.y - B;
+C.z = A.z - B;
+return C;
+}
+
+__DEVICE__ float3 minus(float3 A, float3 B)
+{
+float3 C;
+C.x = A.x - B.x;
+C.y = A.y - B.y;
+C.z = A.z - B.z;
+return C;
+}
+
+__DEVICE__ float2 multi(float2 A, float B)
+{
+float2 C;
+C.x = A.x * B;
+C.y = A.y * B;
+return C;
+}
+
+__DEVICE__ float3 multi(float A, float3 B)
+{
+float3 C;
+C.x = A * B.x;
+C.y = A * B.y;
+C.z = A * B.z;
+return C;
+}
+
+__DEVICE__ float3 multi(float3 A, float3 B)
+{
+float3 C;
+C.x = A.x * B.x;
+C.y = A.y * B.y;
+C.z = A.z * B.z;
+return C;
+}
+
+__DEVICE__ float step(float A, float B)
+{
+float C;
+C = B < A ? 0.0f : 1.0f;
+return C;
+}
+
+__DEVICE__ float smoothstep(float edge0, float edge1, float x)
+{
+float t = _saturatef((x - edge0) / (edge1 - edge0));
+return t * t * (3.0f - 2.0f * t);
+}
+
+__DEVICE__ float f(float x, float num)
+{
+float fx = 0.0f;
+if (num == 1.0f){
+fx = _sinf(x);
+} else if (num == 2.0f){
+fx = x * x * x;
+} else {
+fx = x - 4.0f;
+}
+return fx;
+}
+
+__DEVICE__ float de(const float2 p, const float num)
+{
+float v = f(p.x, num) - p.y;
+float h = 0.5f;
+float g = 1.5f + _powf(f(p.x + h, num) - f(p.x - h, num), 2.0f);
+float de = _fabs(v); // / _sqrtf(g);
+if(num > 1.0f) de /= _sqrtf(g);
+return float(smoothstep(0.0f, 0.13f, de ));
+}
+
+
+const float kCharBlank = 12.0f;
+const float kCharMinus = 11.0f;
+const float kCharDecimalPoint = 10.0f;
+
+__DEVICE__ float DigitBin(const int x)
+{
+return x==0 ? 480599.0f : x==1 ? 139810.0f : x==2 ? 476951.0f : x==3 ? 476999.0f : x==4 ? 350020.0f : x==5 ? 464711.0f : 
+x==6 ? 464727.0f : x==7 ? 476228.0f : x==8 ? 481111.0f : x==9 ? 481095.0f : 0.0f;
+}
+
+__DEVICE__ float PrintValue(const float2 vPixelCoords, const float2 vFontSize, const float fValue, const float fMaxDigits, const float fDecimalPlaces, float2 Coord)
+{
+float2 vStringCharCoords = divide(minus(Coord, vPixelCoords), vFontSize);
+if ((vStringCharCoords.y < 0.0f) || (vStringCharCoords.y >= 1.0f)) return 0.0f;
+float fLog10Value = _log2f(_fabs(fValue)) / _log2f(10.0f);
+float fBiggestIndex = _fmaxf(_floor(fLog10Value), 0.0f);
+float fDigitIndex = fMaxDigits - _floor(vStringCharCoords.x);
+float fCharBin = 0.0f;
+if(fDigitIndex > (-fDecimalPlaces - 1.01f)) {
+if(fDigitIndex > fBiggestIndex) {
+if((fValue < 0.0f) && (fDigitIndex < (fBiggestIndex + 1.5f))) fCharBin = 1792.0f;
+} else {		
+if(fDigitIndex == -1.0f) {
+if(fDecimalPlaces > 0.0f) fCharBin = 2.0f;
+} else {
+if(fDigitIndex < 0.0f) fDigitIndex += 1.0f;
+float fDigitValue = (_fabs(fValue / (_powf(10.0f, fDigitIndex))));
+float kFix = 0.0001f;
+fCharBin = DigitBin(int(_floor(_fmod(kFix + fDigitValue, 10.0f))));
+}		
+}
+}
+return _floor(_fmod((fCharBin / _powf(2.0f, _floor(fract(vStringCharCoords.x) * 4.0f) + (_floor(vStringCharCoords.y * 5.0f) * 4.0f))), 2.0f));
+}
+
+__DEVICE__ float print(const float value, const float line, float2 Coord)
+{
+float2 pos = make_float2(0.0f, 20.0f * float(line) + 5.0f);
+float2 vFontSize = make_float2(8.0f, 15.0f);
+float fDigits = 2.0f;
+float fDecimalPlaces = decimalPlace;
+return PrintValue(pos, vFontSize, value, fDigits, fDecimalPlaces, Coord);
+}
+
+__DEVICE__ float zeros(const float2 p, const float x, const float num, const float zoom, float2 Coord)
+{	
+float rz;
+float d = 0.0f;
+for (float i = 0.0f; i <= 8.0f; i++)
+{
+float yval = f(x + d, num);
+float drv = -yval / ( (f(x + d + 0.4f, num) - f(x + d - 0.4f, num)) * 1.01f );
+if (_fabs(yval) < 0.0002f)
+{
+rz += print(yval, 0.0f, Coord);
+rz += print(x + d - drv, 1.0f, Coord);
+rz = _fmaxf(1.0f - _powf(length(minus(make_float2(x + d, yval), p)), 4.0f) * 4e4/(zoom*zoom), rz);
+break;
+}
+
+d+= drv;
+}
+return rz;
+}
+
+__DEVICE__ float info(const float2 p, const float x, const float num, const float zoom, float2 Coord)
+{
+float rz = 0.0f;
+float yval = f(x, num);
+rz += print(yval ,0.0f, Coord);
+rz += print(x, 1.0f, Coord);
+float dr = f(x + 0.5f, num) - f(x - 0.5f, num);
+rz += print(dr, 2.0f, Coord);
+rz += 0.5f - _fabs(smoothstep(0.0f, _fmaxf(0.25f, dr * 0.25f), p.y - p.x * dr - yval + dr * x + 0.1f) - 0.5f);
+rz = _fmaxf(1.0f - _powf(length(minus(make_float2(x, yval), p)), 4.0f) * 2e4/zoom, rz);
+return rz;
+}
+
+__DEVICE__ float draw(const float2 p, const float num, const float zoom, float Height)
+{
+float rz = de(p, num);
+rz *= (1.0f / thickness);
+rz /= _sqrtf(zoom / Height);
+rz = 1.0f - _saturatef(rz);
+rz = _saturatef(rz);
+return rz;
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{
+
+//float iTime = _tex2D(p_TexR, 500, 500) / 240.0f;
+float iTime = _tex2D(p_TexR, 500, 500);
+p_Y = p_Height - p_Y;
+float X = (float)p_X;
+float Y = (float)p_Y;
+float2 Coord = make_float2(X/4, Y/4);
+float2 resolution = make_float2((float)p_Width, (float)p_Height);
+
+float2 mouse = make_float2(iTime, 0.5f);
+
+float zoom = baseScale;
+float width = 0.0f;
+if (KEY_1)
+{
+zoom *= 2.0f;
+width = -0.02f;
+}
+if (KEY_2)
+{
+zoom *= 2.0f;
+width = -0.02f;
+}
+width += 3.0f / resolution.x * zoom;
+float asp = resolution.x / resolution.y;
+float2 q = make_float2(X / resolution.x, Y / resolution.y);
+
+//centered aspect correction
+q.x = (q.x * asp) + (1.0f - asp) * 0.5f;
+float2 uv = multi(q, zoom);
+uv = minus(uv, 0.5f * zoom);
+
+float2 um = multi(minus(mouse, 0.5f), zoom);
+um.x *= asp;
+float col1 = 0.0f, col2 = 0.0f, col3 = 0.0f;
+
+#ifndef simple_mode
+if (KEY_X)
+{
+col1 += info(uv, um.x, 1.0f, zoom, Coord);
+}
+#if numfunc > 1
+else if (KEY_C)
+{
+col2 += info(uv, um.x, 2.0f, zoom, Coord);
+}
+#endif
+#if numfunc > 2
+else if (KEY_V)
+{
+col3 += info(uv, um.x, 3.0f, zoom, Coord);
+}
+#endif
+else if (KEY_S)
+{
+col1 += zeros(uv, um.x, 1.0f, zoom, Coord);
+}
+#if numfunc > 1
+else if (KEY_D)
+{
+col2 += zeros(uv, um.x, 2.0f, zoom, Coord);
+}
+#endif
+#if numfunc > 2
+else if (KEY_F)
+{
+col3 += zeros(uv, um.x, 3.0f, zoom, Coord);
+}
+#endif
+else
+{
+uv.y -= (mouse.y - 0.5f) * zoom;
+uv.x -= (mouse.x - 0.5f) * zoom * asp;
+}
+#else
+uv.y -= (mouse.y - 0.5f) * zoom;
+uv.x -= (mouse.x - 0.5f) * zoom * asp;
+#endif
+
+//background
+float3 col = make_float3(0.97f, 0.97f, 0.97f);
+col1 += draw(uv, 1.0f, zoom, resolution.y);
+
+#if numfunc > 1
+col2 += draw(uv, 2.0f, zoom, resolution.y);
+#endif
+#if numfunc > 2
+col3 += draw(uv, 3.0f, zoom, resolution.y);
+#endif
+
+float grid;
+grid = 	   step(_fabs(uv.x), width * 0.5f) * 0.8f;
+grid = _fmaxf(step(_fabs(uv.y), width * 0.5f) * 0.8f, grid);
+grid = _fmaxf(step(fract(uv.x), width * 1.2f) * 0.2f, grid);
+grid = _fmaxf(step(fract(uv.y), width * 1.2f) * 0.2f, grid);
+col = minus(col, grid);
+
+col = minus(col, multi(col1, (minus(1.0f, color1))));
+col = minus(col, multi(col2, (minus(1.0f, color2))));
+col = minus(col, multi(col3, (minus(1.0f, color3))));
+
+return col;
+
+}
