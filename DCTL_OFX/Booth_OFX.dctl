@@ -1,0 +1,98 @@
+// Booth OFX DCTL
+
+DEFINE_UI_PARAMS(time, Spin, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+
+#define PI 3.14159265359f
+
+#define SCALE 3.0f
+#define CORNER 22.0f
+
+typedef struct
+{
+float2 r0, r1;
+} mat2;
+
+__DEVICE__ mat2 make_mat2(float2 A, float2 B)
+{
+mat2 C;
+C.r0 = A;
+C.r1 = B;
+return C;
+}
+
+__DEVICE__ float2 multi(float2 A, mat2 B)
+{
+float2 C;
+C.x = A.x * B.r0.x + A.y * B.r0.y;
+C.y = A.x * B.r1.x + A.y * B.r1.y;
+return C;
+}
+
+__DEVICE__ float3 fract( float3 A)
+{
+return make_float3(A.x - _floor(A.x), A.y - _floor(A.y), A.z - _floor(A.z));
+}
+
+__DEVICE__ float3 ABS( float3 A)
+{
+return make_float3(_fabs(A.x), _fabs(A.y), _fabs(A.z));
+}
+
+__DEVICE__ float3 MAX( float3 in, float Min)
+{
+float3 out;
+out.x = _fmaxf(in.x, Min);
+out.y = _fmaxf(in.y, Min);
+out.z = _fmaxf(in.z, Min);
+return out;
+}
+
+__DEVICE__ float3 mix(float3 A, float3 B, float C)
+{
+return A * (1.0f - C) + B * C;
+}
+
+__DEVICE__ float3 hsv2rgb(float3 c)
+{
+float4 K = make_float4(1.0f, 2.0f / 3.0f, 1.0f / 3.0f, 3.0f);
+float3 p = ABS(fract(make_float3(c.x, c.x, c.x) + make_float3(K.x, K.y, K.z)) * 6 - make_float3(K.w, K.w, K.w));
+return c.z * mix(make_float3(K.x, K.x, K.x), clamp(p - make_float3(K.x, K.x, K.x), 0.0f, 1.0f), c.y);
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+float2 uv = make_float2(X / width, Y / height);
+float TIME = time * 50.0f;
+
+float2 position = uv - 0.5f;
+position.x *= width / height;
+float s = _sinf(TIME * 0.1f), c = _cosf(TIME * 0.1f);
+mat2 rot = make_mat2( make_float2(c, s), make_float2(-s, c));
+position = multi(position, rot);
+float2 mousePos = make_float2(_sinf(TIME) * 0.2f, _cosf(TIME) * 0.2f);
+float3 light = make_float3((mousePos - position), 0.5f);
+
+float3 normal = normalize(make_float3(_tanf(position.x * PI * SCALE), _tanf(position.y * PI * SCALE), CORNER));
+float bright = dot(normal, normalize(light));
+float3 color = make_float3(0.125f, 0.025f, 0.125f) * bright;
+float3 heif = normalize(light + make_float3(0.0f, 0.0f, 1.0f));
+float3 spec = make_float3(_powf(dot(heif, normal), 128.0f));
+color = color + (spec * 0.55f);
+float3 RGB = MAX(color, 0.0f);
+
+for (float i = 0.0f; i < 1.0f; i++) {
+float y = position.y;
+float col = 0.125f / _fabs((y * 6.0f - _sinf(((position.x + TIME * 0.1f) * 2.0f + i) * PI)));
+float mul = 0.5f + 0.5f * (_sinf(PI * (i + (-TIME * 0.5f + position.x * 6.0f) * 0.5f)));
+col *= mul;
+float hue = i / 2.0f;
+RGB = RGB + hsv2rgb(make_float3(hue, 1.0f - mul * 0.5f, col));
+}
+
+return RGB;
+}
