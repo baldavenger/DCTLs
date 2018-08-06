@@ -1,0 +1,163 @@
+// Fireworks OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Activity, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.01)
+DEFINE_UI_PARAMS(particles, Particles, DCTLUI_SLIDER_INT, 70, 1, 100, 1)
+DEFINE_UI_PARAMS(explosions, Explosions, DCTLUI_SLIDER_INT, 8, 1, 15, 1)
+DEFINE_UI_PARAMS(mono, Mono, DCTLUI_CHECK_BOX, 0)
+
+__DEVICE__ int NUM_EXPLOSIONS = 0;
+__DEVICE__ int NUM_PARTICLES = 0;
+
+__CONSTANT__ float3 MOD3 = {0.1031f, 0.11369f, 0.13787f};
+
+__DEVICE__ float time = 0.0f;
+
+__DEVICE__ float fract( float A)
+{
+return A - _floor(A);
+}
+
+__DEVICE__ float3 fract( float3 A)
+{
+return make_float3(A.x - _floor(A.x), A.y - _floor(A.y), A.z - _floor(A.z));
+}
+
+__DEVICE__ float mix(float A, float B, float C)
+{
+return A * (1.0f - C) + B * C;
+}
+
+__DEVICE__ float2 mix(float2 A, float2 B, float C)
+{
+return A * (1.0f - C) + B * C;
+}
+
+__DEVICE__ float3 SIN(float3 A)
+{
+return make_float3(_sinf(A.x), _sinf(A.y), _sinf(A.z));
+}
+
+__DEVICE__ float3 MAX(float3 A, float B)
+{
+float3 C;
+C.x = _fmaxf(A.x, B);
+C.y = _fmaxf(A.y, B);
+C.z = _fmaxf(A.z, B);
+return C;
+}
+
+__DEVICE__ float B(float x, float y, float z, float w)
+{
+return smoothstep(x - z, x + z, w) * smoothstep(y + z, y - z, w);
+}
+
+__DEVICE__ float3 hash31(float p)
+{
+float3 p3 = fract(make_float3(p) * MOD3);
+p3 = p3 + dot(p3, make_float3(p3.y, p3.z, p3.x) + 19.19f);
+return fract(make_float3((p3.x + p3.y) * p3.z, (p3.x + p3.z) * p3.y, (p3.y + p3.z) * p3.x));
+}
+
+__DEVICE__ float hash12(float2 p)
+{
+float3 p3  = fract(make_float3(p.x, p.y, p.x) * MOD3);
+p3 = p3 + dot(p3, make_float3(p3.y, p3.z, p3.x) + 19.19f);
+return fract((p3.x + p3.y) * p3.z);
+}
+
+__DEVICE__ float circ(float2 uv, float2 pos, float size)
+{
+float2 UV = uv - pos;
+float SIZE = size * size;
+float CC = smoothstep(SIZE * 1.1f, SIZE, dot(UV, UV));
+return CC;
+}
+
+__DEVICE__ float light(float2 uv, float2 pos, float size)
+{
+float2 UV = uv - pos;
+float SIZE = size * size;
+float LT = SIZE / dot(UV, UV);
+return LT;
+}
+
+__DEVICE__ float3 explosion(float2 uv, float2 p, float seed, float t)
+{
+float3 col = make_float3(0);
+
+float3 en = hash31(seed);
+float3 baseCol = en;
+for(int i = 0; i < NUM_PARTICLES; i++) {
+float3 n = hash31(i) - 0.5f;
+
+float2 startP = p - make_float2(0.0f, t * t * 0.1f);        
+float2 endP = startP + normalize(make_float2(n.x, n.y)) * n.z;
+
+float pt = 1.0f - _powf(t - 1.0f, 2.0f);
+float2 pos = mix(p, endP, pt);    
+float size = mix(0.01f, 0.005f, smoothstep(0.0f, 0.1f, pt));
+size *= smoothstep(1.0f, 0.1f, pt);
+float sparkle = _sinf((pt + n.z) * 100.0f) * 0.5f + 0.5f;
+float bang = _powf(en.x, 3.0f);
+sparkle = _powf(sparkle, bang * 50.0f) * mix(0.01f, 0.01f, en.y * n.y);
+size += sparkle * B(en.x, en.y, en.z, t);
+
+col = col + baseCol * light(uv, pos, size);
+}
+return col;
+}
+
+__DEVICE__ float3 Rainbow(float3 c) {
+
+float t = time;
+float avg = (c.x + c.y + c.z) / 3.0f;
+c = avg + (c - avg) * SIN(make_float3(0.0f, 0.333f, 0.666f) + t);
+c = c + SIN(make_float3(0.4f, 0.3f, 0.3f) * t + make_float3(1.1244f, 3.43215f, 6.435f)) * make_float3(0.4f, 0.1f, 0.5f);
+return c;
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+
+time = (TIME + 1) * 20;
+
+NUM_EXPLOSIONS = explosions;
+NUM_PARTICLES = particles;
+
+float2 uv = make_float2(X / width, Y / height);
+uv.x -= 0.5f;
+uv.x *= width / height;
+
+float N = hash12(uv + 10.0f);
+float t = time * 0.2f;
+
+float3 c = make_float3(0);
+
+for(int i = 0; i < NUM_EXPLOSIONS; i++) {
+float et = t + i * 1234.45235f;
+float id = _floor(et);
+et = et - id + 1.5f;
+
+float3 P = hash31(id);
+float2 p = make_float2(P.x, P.y);
+p.x -= 0.5f;
+p.x *= 1.6f;
+c = c + explosion(uv, p, id, et);
+}
+c = Rainbow(c);
+
+float3 RGB = MAX(c - 0.5f, 0);
+
+if(mono){
+float C = _fminf(_fminf(c.x, c.y), c.z);
+C = _fmaxf(C, 0);
+RGB = make_float3(C);
+}
+
+return RGB;
+}
