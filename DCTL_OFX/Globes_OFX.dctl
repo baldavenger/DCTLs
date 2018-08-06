@@ -1,0 +1,52 @@
+// Globes OFX DCTL
+
+DEFINE_UI_PARAMS(time, Advance, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+
+__DEVICE__ float m(float3 p)
+{
+return length(p) - 0.4f;
+}
+
+__DEVICE__ float3 MOD(float3 A, float B)
+{
+float3 C;
+C.x = _fmod(A.x, B);
+C.y = _fmod(A.y, B);
+C.z = _fmod(A.z, B);
+return C;
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+
+float t = (3 - time) * 10;
+float k = 0;
+float E = 0.001f;
+float2 r = make_float2(width, height);
+float2 XY = make_float2(X, Y);
+float2 u;
+u.x = _fabs(2 * X - r.x) / r.y;
+u.y = _fabs(2 * Y - r.y) / r.y;
+float3 e = make_float3(2, 2, t);
+float3 d = make_float3(u.x, u.y, -1);
+float3 p = make_float3(0);
+for (int i = 0; i < 32; i++) {
+p = MOD((e + d * k) + 2, 4) - 2;
+k += 0.8f * m(p);
+}	
+
+float3 n = normalize( make_float3(m(make_float3(p.x + E, p.y, p.z)) - m(make_float3(p.x - E, p.y, p.z)),
+ m(make_float3(p.x, p.y + E, p.z)) - m(make_float3(p.x, p.y - E, p.z)),
+ m(make_float3(p.x, p.y, p.z + E)) - m(make_float3(p.x, p.y, p.z - E))));
+
+float s = dot(normalize(make_float3(0.6f, 0.6f, 0.6f) - p), n);
+float yo = k < E ? 0.0f : (1.0f / k) + _fmaxf(s, 0);
+float3 RGB = make_float3(yo);
+
+return RGB;
+}
