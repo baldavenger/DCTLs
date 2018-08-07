@@ -1,0 +1,39 @@
+// Mandelbrot OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Zoom, DCTLUI_SLIDER_FLOAT, 0.5, 0, 1, 0.001)
+
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+float time = TIME * 50;
+float2 uv = make_float2(X / width, Y / height);
+
+float2 c = 4.0f * (uv - 0.5f);
+c = c * (5.0f / (time + (1.0f + _powf(time, 3.0f))));
+c.x = c.x - 1.402f;
+float2 z = make_float2(0.0f);
+
+float3 color = make_float3(0.0f);
+
+float t;
+int k = 0;
+for(int i = 0; i < 2048; i++)
+{
+float t = z.x * z.x - z.y * z.y + c.x;
+z.y = 2.0f * z.x * z.y + c.y;
+z.x = t;
+if(z.x * z.x + z.y * z.y > 4.0f){
+k = i;
+break;
+}
+}
+
+color = make_float3(_saturatef(k / 1024.0f), _saturatef(k / 512.0f), _saturatef(k / 64.0f));
+
+return color;
+}
