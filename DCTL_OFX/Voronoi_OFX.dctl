@@ -1,0 +1,70 @@
+// Voronoi OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Motion, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+
+__DEVICE__ float time = 0;
+
+__DEVICE__ float2 fract( float2 A)
+{
+return make_float2(A.x - _floor(A.x), A.y - _floor(A.y));
+}
+
+__DEVICE__ float2 floor( float2 A)
+{
+return make_float2(_floor(A.x), _floor(A.y));
+}
+
+__DEVICE__ float2 SIN( float2 A)
+{
+return make_float2(_sinf(A.x), _sinf(A.y));
+}
+
+__DEVICE__ float3 COS(float3 A)
+{
+return make_float3(_cosf(A.x), _cosf(A.y), _cosf(A.z));
+}
+
+__DEVICE__ float2 hash( float2 p )
+{
+p = make_float2(dot(p, make_float2(127.1f, 311.7f)), dot(p, make_float2(269.5f, 183.3f)));
+return fract(SIN(p) * 18.5453f);
+}
+
+__DEVICE__ float2 voronoi( float2 x )
+{
+float2 n = floor( x );
+float2 f = fract( x );
+
+float3 m = make_float3(8.0f);
+for( int j = -1; j <= 1; j++ )
+for( int i =- 1; i <= 1; i++ )
+{
+float2 g = make_float2( (float)i, (float)j );
+float2 o = hash( n + g );
+float2 r = g - f + (0.5f + 0.5f * SIN(time + 6.2831f * o));
+float d = dot( r, r );
+if( d < m.x )
+m = make_float3( d, o.x, o.y );
+}
+
+return make_float2( _sqrtf(m.x), m.y + m.z );
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+float MAX = _fmaxf(width, height);
+Y = height - Y;
+time = TIME * 100;
+
+float2 p = make_float2( X / MAX, Y / MAX);
+
+float2 c = voronoi( (14.0f + 6.0f * _sinf(0.2f * time)) * p );
+
+float3 col = 0.5f + 0.5f * COS( c.y * 6.2831f + make_float3(0.0f, 1.0f, 2.0f) );	
+
+return col;
+}
