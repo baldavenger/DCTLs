@@ -1,0 +1,37 @@
+// Random 04 OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Adjust, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+
+#define MAX_ITER 23
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+float2 uv = make_float2(X / width, Y / height) - 0.5f;
+
+float time = TIME * 10 + 1;
+
+float2 p = uv * 8.0f;
+float2 i = p;
+float c = 2.0f;
+float inten = 1.0f;
+
+for (int n = 0; n < MAX_ITER; n++) {
+float t = time;
+i = p + make_float2(_cosf(t - i.x) + _cosf(t + i.y), (t - i.y) + _cosf(t + i.x));
+c += 1.0f / length(make_float2(p.x / (_cosf(i.x + t) * inten), p.y / (_cosf(i.y + t) / inten)));
+}
+
+c /= float(MAX_ITER);
+float pulse = _fabs(_sinf(time * 5.0f));
+float pulse2 = _powf((time * 3.0f), 0.25f);
+float pulse3 = _powf(_sinf(time * 2.0f), 4.0f);
+
+float3 RGB = make_float3(_powf(c, 1.5f + pulse/2.0f)) * make_float3(1.0f + pulse2, 2.0f - pulse, 1.5f + pulse3) * (1.0f + pulse) / 2.0f;
+
+return RGB;
+}
