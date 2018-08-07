@@ -1,0 +1,158 @@
+// Random 06 OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Animate, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(KNOB1, Zoom, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(KNOB2, Light, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+
+typedef struct
+{
+float3 r0, r1, r2;
+} mat3;
+
+__DEVICE__ mat3 make_mat3(float3 A, float3 B, float3 C)
+{
+mat3 D;
+D.r0 = A;
+D.r1 = B;
+D.r2 = C;
+return D;
+}
+
+__DEVICE__ float3 multi(float3 X, mat3 A)
+{
+float r[3];
+float x[3] = {X.x, X.y, X.z};
+float a[3][3] =	{{A.r0.x, A.r0.y, A.r0.z},
+				{A.r1.x, A.r1.y, A.r1.z},
+				{A.r2.x, A.r2.y, A.r2.z}};
+for( int i = 0; i < 3; ++i)
+{
+r[i] = 0.0f;
+for( int j = 0; j < 3; ++j)
+{
+r[i] = r[i] + x[j] * a[j][i];
+}
+}
+return make_float3(r[0], r[1], r[2]);
+}
+
+__DEVICE__ float time = 0;
+__DEVICE__ float knob1 = 0;
+__DEVICE__ float knob2 = 0;
+
+__CONSTANT__ float width = 0.22f;
+__CONSTANT__ float scale = 5.0f;
+__CONSTANT__ float detail = 0.002f;
+__CONSTANT__ float3 lightdir = {-0.1f, -0.5f, -1.0f};
+
+__DEVICE__ float3 SIN(float3 A)
+{
+return make_float3(_sinf(A.x), _sinf(A.y), _sinf(A.z));
+}
+
+__DEVICE__ float DE(float3 p)
+{
+float t = 0.4f;
+float dotp = dot(p,p);
+p = p / dotp * scale * knob1;
+p = SIN(p + make_float3(_sinf(1.0f + t) * 2.0f, -t, -t * 2.0f));
+float d = length(make_float2(p.y, p.z)) - width;
+d = _fminf(d, length(make_float2(p.x, p.z)) - width);
+d = _fminf(d, length(make_float2(p.x, p.y)) - width);
+d = _fminf(d, length(p * p * p) - width * 0.3f);
+return d * dotp / scale;
+}
+
+__DEVICE__ float3 normal(float3 pos, float normalDistance)
+{
+normalDistance = _fmaxf(normalDistance * 0.5f, 1.0e-7);
+float3 e = make_float3(0.0f, normalDistance, 0.0f);
+float3 n = make_float3(DE(pos + make_float3(e.y, e.x, e.x)) - DE(pos - make_float3(e.y, e.x, e.x)),
+DE(pos + make_float3(e.x, e.y, e.x)) - DE(pos - make_float3(e.x, e.y, e.x)),
+DE(pos + make_float3(e.x, e.x, e.y)) - DE(pos - make_float3(e.x, e.x, e.y)));
+n = normalize(n);
+return n;
+}
+
+__DEVICE__ float trace(float3 ro, float3 rd)
+{
+const float maxd = 30.0f;          
+const float precis = 0.001f;       
+float h = precis * 2.0f;
+float t = 0.0f;
+float res = -1.0f;
+for( int i=0; i<60; i++ )          
+{
+if( h < precis || t > maxd ) break;
+h = DE( ro + rd * t );
+t += h;
+}
+if( t < maxd ) res = t;
+return res;
+}
+
+__DEVICE__ float light(float3 p, float3 dir, float d)
+{
+float3 ldir = normalize(lightdir);
+ldir.x += knob2;
+float3 n = normal(p, detail);
+float sh = 1.0f;
+float diff = _fmaxf(0.0f, dot(ldir, -n)) + 0.1f * _fmaxf(0.0f, dot(normalize(dir), -n));
+float3 r = reflect(ldir, n);
+float spec = _fmaxf(0.0f, dot(dir, -r)) * sh;
+return diff + _powf(spec, 20.0f) * 0.1f;	
+}
+
+__DEVICE__ mat3 lookAtMatrix( float3 ro, float3 ta, float roll )
+{
+float3 ww = normalize( ta - ro );
+float3 uu = normalize( cross(ww, make_float3(_sinf(roll), _cosf(roll), 0.0f) ) );
+float3 vv = normalize( cross(uu, ww));
+return make_mat3( uu, vv, ww );
+}
+
+__DEVICE__ void camPath( float3 *camPos, float3 *camTar, float time)
+{
+float an = 0.2f * time;
+*camPos = make_float3(1.5f * _sinf(an), 1.0f, 3.5f * _cosf(an));
+*camTar = make_float3(0.0f);
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+float Width = (float)p_Width;
+float Height = (float)p_Height;
+Y = Height - Y;
+time = TIME * 30 - 6;
+float2 r = make_float2(Width, Height);
+float2 XY = make_float2(X, Y);
+float2 uv = XY / r * 2.0f - 1.0;
+uv.y *= r.y / r.x;
+
+knob1 = KNOB1 + 1;
+knob2 = KNOB2;
+
+float col;
+float3 ro , ta;
+
+camPath(&ro, &ta, time);
+mat3 camMat = lookAtMatrix( ro, ta, 0.0f ); 
+
+float3 rd = normalize(multi(make_float3(uv.x, uv.y, 2.0f), camMat));
+float3 hit, hitNormal;
+float t = trace( ro, rd );
+
+float3 p = ro + t * rd;
+
+if (t > detail) {
+col = light(p - detail * rd, rd, t); 
+} else { 
+col = 0.0f;
+}
+
+float3 RGB = make_float3(col);
+
+return RGB;
+}
