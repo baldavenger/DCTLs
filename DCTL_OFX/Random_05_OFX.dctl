@@ -1,0 +1,95 @@
+// Random 05 OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Time, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+
+#define angle 60.0f
+#define PI 3.14159265f
+
+__DEVICE__ float time = 0;
+
+__CONSTANT__ float fov = angle * 0.5f * PI / 180.0f;
+__CONSTANT__ float3 lightDir = {0.3f, 0.5f, 0.0f};
+
+__DEVICE__ float3 MOD(float3 A, float B)
+{
+float3 C;
+C.x = _fmod(A.x, B);
+C.y = _fmod(A.y, B);
+C.z = _fmod(A.z, B);
+return C;
+}
+
+__DEVICE__ float3 MAX( float3 in, float Min)
+{
+float3 out;
+out.x = _fmaxf(in.x, Min);
+out.y = _fmaxf(in.y, Min);
+out.z = _fmaxf(in.z, Min);
+return out;
+}
+
+__DEVICE__ float3 ABS( float3 in)
+{
+float3 out;
+out.x = _fabs(in.x);
+out.y = _fabs(in.y);
+out.z = _fabs(in.z);
+return out;
+}
+
+__DEVICE__ float3 trans(float3 p)
+{
+return MOD(p, 5.0f) - 2.5f;
+}
+
+__DEVICE__ float distanceFunc(float3 p)
+{
+float3 q = ABS(trans(p));
+return length(MAX(q - make_float3(0.5f, 0.5f, 0.5f), 0.0f)) - 0.1f;
+}
+
+__DEVICE__ float3 getNormal(float3 p)
+{
+float d = 0.0001f;
+return normalize(make_float3(
+_fabs(distanceFunc(p + make_float3( d, 0.0f, 0.0f)) - distanceFunc(p + make_float3( -d, 0.0f, 0.0f))),
+_fabs(distanceFunc(p + make_float3(0.0f, d, 0.0f)) - distanceFunc(p + make_float3(0.0f, -d, 0.0f))),
+_fabs(distanceFunc(p + make_float3(0.0f, 0.0f, d)) - distanceFunc(p + make_float3(0.0f, 0.0f, -d)))
+));
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+time =  TIME * 10;
+
+float2 r = make_float2(width, height);
+float2 XY = make_float2(X, Y);
+float2 p;
+p.x = _fabs(2 * X - r.x) / r.y;
+p.y = _fabs(2 * Y - r.y) / r.y;
+float3 ray = normalize(make_float3(_sinf(fov) * p.x, _sinf(fov) * p.y, _cosf(fov)));	
+float distance = 0.0f;
+float rLen = 0.0f;
+float3 cPos = make_float3(0.0f, 0.0f, time * 5.0f);
+float3 rPos = cPos;
+for(int i = 0; i < 64; i++){
+distance = distanceFunc(rPos);
+rLen += distance;
+rPos = cPos + ray * rLen;
+}
+
+float3 RGB = make_float3(0.0f);
+
+if(_fabs(distance) < 0.001){
+float3 normal = getNormal(rPos);
+float diff = _clampf(dot(normalize(lightDir), normal), 0.1f, 1.0f);
+RGB = make_float3(diff);
+}
+
+return RGB;
+}
