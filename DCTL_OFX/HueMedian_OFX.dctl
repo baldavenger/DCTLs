@@ -1,0 +1,223 @@
+// Hue Median OFX DCTL
+
+DEFINE_UI_PARAMS(radius, Radius, DCTLUI_SLIDER_INT, 1, 0, 3, 1)
+DEFINE_UI_PARAMS(display, Display Hue, DCTLUI_CHECK_BOX, 0)
+
+__DEVICE__ void RGB_to_HSV( float r, float g, float b, float *h, float *s, float *v )
+{
+  float min = _fminf(_fminf(r, g), b);
+  float max = _fmaxf(_fmaxf(r, g), b);
+  *v = max;
+  float delta = max - min;
+  if (max != 0.0f) {
+	  *s = delta / max;
+  } else {
+	  *s = 0.0f;
+	  *h = 0.0f;
+  }
+  if (delta == 0.0f) {
+	  *h = 0.f;
+  } else if (r == max) {
+	  *h = (g - b) / delta;
+  } else if (g == max) {
+	  *h = 2 + (b - r) / delta;
+  } else {
+	  *h = 4 + (r - g) / delta;
+  }
+  *h *= 1.0f / 6.0f;
+  if (*h < 0.0f) {
+	  *h += 1.0f;
+  }
+}
+
+__DEVICE__ float get_hue( float r, float g, float b)
+{
+  float min = _fminf(_fminf(r, g), b);
+  float max = _fmaxf(_fmaxf(r, g), b);
+  float delta = max - min;
+  float h;
+  if (delta == 0.0f) {
+	  h = 0.0f;
+  } else if (r == max) {
+	  h = (g - b) / delta;
+  } else if (g == max) {
+	  h = 2 + (b - r) / delta;
+  } else {
+	  h = 4 + (r - g) / delta;
+  }
+  h *= 1.0f / 6.0f;
+  if (h < 0.0f) {
+	  h += 1.0f;
+  }
+  return h;
+}
+
+__DEVICE__ void HSV_to_RGB(float H, float S, float V, float *r, float *g, float *b)
+{
+  if (S == 0.0f) {
+	  *r = *g = *b = V;
+  } else {
+  H *= 6.0f;
+  int i = _floor(H);
+  float f = H - i;
+  i = (i >= 0) ? (i % 6) : (i % 6) + 6;
+  float p = V * (1.0f - S);
+  float q = V * (1.0f - S * f);
+  float t = V * (1.0f - S * (1.0f - f));
+  *r = i == 0 ? V : i == 1 ? q : i == 2 ? p : i == 3 ? p : i == 4 ? t : V;
+  *g = i == 0 ? t : i == 1 ? V : i == 2 ? V : i == 3 ? q : i == 4 ? p : p;
+  *b = i == 0 ? p : i == 1 ? p : i == 2 ? t : i == 3 ? V : i == 4 ? V : q;
+  }
+}
+
+__DEVICE__ float median(float p_Table[], int m)
+{
+float temp;
+int i, j;
+for(i = 0; i < m - 1; i++) {
+for(j = i + 1; j < m; j++) {
+if(p_Table[j] < p_Table[i]) {
+temp = p_Table[i];
+p_Table[i] = p_Table[j];
+p_Table[j] = temp; }}}
+return p_Table[(m - 1) / 2];
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{
+
+float Table9[9] =
+{
+get_hue(_tex2D(p_TexR, p_X - 1, p_Y - 1), _tex2D(p_TexG, p_X - 1, p_Y - 1), _tex2D(p_TexB, p_X - 1, p_Y - 1)),
+get_hue(_tex2D(p_TexR, p_X, p_Y - 1), _tex2D(p_TexG, p_X, p_Y - 1), _tex2D(p_TexB, p_X, p_Y - 1)),
+get_hue(_tex2D(p_TexR, p_X + 1, p_Y - 1), _tex2D(p_TexG, p_X + 1, p_Y - 1), _tex2D(p_TexB, p_X + 1, p_Y - 1)),
+get_hue(_tex2D(p_TexR, p_X - 1, p_Y), _tex2D(p_TexG, p_X - 1, p_Y), _tex2D(p_TexB, p_X - 1, p_Y)),
+get_hue(_tex2D(p_TexR, p_X, p_Y), _tex2D(p_TexG, p_X, p_Y), _tex2D(p_TexB, p_X, p_Y)),
+get_hue(_tex2D(p_TexR, p_X + 1, p_Y), _tex2D(p_TexG, p_X + 1, p_Y), _tex2D(p_TexB, p_X + 1, p_Y)),
+get_hue(_tex2D(p_TexR, p_X - 1, p_Y + 1), _tex2D(p_TexG, p_X - 1, p_Y + 1), _tex2D(p_TexB, p_X - 1, p_Y + 1)),
+get_hue(_tex2D(p_TexR, p_X, p_Y + 1), _tex2D(p_TexG, p_X, p_Y + 1), _tex2D(p_TexB, p_X, p_Y + 1)),
+get_hue(_tex2D(p_TexR, p_X + 1, p_Y + 1), _tex2D(p_TexG, p_X + 1, p_Y + 1), _tex2D(p_TexB, p_X + 1, p_Y + 1))
+};
+
+float Table25[25] =
+{
+get_hue(_tex2D(p_TexR, p_X - 2, p_Y - 2), _tex2D(p_TexG, p_X - 2, p_Y - 2), _tex2D(p_TexB, p_X - 2, p_Y - 2)),
+get_hue(_tex2D(p_TexR, p_X - 1, p_Y - 2), _tex2D(p_TexG, p_X - 1, p_Y - 2), _tex2D(p_TexB, p_X - 1, p_Y - 2)),
+get_hue(_tex2D(p_TexR, p_X, p_Y - 2), _tex2D(p_TexG, p_X, p_Y - 2), _tex2D(p_TexB, p_X, p_Y - 2)),
+get_hue(_tex2D(p_TexR, p_X + 1, p_Y - 2), _tex2D(p_TexG, p_X + 1, p_Y - 2), _tex2D(p_TexB, p_X + 1, p_Y - 2)),
+get_hue(_tex2D(p_TexR, p_X + 2, p_Y - 2), _tex2D(p_TexG, p_X + 2, p_Y - 2), _tex2D(p_TexB, p_X + 2, p_Y - 2)),
+get_hue(_tex2D(p_TexR, p_X - 2, p_Y - 1), _tex2D(p_TexG, p_X - 2, p_Y - 1), _tex2D(p_TexB, p_X - 2, p_Y - 1)),
+get_hue(_tex2D(p_TexR, p_X - 1, p_Y - 1), _tex2D(p_TexG, p_X - 1, p_Y - 1), _tex2D(p_TexB, p_X - 1, p_Y - 1)),
+get_hue(_tex2D(p_TexR, p_X, p_Y - 1), _tex2D(p_TexG, p_X, p_Y - 1), _tex2D(p_TexB, p_X, p_Y - 1)),
+get_hue(_tex2D(p_TexR, p_X + 1, p_Y - 1), _tex2D(p_TexG, p_X + 1, p_Y - 1), _tex2D(p_TexB, p_X + 1, p_Y - 1)),
+get_hue(_tex2D(p_TexR, p_X + 2, p_Y - 1), _tex2D(p_TexG, p_X + 2, p_Y - 1), _tex2D(p_TexB, p_X + 2, p_Y - 1)),
+get_hue(_tex2D(p_TexR, p_X - 2, p_Y), _tex2D(p_TexG, p_X - 2, p_Y), _tex2D(p_TexB, p_X - 2, p_Y)),
+get_hue(_tex2D(p_TexR, p_X - 1, p_Y), _tex2D(p_TexG, p_X - 1, p_Y), _tex2D(p_TexB, p_X - 1, p_Y)),
+get_hue(_tex2D(p_TexR, p_X, p_Y), _tex2D(p_TexG, p_X, p_Y), _tex2D(p_TexB, p_X, p_Y)),
+get_hue(_tex2D(p_TexR, p_X + 1, p_Y), _tex2D(p_TexG, p_X + 1, p_Y), _tex2D(p_TexB, p_X + 1, p_Y)),
+get_hue(_tex2D(p_TexR, p_X + 2, p_Y), _tex2D(p_TexG, p_X + 2, p_Y), _tex2D(p_TexB, p_X + 2, p_Y)),
+get_hue(_tex2D(p_TexR, p_X - 2, p_Y + 1), _tex2D(p_TexG, p_X - 2, p_Y + 1), _tex2D(p_TexB, p_X - 2, p_Y + 1)),
+get_hue(_tex2D(p_TexR, p_X - 1, p_Y + 1), _tex2D(p_TexG, p_X - 1, p_Y + 1), _tex2D(p_TexB, p_X - 1, p_Y + 1)),
+get_hue(_tex2D(p_TexR, p_X, p_Y + 1), _tex2D(p_TexG, p_X, p_Y + 1), _tex2D(p_TexB, p_X, p_Y + 1)),
+get_hue(_tex2D(p_TexR, p_X + 1, p_Y + 1), _tex2D(p_TexG, p_X + 1, p_Y + 1), _tex2D(p_TexB, p_X + 1, p_Y + 1)),
+get_hue(_tex2D(p_TexR, p_X + 2, p_Y + 1), _tex2D(p_TexG, p_X + 2, p_Y + 1), _tex2D(p_TexB, p_X + 2, p_Y + 1)),
+get_hue(_tex2D(p_TexR, p_X - 2, p_Y + 2), _tex2D(p_TexG, p_X - 2, p_Y + 2), _tex2D(p_TexB, p_X - 2, p_Y + 2)),
+get_hue(_tex2D(p_TexR, p_X - 1, p_Y + 2), _tex2D(p_TexG, p_X - 1, p_Y + 2), _tex2D(p_TexB, p_X - 1, p_Y + 2)),
+get_hue(_tex2D(p_TexR, p_X, p_Y + 2), _tex2D(p_TexG, p_X, p_Y + 2), _tex2D(p_TexB, p_X, p_Y + 2)),
+get_hue(_tex2D(p_TexR, p_X + 1, p_Y + 2), _tex2D(p_TexG, p_X + 1, p_Y + 2), _tex2D(p_TexB, p_X + 1, p_Y + 2)),
+get_hue(_tex2D(p_TexR, p_X + 2, p_Y + 2), _tex2D(p_TexG, p_X + 2, p_Y + 2), _tex2D(p_TexB, p_X + 2, p_Y + 2))
+
+};
+
+float Table49[49] =
+{
+get_hue(_tex2D(p_TexR, p_X - 3, p_Y - 3), _tex2D(p_TexG, p_X - 3, p_Y - 3), _tex2D(p_TexB, p_X - 3, p_Y - 3)),
+get_hue(_tex2D(p_TexR, p_X - 2, p_Y - 3), _tex2D(p_TexG, p_X - 2, p_Y - 3), _tex2D(p_TexB, p_X - 2, p_Y - 3)),
+get_hue(_tex2D(p_TexR, p_X - 1, p_Y - 3), _tex2D(p_TexG, p_X - 1, p_Y - 3), _tex2D(p_TexB, p_X - 1, p_Y - 3)),
+get_hue(_tex2D(p_TexR, p_X, p_Y - 3), _tex2D(p_TexG, p_X, p_Y - 3), _tex2D(p_TexB, p_X, p_Y - 3)),
+get_hue(_tex2D(p_TexR, p_X + 1, p_Y - 3), _tex2D(p_TexG, p_X + 1, p_Y - 3), _tex2D(p_TexB, p_X + 1, p_Y - 3)),
+get_hue(_tex2D(p_TexR, p_X + 2, p_Y - 3), _tex2D(p_TexG, p_X + 2, p_Y - 3), _tex2D(p_TexB, p_X + 2, p_Y - 3)),
+get_hue(_tex2D(p_TexR, p_X + 3, p_Y - 3), _tex2D(p_TexG, p_X + 3, p_Y - 3), _tex2D(p_TexB, p_X + 3, p_Y - 3)),
+get_hue(_tex2D(p_TexR, p_X - 3, p_Y - 2), _tex2D(p_TexG, p_X - 3, p_Y - 2), _tex2D(p_TexB, p_X - 3, p_Y - 2)),
+get_hue(_tex2D(p_TexR, p_X - 2, p_Y - 2), _tex2D(p_TexG, p_X - 2, p_Y - 2), _tex2D(p_TexB, p_X - 2, p_Y - 2)),
+get_hue(_tex2D(p_TexR, p_X - 1, p_Y - 2), _tex2D(p_TexG, p_X - 1, p_Y - 2), _tex2D(p_TexB, p_X - 1, p_Y - 2)),
+get_hue(_tex2D(p_TexR, p_X, p_Y - 2), _tex2D(p_TexG, p_X, p_Y - 2), _tex2D(p_TexB, p_X, p_Y - 2)),
+get_hue(_tex2D(p_TexR, p_X + 1, p_Y - 2), _tex2D(p_TexG, p_X + 1, p_Y - 2), _tex2D(p_TexB, p_X + 1, p_Y - 2)),
+get_hue(_tex2D(p_TexR, p_X + 2, p_Y - 2), _tex2D(p_TexG, p_X + 2, p_Y - 2), _tex2D(p_TexB, p_X + 2, p_Y - 2)),
+get_hue(_tex2D(p_TexR, p_X + 3, p_Y - 2), _tex2D(p_TexG, p_X + 3, p_Y - 2), _tex2D(p_TexB, p_X + 3, p_Y - 2)),
+get_hue(_tex2D(p_TexR, p_X - 3, p_Y - 1), _tex2D(p_TexG, p_X - 3, p_Y - 1), _tex2D(p_TexB, p_X - 3, p_Y - 1)),
+get_hue(_tex2D(p_TexR, p_X - 2, p_Y - 1), _tex2D(p_TexG, p_X - 2, p_Y - 1), _tex2D(p_TexB, p_X - 2, p_Y - 1)),
+get_hue(_tex2D(p_TexR, p_X - 1, p_Y - 1), _tex2D(p_TexG, p_X - 1, p_Y - 1), _tex2D(p_TexB, p_X - 1, p_Y - 1)),
+get_hue(_tex2D(p_TexR, p_X, p_Y - 1), _tex2D(p_TexG, p_X, p_Y - 1), _tex2D(p_TexB, p_X, p_Y - 1)),
+get_hue(_tex2D(p_TexR, p_X + 1, p_Y - 1), _tex2D(p_TexG, p_X + 1, p_Y - 1), _tex2D(p_TexB, p_X + 1, p_Y - 1)),
+get_hue(_tex2D(p_TexR, p_X + 2, p_Y - 1), _tex2D(p_TexG, p_X + 2, p_Y - 1), _tex2D(p_TexB, p_X + 2, p_Y - 1)),
+get_hue(_tex2D(p_TexR, p_X + 3, p_Y - 1), _tex2D(p_TexG, p_X + 3, p_Y - 1), _tex2D(p_TexB, p_X + 3, p_Y - 1)),
+get_hue(_tex2D(p_TexR, p_X - 3, p_Y), _tex2D(p_TexG, p_X - 3, p_Y), _tex2D(p_TexB, p_X - 3, p_Y)),
+get_hue(_tex2D(p_TexR, p_X - 2, p_Y), _tex2D(p_TexG, p_X - 2, p_Y), _tex2D(p_TexB, p_X - 2, p_Y)),
+get_hue(_tex2D(p_TexR, p_X - 1, p_Y), _tex2D(p_TexG, p_X - 1, p_Y), _tex2D(p_TexB, p_X - 1, p_Y)),
+get_hue(_tex2D(p_TexR, p_X, p_Y), _tex2D(p_TexG, p_X, p_Y), _tex2D(p_TexB, p_X, p_Y)),
+get_hue(_tex2D(p_TexR, p_X + 1, p_Y), _tex2D(p_TexG, p_X + 1, p_Y), _tex2D(p_TexB, p_X + 1, p_Y)),
+get_hue(_tex2D(p_TexR, p_X + 2, p_Y), _tex2D(p_TexG, p_X + 2, p_Y), _tex2D(p_TexB, p_X + 2, p_Y)),
+get_hue(_tex2D(p_TexR, p_X + 3, p_Y), _tex2D(p_TexG, p_X + 3, p_Y), _tex2D(p_TexB, p_X + 3, p_Y)),
+get_hue(_tex2D(p_TexR, p_X - 3, p_Y + 1), _tex2D(p_TexG, p_X - 3, p_Y + 1), _tex2D(p_TexB, p_X - 3, p_Y + 1)),
+get_hue(_tex2D(p_TexR, p_X - 2, p_Y + 1), _tex2D(p_TexG, p_X - 2, p_Y + 1), _tex2D(p_TexB, p_X - 2, p_Y + 1)),
+get_hue(_tex2D(p_TexR, p_X - 1, p_Y + 1), _tex2D(p_TexG, p_X - 1, p_Y + 1), _tex2D(p_TexB, p_X - 1, p_Y + 1)),
+get_hue(_tex2D(p_TexR, p_X, p_Y + 1), _tex2D(p_TexG, p_X, p_Y + 1), _tex2D(p_TexB, p_X, p_Y + 1)),
+get_hue(_tex2D(p_TexR, p_X + 1, p_Y + 1), _tex2D(p_TexG, p_X + 1, p_Y + 1), _tex2D(p_TexB, p_X + 1, p_Y + 1)),
+get_hue(_tex2D(p_TexR, p_X + 2, p_Y + 1), _tex2D(p_TexG, p_X + 2, p_Y + 1), _tex2D(p_TexB, p_X + 2, p_Y + 1)),
+get_hue(_tex2D(p_TexR, p_X + 3, p_Y + 1), _tex2D(p_TexG, p_X + 3, p_Y + 1), _tex2D(p_TexB, p_X + 3, p_Y + 1)),
+get_hue(_tex2D(p_TexR, p_X - 3, p_Y + 2), _tex2D(p_TexG, p_X - 3, p_Y + 2), _tex2D(p_TexB, p_X - 3, p_Y + 2)),
+get_hue(_tex2D(p_TexR, p_X - 2, p_Y + 2), _tex2D(p_TexG, p_X - 2, p_Y + 2), _tex2D(p_TexB, p_X - 2, p_Y + 2)),
+get_hue(_tex2D(p_TexR, p_X - 1, p_Y + 2), _tex2D(p_TexG, p_X - 1, p_Y + 2), _tex2D(p_TexB, p_X - 1, p_Y + 2)),
+get_hue(_tex2D(p_TexR, p_X, p_Y + 2), _tex2D(p_TexG, p_X, p_Y + 2), _tex2D(p_TexB, p_X, p_Y + 2)),
+get_hue(_tex2D(p_TexR, p_X + 1, p_Y + 2), _tex2D(p_TexG, p_X + 1, p_Y + 2), _tex2D(p_TexB, p_X + 1, p_Y + 2)),
+get_hue(_tex2D(p_TexR, p_X + 2, p_Y + 2), _tex2D(p_TexG, p_X + 2, p_Y + 2), _tex2D(p_TexB, p_X + 2, p_Y + 2)),
+get_hue(_tex2D(p_TexR, p_X + 3, p_Y + 2), _tex2D(p_TexG, p_X + 3, p_Y + 2), _tex2D(p_TexB, p_X + 3, p_Y + 2)),
+get_hue(_tex2D(p_TexR, p_X - 3, p_Y + 3), _tex2D(p_TexG, p_X - 3, p_Y + 3), _tex2D(p_TexB, p_X - 3, p_Y + 3)),
+get_hue(_tex2D(p_TexR, p_X - 2, p_Y + 3), _tex2D(p_TexG, p_X - 2, p_Y + 3), _tex2D(p_TexB, p_X - 2, p_Y + 3)),
+get_hue(_tex2D(p_TexR, p_X - 1, p_Y + 3), _tex2D(p_TexG, p_X - 1, p_Y + 3), _tex2D(p_TexB, p_X - 1, p_Y + 3)),
+get_hue(_tex2D(p_TexR, p_X, p_Y + 3), _tex2D(p_TexG, p_X, p_Y + 3), _tex2D(p_TexB, p_X, p_Y + 3)),
+get_hue(_tex2D(p_TexR, p_X + 1, p_Y + 3), _tex2D(p_TexG, p_X + 1, p_Y + 3), _tex2D(p_TexB, p_X + 1, p_Y + 3)),
+get_hue(_tex2D(p_TexR, p_X + 2, p_Y + 3), _tex2D(p_TexG, p_X + 2, p_Y + 3), _tex2D(p_TexB, p_X + 2, p_Y + 3)),
+get_hue(_tex2D(p_TexR, p_X + 3, p_Y + 3), _tex2D(p_TexG, p_X + 3, p_Y + 3), _tex2D(p_TexB, p_X + 3, p_Y + 3))
+};
+
+float R, G, B, H, S, V, Hm;
+
+R = _tex2D(p_TexR, p_X, p_Y);
+G = _tex2D(p_TexG, p_X, p_Y);
+B = _tex2D(p_TexB, p_X, p_Y);
+
+RGB_to_HSV( R, G, B, &H, &S, &V);
+
+switch (radius)
+{
+case 0:
+{
+Hm = H;
+}
+break;
+case 1:
+{
+Hm = median(Table9, 9);
+}
+break;
+case 2:
+{
+Hm = median(Table25, 25);
+}
+break;
+case 3:
+{
+Hm = median(Table49, 49);
+}
+}
+
+HSV_to_RGB(Hm, S, V, &R, &G, &B);
+
+float3 RGB;
+
+RGB = (display) ? make_float3(Hm) : make_float3(R, G, B);
+
+return RGB;
+}

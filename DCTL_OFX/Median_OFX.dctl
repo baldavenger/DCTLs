@@ -1,6 +1,10 @@
 // Median OFX DCTL
 
 DEFINE_UI_PARAMS(radius, Radius, DCTLUI_SLIDER_INT, 1, 1, 3, 1)
+DEFINE_UI_PARAMS(red, Red Channel, DCTLUI_CHECK_BOX, 1)
+DEFINE_UI_PARAMS(green, Green Channel, DCTLUI_CHECK_BOX, 1)
+DEFINE_UI_PARAMS(blue, Blue Channel, DCTLUI_CHECK_BOX, 1)
+
 
 __DEVICE__ float median(float p_Table[], int m)
 {
@@ -18,7 +22,10 @@ return p_Table[(m - 1) / 2];
 __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
 {
 
-float R, G, B;
+const float Rin = _tex2D(p_TexR, p_X, p_Y);
+const float Gin = _tex2D(p_TexG, p_X, p_Y);
+const float Bin = _tex2D(p_TexB, p_X, p_Y);
+
 
 float TableR9[9] =
 {
@@ -305,36 +312,29 @@ _tex2D(p_TexB, p_X + 2, p_Y + 3),
 _tex2D(p_TexB, p_X + 3, p_Y + 3), 
 };
 
+float R, G, B;
+
 switch (radius)
 {
 case 1:
 {
-const float r9 = median(TableR9, 9);
-const float g9 = median(TableG9, 9);
-const float b9 = median(TableB9, 9);
-R = r9;
-G = g9;
-B = b9;
+R = (red) ? median(TableR9, 9) : Rin;
+G = (green) ? median(TableG9, 9) : Gin;
+B = (blue) ? median(TableB9, 9) : Bin;
 }
 break;
 case 2:
 {
-const float r25 = median(TableR25, 25);
-const float g25 = median(TableG25, 25);
-const float b25 = median(TableB25, 25);
-R = r25;
-G = g25;
-B = b25;
+R = (red) ? median(TableR25, 25) : Rin;
+G = (green) ? median(TableG25, 25) : Gin;
+B = (blue) ? median(TableB25, 25) : Bin;
 }
 break;
 case 3:
 {
-const float r49 = median(TableR49, 49);
-const float g49 = median(TableG49, 49);
-const float b49 = median(TableB49, 49);
-R = r49;
-G = g49;
-B = b49;
+R = (red) ? median(TableR49, 49) : Rin;
+G = (green) ? median(TableG49, 49) : Gin;
+B = (blue) ? median(TableB49, 49) : Bin;
 }
 }
 
