@@ -1,0 +1,255 @@
+// Random 07 OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Animate, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+
+#define TAU 	(8.0f * _atan2f(1.0f, 1.0f))
+#define PHI 	((_sqrtf(5.0f) + 1.0f) * 0.5f)
+#define PHI2 	(PHI * PHI)
+#define PHI3 	(PHI * PHI * PHI)
+
+#define V00 make_float3( PHI2, 0.0f, PHI3)
+#define V01 make_float3( 0.0f, PHI, PHI3)
+#define V02 make_float3(-PHI2, 0.0f, PHI3)
+#define V03 make_float3( 0.0f, -PHI, PHI3)
+#define V04 make_float3( PHI2, PHI2, PHI2)
+#define V05 make_float3( 0.0f, PHI3, PHI2)
+#define V06 make_float3(-PHI2, PHI2, PHI2)
+#define V07 make_float3(-PHI2, -PHI2, PHI2)
+#define V08 make_float3( 0.0f, -PHI3, PHI2)
+#define V09 make_float3( PHI2, -PHI2, PHI2)
+#define V10 make_float3( PHI3, 0.0f, PHI)
+#define V11 make_float3(-PHI3, 0.0f, PHI)
+#define V12 make_float3( PHI3, PHI2, 0.0f)
+#define V13 make_float3( PHI, PHI3, 0.0f)
+#define V14 make_float3( -PHI, PHI3, 0.0f)
+#define V15 make_float3(-PHI3, PHI2, 0.0f)
+#define V16 make_float3(-PHI3, -PHI2, 0.0f)
+#define V17 make_float3( -PHI, -PHI3, 0.0f)
+#define V18 make_float3( PHI, -PHI3, 0.0f)
+#define V19 make_float3( PHI3, -PHI2, 0.0f)
+#define V20 make_float3( PHI3, 0.0f, -PHI)
+#define V21 make_float3(-PHI3, 0.0f, -PHI)
+#define V22 make_float3( PHI2, PHI2, -PHI2)
+#define V23 make_float3( 0.0f, PHI3, -PHI2)
+#define V24 make_float3(-PHI2, PHI2, -PHI2)
+#define V25 make_float3(-PHI2, -PHI2, -PHI2)
+#define V26 make_float3( 0.0f, -PHI3, -PHI2)
+#define V27 make_float3( PHI2, -PHI2, -PHI2)
+#define V28 make_float3( PHI2, 0.0f, -PHI3)
+#define V29 make_float3( 0.0f, PHI, -PHI3)
+#define V30 make_float3(-PHI2, 0.0f, -PHI3)
+#define V31 make_float3( 0.0f, -PHI, -PHI3)
+
+__DEVICE__ float time = 0;
+
+typedef struct
+{
+float2 r0, r1;
+} mat2;
+
+__DEVICE__ mat2 make_mat2(float2 A, float2 B)
+{
+mat2 C;
+C.r0 = A;
+C.r1 = B;
+return C;
+}
+
+__DEVICE__ float2 multi(float2 A, mat2 B)
+{
+float2 C;
+C.x = A.x * B.r0.x + A.y * B.r0.y;
+C.y = A.x * B.r1.x + A.y * B.r1.y;
+return C;
+}
+
+__DEVICE__ float3 MAX( float3 in, float Min)
+{
+float3 out;
+out.x = _fmaxf(in.x, Min);
+out.y = _fmaxf(in.y, Min);
+out.z = _fmaxf(in.z, Min);
+return out;
+}
+
+__DEVICE__ float3 POW( float3 in, float3 pw)
+{
+float3 out;
+out.x = _powf(in.x, pw.x);
+out.y = _powf(in.y, pw.y);
+out.z = _powf(in.z, pw.z);
+return out;
+}
+
+__DEVICE__ mat2 rmat(float t)
+{
+float c = cos(t);
+float s = sin(t);
+return make_mat2(make_float2(c, s), make_float2(-s, c));
+}
+
+__DEVICE__ float segment(float3 p, float3 a, float3 b, float r)
+{
+float3 pa = p - a;
+float3 ba = b - a;
+float h = _saturatef(dot(pa, ba) / dot(ba, ba));
+
+return length(pa - ba * h) - r;
+}
+
+__DEVICE__ float map(float3 position)
+{
+float3 origin = position - make_float3(0.0f, 0.0f, 8.0f * PHI);
+float2 orXY = make_float2(origin.x, origin.y);
+orXY = multi(orXY, rmat(time * (PHI/17.0f)));
+//origin.xy 	*= rmat(time * (PHI/17.0f));
+
+float2 orXZ = make_float2(orXY.x, origin.z);
+orXZ = multi(orXZ, rmat(time * (PHI/5.0f)));
+//origin.xz 	*= rmat(time * (PHI/5.0f));
+
+origin = make_float3(orXZ.x, orXY.y, orXZ.y);
+
+float radius = 0.0625f;
+
+float range = 999.0f;	
+
+range = _fminf(range, segment(origin, V00, V01, radius));
+range = _fminf(range, segment(origin, V01, V02, radius));
+range = _fminf(range, segment(origin, V02, V03, radius));
+range = _fminf(range, segment(origin, V03, V00, radius));
+range = _fminf(range, segment(origin, V00, V04, radius));
+range = _fminf(range, segment(origin, V04, V05, radius));
+range = _fminf(range, segment(origin, V01, V05, radius));
+range = _fminf(range, segment(origin, V05, V06, radius));
+range = _fminf(range, segment(origin, V06, V02, radius));
+range = _fminf(range, segment(origin, V02, V11, radius));
+range = _fminf(range, segment(origin, V02, V07, radius));
+range = _fminf(range, segment(origin, V07, V08, radius));
+range = _fminf(range, segment(origin, V08, V03, radius));
+range = _fminf(range, segment(origin, V08, V09, radius));
+range = _fminf(range, segment(origin, V00, V09, radius));
+range = _fminf(range, segment(origin, V00, V10, radius));
+range = _fminf(range, segment(origin, V10, V12, radius));
+range = _fminf(range, segment(origin, V12, V13, radius));
+range = _fminf(range, segment(origin, V05, V13, radius));
+range = _fminf(range, segment(origin, V05, V14, radius));
+range = _fminf(range, segment(origin, V06, V15, radius));
+range = _fminf(range, segment(origin, V11, V15, radius));
+range = _fminf(range, segment(origin, V11, V16, radius));
+range = _fminf(range, segment(origin, V16, V07, radius));
+range = _fminf(range, segment(origin, V09, V19, radius));
+range = _fminf(range, segment(origin, V19, V10, radius));
+range = _fminf(range, segment(origin, V04, V12, radius));
+range = _fminf(range, segment(origin, V28, V29, radius));
+range = _fminf(range, segment(origin, V29, V30, radius));
+range = _fminf(range, segment(origin, V30, V31, radius));
+range = _fminf(range, segment(origin, V31, V28, radius));
+range = _fminf(range, segment(origin, V28, V22, radius));
+range = _fminf(range, segment(origin, V22, V23, radius));
+range = _fminf(range, segment(origin, V23, V29, radius));
+range = _fminf(range, segment(origin, V30, V24, radius));
+range = _fminf(range, segment(origin, V30, V21, radius));
+range = _fminf(range, segment(origin, V30, V25, radius));
+range = _fminf(range, segment(origin, V31, V26, radius));
+range = _fminf(range, segment(origin, V27, V28, radius));
+range = _fminf(range, segment(origin, V28, V20, radius));
+range = _fminf(range, segment(origin, V20, V12, radius));
+range = _fminf(range, segment(origin, V12, V22, radius));
+range = _fminf(range, segment(origin, V24, V23, radius));
+range = _fminf(range, segment(origin, V24, V15, radius));
+range = _fminf(range, segment(origin, V15, V21, radius));
+range = _fminf(range, segment(origin, V21, V16, radius));
+range = _fminf(range, segment(origin, V16, V25, radius));
+range = _fminf(range, segment(origin, V25, V26, radius));
+range = _fminf(range, segment(origin, V26, V27, radius));
+range = _fminf(range, segment(origin, V27, V19, radius));
+range = _fminf(range, segment(origin, V19, V20, radius));
+range = _fminf(range, segment(origin, V13, V23, radius));
+range = _fminf(range, segment(origin, V14, V23, radius));
+range = _fminf(range, segment(origin, V14, V15, radius));
+range = _fminf(range, segment(origin, V08, V18, radius));
+range = _fminf(range, segment(origin, V18, V26, radius));
+range = _fminf(range, segment(origin, V26, V17, radius));
+range = _fminf(range, segment(origin, V17, V08, radius));
+range = _fminf(range, segment(origin, V18, V19, radius));
+range = _fminf(range, segment(origin, V16, V17, radius));
+
+return range;
+}
+
+__DEVICE__ float3 derive(float3 position, float range)
+{
+float2 offset = make_float2(0.0f, range);
+float3 normal = make_float3(0.0f);
+normal.x = map(position + make_float3(offset.y, offset.x, offset.x)) - map(position - make_float3(offset.y, offset.x, offset.x));
+normal.y = map(position + make_float3(offset.x, offset.y, offset.x)) - map(position - make_float3(offset.x, offset.y, offset.x));
+normal.z = map(position + make_float3(offset.x, offset.x, offset.y)) - map(position - make_float3(offset.x, offset.x, offset.y));
+return normalize(normal);
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+time = TIME * 50;
+
+float2 aspect = make_float2(width/height, height/height);
+float2 uv = make_float2(X / width, Y / height);
+uv 	= (uv - 0.5f) * aspect;
+float2 mouse = make_float2(1.0f, 1.0f);
+float2 m = (mouse - 0.5f) * aspect;
+
+float3 direction = normalize(make_float3(uv.x, uv.y, 1.0f));
+float3 origin = make_float3(0.0f);
+float3 position	= origin;
+
+float minimum_range	= 2.0f / _fmaxf(width, height);
+float max_range	= 64.0f;
+float range	= max_range;
+float total_range = 0.0f;
+float steps = 0.0f;
+for(int count = 1; count < 64; count++)
+{
+if(range > minimum_range && total_range < max_range)
+{
+steps++;
+
+range = map(position);			
+
+range *= 0.65f;		
+minimum_range *= 1.005f;	
+
+total_range	+= range;
+
+position = origin + direction * total_range;			
+}
+}
+
+float3 background_color = (make_float3(0.375f, 0.375f, 0.5f) - uv.y) * 0.0625f;
+float3 material_color = make_float3( 0.45f, 0.35f, 0.12f) + 0.55f;	
+float3 color = background_color + steps / 64.0f;
+if(range < 0.01f)
+{
+float3 surface_direction = derive(position, minimum_range);
+
+float3 light_position = make_float3(32.0f, 32.0f, -64.0f);
+float3 light_direction = normalize(light_position - position);
+
+float light	= _fmaxf(dot(surface_direction, light_direction), 0.0f);
+
+color = color + (material_color + material_color * light + light);
+color = color - (MAX(material_color/total_range, 0.5f));
+}
+else
+{
+color = color + (1.0f - material_color);
+}
+
+color = POW(color * 0.5f, make_float3(1.6f, 1.6f, 1.6f));
+
+return color;
+}
