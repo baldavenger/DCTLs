@@ -2,7 +2,7 @@
 // Requires ACES_DCTL set
 
 DEFINE_UI_PARAMS(Exposure, Exposure, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
-DEFINE_UI_PARAMS(Saturation, Saturation, DCTLUI_SLIDER_FLOAT, 0.7, 0, 2, 0.001)
+DEFINE_UI_PARAMS(Sat, Saturation, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
 DEFINE_UI_PARAMS(peak, Peak, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
 DEFINE_UI_PARAMS(curve, Contrast, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
 DEFINE_UI_PARAMS(pivot, Pivot, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
@@ -13,7 +13,7 @@ DEFINE_UI_PARAMS(PFE, Enable PFE, DCTLUI_CHECK_BOX, 1)
 #include "ACES_DCTL/ACES_LIB/ACES_LMT.h"
 
 __CONSTANT__ float e = 2.718281828459045f;
-__CONSTANT__ float AP0_Arri[9] = {1.515985f, -0.361342f, -0.154644f, -0.128327f, 1.019315f, 0.109013f, -0.010511f, 0.060834f, 0.949677f};
+__CONSTANT__ float AP0_Rec709[9] = {2.52161f, -1.13407f, -0.387538f, -0.276482f, 1.37272f, -0.0962352f, -0.0153831f, -0.152991f, 1.16837f};
 
 __DEVICE__ float3 Sigmoid( float3 In, float peak, float curve, float pivot, float offset)
 {
@@ -36,9 +36,12 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p
 float3 aces = make_float3(p_R, p_G, p_B);
 aces = IDT_Alexa_v3_logC_EI800(aces);
 
+float Saturation = Sat;
+
 if(Exposure != 0.0f) 
 aces = aces * _exp2f(Exposure);
 
+if(PFE) Saturation = 0.7f * Sat;
 aces = scale_C( aces, Saturation);
 
 float3 SLOPE = make_float3(1.0f, 1.0f, 0.94f);
@@ -57,9 +60,9 @@ aces = scale_C_at_H( aces, 240.0f, 120.0f, 1.4f);
 }
 
 float3 RGB;
-RGB.x = aces.x * AP0_Arri[0] + aces.y * AP0_Arri[1] + aces.z * AP0_Arri[2]; 
-RGB.y = aces.x * AP0_Arri[3] + aces.y * AP0_Arri[4] + aces.z * AP0_Arri[5]; 
-RGB.z = aces.x * AP0_Arri[6] + aces.y * AP0_Arri[7] + aces.z * AP0_Arri[8];
+RGB.x = aces.x * AP0_Rec709[0] + aces.y * AP0_Rec709[1] + aces.z * AP0_Rec709[2]; 
+RGB.y = aces.x * AP0_Rec709[3] + aces.y * AP0_Rec709[4] + aces.z * AP0_Rec709[5]; 
+RGB.z = aces.x * AP0_Rec709[6] + aces.y * AP0_Rec709[7] + aces.z * AP0_Rec709[8];
 
 RGB.x = linLogc(RGB.x);
 RGB.y = linLogc(RGB.y);
