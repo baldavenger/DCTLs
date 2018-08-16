@@ -1,0 +1,811 @@
+// Duck OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Animate, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(adjust1, Pan, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(adjust2, Tilt, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(adjust3, Zoom, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(UGLY, Ugly Duck, DCTLUI_CHECK_BOX, 0)
+
+__DEVICE__ float iTime = 1;
+__DEVICE__ float2 iResolution = {10, 10};
+__DEVICE__ bool Ugly = 0;
+
+#define MAX_RAYDISTANCE 1000.0f
+#define STEP_SIZE_SCALER 0.8f
+
+#define PI 3.141592654f
+#define TwoPi 6.283185307f
+
+#define DEGREE_7_5 		0.130899694f
+#define DEGREE_17 		0.296705973f
+#define DEGREE_17_5 	0.305432619f
+#define DEGREE_37_5 	0.654498469f
+#define DEGREE_60 		1.047197551f
+#define DEGREE_85 		1.483529864f
+#define DEGREE_90 		1.570796326f
+#define DEGREE_95 		1.658062789f
+
+#define PLANE 			1.0f
+#define DUCK_SHADOW 	2.0f
+
+#define POINT_EYE 		100.0f
+#define PEAK 			101.0f
+#define DUCK_FOOT 		102.0f
+#define DUCK_BODY 		103.0f
+
+#define SUN 			104.0f
+#define MOON 			105.0f
+
+#define PUREDUCK 0 // setting this value to 1 will show only a duck
+
+__CONSTANT__ float3 dawnCol = {0.5f, 0.5f, 1};
+__CONSTANT__ float3 dawnCol2 = {1, 1, 0.8f};
+__CONSTANT__ float3 midDayCol = {0.529411764f, 0.811764705f, 0.909803921f};
+__CONSTANT__ float3 midDayCol2 = {0.9490196078f, 1, 0.968627450f};
+__CONSTANT__ float3 twilightCol = {0.0941176470f, 0.062745098f, 0.215686274f};
+__CONSTANT__ float3 twilightCol2 = {0.98431372549f, 0.4941176470f, 0.313725490f};
+__CONSTANT__ float3 midNightCol = {0, 0, 0};
+__CONSTANT__ float3 midNightCol2 = {0, 0, 0.2f};
+
+typedef struct
+{
+float3 r0, r1, r2;
+} mat3;
+
+typedef struct
+{
+float2 r0, r1;
+} mat2;
+
+__DEVICE__ mat2 make_mat2(float2 A, float2 B)
+{
+mat2 C;
+C.r0 = A;
+C.r1 = B;
+return C;
+}
+
+__DEVICE__ float2 multi(float2 A, mat2 B)
+{
+float2 C;
+C.x = A.x * B.r0.x + A.y * B.r0.y;
+C.y = A.x * B.r1.x + A.y * B.r1.y;
+return C;
+}
+
+__DEVICE__ float3 multi(float3 A, mat3 B)
+{
+float3 C;
+C.x = A.x * B.r0.x + A.y * B.r0.y + A.z * B.r0.z;
+C.y = A.x * B.r1.x + A.y * B.r1.y + A.z * B.r1.z;
+C.z = A.x * B.r2.x + A.y * B.r2.y + A.z * B.r2.z;
+return C;
+}
+
+__DEVICE__ mat3 make_mat3(float3 A, float3 B, float3 C)
+{
+mat3 D;
+D.r0 = A;
+D.r1 = B;
+D.r2 = C;
+return D;
+}
+
+__DEVICE__ mat3 transpose(mat3 A)
+{
+mat3 B;
+B.r0 = make_float3(A.r0.x, A.r1.x, A.r2.x);
+B.r1 = make_float3(A.r0.y, A.r1.y, A.r2.y);
+B.r2 = make_float3(A.r0.z, A.r1.z, A.r2.z);
+return B;
+}
+
+__DEVICE__ mat3 multi(mat3 A, mat3 B)
+{
+float r[3][3];
+float a[3][3] =	{{A.r0.x, A.r0.y, A.r0.z},
+{A.r1.x, A.r1.y, A.r1.z},
+{A.r2.x, A.r2.y, A.r2.z}};
+float b[3][3] =	{{B.r0.x, B.r0.y, B.r0.z},
+{B.r1.x, B.r1.y, B.r1.z},
+{B.r2.x, B.r2.y, B.r2.z}};
+
+for( int i = 0; i < 3; ++i)
+{
+for( int j = 0; j < 3; ++j)
+{
+r[i][j] = 0.0f;
+for( int k = 0; k < 3; ++k)
+{
+r[i][j] = r[i][j] + a[i][k] * b[k][j];
+}
+}
+}
+mat3 R = make_mat3(make_float3(r[0][0], r[0][1], r[0][2]), 
+make_float3(r[1][0], r[1][1], r[1][2]), make_float3(r[2][0], r[2][1], r[2][2]));
+return R;
+}
+
+__DEVICE__ float fract(float A)
+{
+float B;
+B = A - _floor(A);
+return B;
+}
+
+__DEVICE__ float2 fract(float2 A)
+{
+float2 B;
+B.x = A.x - _floor(A.x);
+B.y = A.y - _floor(A.y);
+return B;
+}
+
+__DEVICE__ float mix(float A, float B, float C)
+{
+return A * (1.0f - C) + B * C;
+}
+
+__DEVICE__ float3 mix(float3 A, float3 B, float C)
+{
+return A * (1.0f - C) + B * C;
+}
+
+__DEVICE__ float2 ABS( float2 A)
+{
+return make_float2(_fabs(A.x), _fabs(A.y));
+}
+
+__DEVICE__ float2 MAX( float2 A, float B)
+{
+return make_float2(_fmaxf(A.x, B), _fmaxf(A.y, B));
+}
+
+__DEVICE__ float3 CLAMP( float3 in, float clampMin, float clampMax)
+{
+float3 out;
+out.x = _clampf( in.x, clampMin, clampMax);
+out.y = _clampf( in.y, clampMin, clampMax);
+out.z = _clampf( in.z, clampMin, clampMax);   
+return out;
+}
+
+__DEVICE__ float hash(float n)
+{ 
+return fract(_sinf(n) * 1e4);
+}
+
+__DEVICE__ float hash(float2 p)
+{
+return fract(1e4 * _sinf(17.0f * p.x + p.y * 0.1f) * (0.1f + _fabs(_sinf(p.y * 13.0f + p.x))));
+}
+
+__DEVICE__ float noise(float x)
+{
+float i = _floor(x);
+float f = fract(x);
+float u = f * f * (3.0f - 2.0f * f);
+return mix(hash(i), hash(i + 1.0f), u);
+}
+
+__DEVICE__ float noise(float2 x)
+{
+float2 i = make_float2(_floor(x.x), _floor(x.y));
+float2 f = fract(x);
+float a = hash(i);
+float b = hash(i + make_float2(1.0f, 0.0f));
+float c = hash(i + make_float2(0.0f, 1.0f));
+float d = hash(i + make_float2(1.0f, 1.0f));
+float2 u = f * f * (make_float2(3.0f, 3.0f) - f * 2.0f);
+return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
+}
+
+__DEVICE__ float rand(float2 co)
+{
+return fract(_sinf(dot(co , make_float2(12.9898f, 78.233f))) * 43758.5453f);
+}
+
+__DEVICE__ float3 addStars(float2 screenSize, float2 fs_UV)
+{
+float time = iTime * 80.0f;
+float galaxyClump = (_powf(noise(fs_UV * (30.0f * screenSize.x)), 3.0f) * 0.5f + _powf(noise(100.0f + fs_UV * (15.0f * screenSize.x)), 5.0f)) / 3.5f;
+
+float3 starColor = make_float3(galaxyClump * _powf(hash(fs_UV), 1500.0f) * 80.0f);
+
+starColor.x *= _sqrtf(noise(fs_UV) * 1.2f);
+starColor.y *= _sqrtf(noise(fs_UV * 4.0f));
+
+float2 delta = (fs_UV - screenSize * 0.5f) * screenSize.y * 1.2f;  
+float radialNoise = mix(1.0f, noise(normalize(delta) * 20.0f + time * 0.5f), 0.12f);
+
+float att = 0.057f * _powf(_fmaxf(0.0f, 1.0f - (length(delta) - 0.9f) / 0.9f), 8.0f);
+
+starColor = starColor + radialNoise * _fminf(1.0f, att);
+
+float randSeed = rand(fs_UV);
+
+return starColor * ((_sinf(randSeed + randSeed * time * 0.05f) + 1.0f) * 0.4f + 0.2f);
+}
+
+__DEVICE__ float3 calBackground(float2 fs_UV)
+{
+float DayOfTime = fract(iTime / 12.0f);
+
+float3 dawn = mix(dawnCol, dawnCol2, fs_UV.y);
+float3 midDay = mix(midDayCol, midDayCol2, fs_UV.y);
+
+float couldH = 1;
+
+float3 clouds = make_float3(1);
+
+float cloudAlpha = clouds.x * (_powf(fs_UV.y, 4.0f));  
+
+midDay = mix(midDay, clouds, cloudAlpha);
+
+float3 tw = mix(twilightCol, twilightCol2, fs_UV.y);
+
+float3 twclouds = clouds;
+tw = mix(tw, twclouds * make_float3(1.0f, 0.7f, 0.2f), cloudAlpha );
+
+float3 midNight = mix(midNightCol, midNightCol2, fs_UV.y);
+
+midNight = midNight + mix(make_float3(0.0f), addStars(iResolution, fs_UV), fs_UV.y + 0.5f);
+
+if(DayOfTime < 0.0625f)
+{
+return mix(midNight, dawn, DayOfTime / 0.0625f);
+}
+else if(DayOfTime < 0.125f)
+{
+return dawn;
+}
+else if(DayOfTime < 0.1875f)
+{
+return mix(dawn, midDay, (DayOfTime - 0.125f) / 0.0625f);
+}
+else if(DayOfTime < 0.5f)
+{
+return midDay;
+}
+else if(DayOfTime < 0.5625f)
+{
+return mix(midDay, tw, (DayOfTime - 0.5f) / 0.0625f);
+}
+else if(DayOfTime < 0.625f)
+{
+return tw;
+}
+else if(DayOfTime < 0.6875f)
+{
+return mix(tw, midNight, (DayOfTime - 0.625f) / 0.0625f);
+}
+else
+{
+return midNight;
+}
+}
+
+__DEVICE__ mat3 rotationMatrix(float3 axis, float angle)
+{
+axis = normalize(axis);
+float s = _sinf(angle);
+float c = _cosf(angle);
+float oc = 1.0f - c;
+mat3 RM = make_mat3(make_float3(oc * axis.x * axis.x + c, oc * axis.x * axis.y - axis.z * s, oc * axis.z * axis.x + axis.y * s),
+make_float3(oc * axis.x * axis.y + axis.z * s, oc * axis.y * axis.y + c, oc * axis.y * axis.z - axis.x * s),
+make_float3(oc * axis.z * axis.x - axis.y * s, oc * axis.y * axis.z + axis.x * s, oc * axis.z * axis.z + c));
+
+return RM;
+}
+
+__DEVICE__ float smin( float a, float b, float k )
+{
+float h = _saturatef( 0.5f + 0.5f * (b - a) / k);
+return mix( b, a, h ) - k * h * (1.0f - h);
+}
+
+__DEVICE__ float2 opU( float2 d1, float2 d2 )
+{
+return d1.x >= d2.x ? d2 : d1;
+}
+
+__DEVICE__ float2 opsU( float2 d1, float2 d2, float k )
+{
+return make_float2(smin(d1.x, d2.x, k), d1.x > d2.x ? d2.y : d1.y);
+}
+
+__DEVICE__ float sdSphere( float3 p, float s )
+{
+return length(p) - s;
+}
+
+__DEVICE__ float sdEllipsoid( float3 p, float3 r )
+{
+return (length(p / r) - 1.0f) * _fminf(_fminf(r.x, r.y), r.z);
+}
+
+__DEVICE__ float sdCylinder( float3 p, float2 h )
+{
+float2 d = ABS(make_float2(length(make_float2(p.x, p.z)), p.y)) - h;
+return _fminf(_fmaxf(d.x, d.y), 0.0f) + length(MAX(d, 0.0f));
+}
+
+__DEVICE__ float3 Blend_Thorn(float3 q, float k)
+{
+float c = _cosf(k * q.y);
+float s = _sinf(k * q.y);
+mat2 m = make_mat2(make_float2(c, -s), make_float2(s, c));
+float2 YZ = multi(make_float2(q.y, q.z), m);
+return make_float3(q.x, YZ.x, YZ.y);    
+}
+
+__DEVICE__ float3 Blend_ThornZ(float3 q, float k)
+{
+float c = _cosf(k * q.y);
+float s = _sinf(k * q.y);
+mat2 m = make_mat2(make_float2(c, -s), make_float2(s, c));
+float2 XY = multi(make_float2(q.x, q.y), m);
+return make_float3(XY.x, XY.y, q.z);    
+}
+
+__DEVICE__ float2 boundingSphere( float4 sph, float3 ro, float3 rd )
+{
+float3 oc = ro - make_float3(sph.x, sph.y, sph.z);
+float b = dot(oc, rd);
+float c = dot(oc, oc) - sph.w * sph.w;
+float h = b * b - c;
+if( h < 0.0f ) return make_float2(-1.0f, -1.0f);
+h = _sqrtf( h );
+return make_float2(-b, -b) + make_float2(-h, h);
+}
+
+__DEVICE__ float2 Duck( float3 p, float3 ro, float3 rd )
+{
+float UG = 1;
+if (Ugly) UG = -1;
+float2 dis = boundingSphere( make_float4(1, 1, 1, 4), ro, rd );
+if(dis.y < 0)
+return make_float2(1000, -1.0f);
+float swingSpeed = 10.5f;
+float normalSwing = _sinf(iTime * swingSpeed);
+
+//Face
+float3 headPos = p;
+mat3 head_rot = rotationMatrix(make_float3(0, 0, 1), _fabs(_sinf(iTime * swingSpeed - 0.15f)) * 0.36f);
+headPos = multi(headPos, transpose(head_rot));
+
+float2 head = make_float2( sdEllipsoid(headPos - make_float3(0, 2.8f, 0), make_float3(0.85f)), DUCK_BODY );   
+
+//eyes
+float2 leftEye = make_float2( sdSphere(headPos - make_float3(0.45f, 3.0f, 0.7f), 0.07f), POINT_EYE );
+float2 rightEye = make_float2( sdSphere(headPos - make_float3(-0.45f, 3.0f, 0.7f), 0.07f), POINT_EYE );
+
+head = opU(head, leftEye);
+head = opU(head, rightEye); 
+
+//Body
+float3 bodyPos = p + make_float3(0, 2.2f, 0);
+mat3 body_rot = rotationMatrix(make_float3(0, 0, 1), normalSwing * 0.1f);
+
+bodyPos = multi(bodyPos, transpose(body_rot));
+bodyPos = bodyPos - make_float3(0, 2.2f, 0);
+float2 body = make_float2( sdEllipsoid(bodyPos - make_float3(0, 0, -0.1f), make_float3(1.3f, 1.7f, 1.5f)), DUCK_BODY );
+
+//Belly
+mat3 rot_02 = rotationMatrix(make_float3(1, 0, 0), DEGREE_60 );
+float3 q_02 = multi(bodyPos - make_float3(0, -0.3f, -1.43f), transpose(rot_02));
+q_02 = Blend_Thorn(q_02, 0.2f);
+
+float2 belly = make_float2( sdEllipsoid(q_02, make_float3(1.6f, 2.6f, 1.5f)) , DUCK_BODY );
+
+//LeftWing_00
+mat3 rot_le00 = rotationMatrix(make_float3(0, 0, 1), DEGREE_95 );
+mat3 rot_le01 = multi(rotationMatrix(make_float3(0, 1, 0), DEGREE_85 * UG), rot_le00);
+mat3 rot_le02 = multi(rotationMatrix(make_float3(1, 0, 0), DEGREE_17 * UG), rot_le01);
+float3 le_00 = multi(bodyPos - make_float3( 1.4f, 0.2f, -1.1f), transpose(rot_le02));
+le_00 = Blend_Thorn(le_00, -0.1f);
+le_00 = Blend_ThornZ(le_00, 0.2f);
+float2 leftWing00 = make_float2( sdEllipsoid(le_00 , make_float3(0.6f, 1.7f, 0.3f)), DUCK_BODY );
+
+//LeftWing_01
+mat3 rot_le10 = rotationMatrix(make_float3(0, 0, 1), DEGREE_85 );
+mat3 rot_le11 = multi(rotationMatrix(make_float3(0, 1, 0), DEGREE_85 * UG), rot_le10);
+mat3 rot_le12 = multi(rotationMatrix(make_float3(1, 0, 0), DEGREE_17 * UG), rot_le11);
+float3 le_01 = multi(bodyPos - make_float3( 1.45f, -0.6f, -0.9f), transpose(rot_le12));
+le_01 = Blend_Thorn(le_01, -0.2f);
+le_01 = Blend_ThornZ(le_01, 0.2f);
+float2 leftWing01 = make_float2( sdEllipsoid(le_01 , make_float3(0.4f, 1.3333f, 0.3f)), DUCK_BODY );
+
+//RightWing_00
+mat3 rot_re01 = multi(rotationMatrix(make_float3(0, 1, 0), DEGREE_85 ), rot_le00);
+mat3 rot_re02 = multi(rotationMatrix(make_float3(1, 0, 0), DEGREE_17 * UG), rot_re01);
+float3 re_00 = multi(bodyPos - make_float3( -1.4f, 0.2f, -0.9f), transpose(rot_re02));
+re_00 = Blend_Thorn(re_00, -0.15f);
+re_00 = Blend_ThornZ(re_00, 0.2f);
+float2 rightWing00 = make_float2( sdEllipsoid(re_00 , make_float3(0.6f, 1.7f, 0.3f)), DUCK_BODY );
+
+//RightWing_01
+mat3 rot_re11 = multi(rotationMatrix(make_float3(0, 1, 0), DEGREE_85 ), rot_le10);
+mat3 rot_re12 = multi(rotationMatrix(make_float3(1, 0, 0), DEGREE_17 * UG), rot_re11);
+float3 re_01 = multi(bodyPos - make_float3( -1.45f, -0.6f, -0.8f), transpose(rot_re12));
+re_01 = Blend_Thorn(re_01, -0.2f);
+re_01 = Blend_ThornZ(re_01 - make_float3(0, 0, 0), 0.2f);
+float2 rightWing01 = make_float2( sdEllipsoid(re_01 , make_float3(0.4f, 1.3333f, 0.3f)), DUCK_BODY );
+
+float3 tailPos = p + make_float3(0.0f, 2.2f, 0.0f);
+mat3 tail_rot = rotationMatrix(make_float3(0.0f, 0.0f, 1.0f), _fabs(_sinf(iTime * swingSpeed - 1.57f)) * 0.15f);
+
+tailPos = multi(tailPos, transpose(tail_rot));
+
+tailPos = tailPos - make_float3(0, 2.2f, 0);
+
+mat3 rot_tail = rotationMatrix(make_float3(1.0f, 0.0f, 0.0f), DEGREE_37_5);
+tailPos = multi(tailPos - make_float3(0.0f, 1.9f, -2.9f), transpose(rot_tail));
+float2 tail = make_float2( sdEllipsoid(tailPos, make_float3(0.1f, 0.3f, 0.1f)) , DUCK_BODY);
+
+body = opsU(body, belly, 0.2f);
+body = opsU(body, tail, 0.7f);    
+
+body = opU(body, leftWing00);
+body = opU(body, leftWing01);    
+body = opU(body, rightWing00);    
+body = opU(body, rightWing01);
+
+float legSeed = fract((iTime * swingSpeed) / TwoPi);
+float rightlegSwing = _powf(fract(iTime * swingSpeed / TwoPi) , 2.0f);
+rightlegSwing = -_sinf( rightlegSwing * TwoPi );
+
+//RightLeg
+float3 legPos = p - make_float3(0.0f, -2.0f, -0.5f);
+float3 rightLegPos = legPos - make_float3(-0.75f, 1.5f, 0.0f);
+
+mat3 rightLeg_rot = rotationMatrix(make_float3(1.0f, 0.0f, 0.0f), rightlegSwing * 1.1f + 0.1f);
+
+rightLegPos = multi(rightLegPos, transpose(rightLeg_rot));
+rightLegPos = rightLegPos + make_float3(0.0f, 1.5f, 0.0f);
+
+mat3 rot_rightLeg = rotationMatrix(make_float3(0.0f, 0.0f, 1.0f), DEGREE_7_5 );
+float3 riLeg = multi(rightLegPos, transpose(rot_rightLeg));
+float2 rightLeg = make_float2( sdCylinder( riLeg, make_float2(0.1f, 0.4f) ), DUCK_FOOT);
+
+mat3 rot_rightfoot00 = rotationMatrix(make_float3(0.0f, 0.0f, 1.0f), DEGREE_90 );
+rot_rightfoot00 = multi(rotationMatrix(make_float3(0.0f, 1.0f, 0.0f), DEGREE_17_5 ), rot_rightfoot00);
+rot_rightfoot00 = multi(rotationMatrix(make_float3(1.0f, 0.0f, 0.0f), _fmaxf(rightlegSwing * 1, 0.0f) ), rot_rightfoot00);
+
+float3 rf_00 = multi(rightLegPos - make_float3(-0.1f, -0.5f, 0.0f), transpose(rot_rightfoot00));
+float3 rf_01 = Blend_Thorn(rf_00, 1.7f);
+
+float2 rightFoot01 = make_float2( sdEllipsoid(rf_01, make_float3(0.1f, 1.0f, 0.3f)), DUCK_FOOT );
+float2 rightFoot02 = make_float2( sdEllipsoid(rf_00 - make_float3(0.0f, 0.0f, 0.8f), make_float3(0.1f, 0.1f, 0.4f)), DUCK_FOOT );
+
+float2 rightFoot = opsU(rightFoot01, rightFoot02, 0.5f);
+rightLeg = opsU(rightLeg, rightFoot, 0.3f);
+
+float leftlegSwing = _powf(fract( (iTime * swingSpeed + PI) / TwoPi) , 2.0f );
+leftlegSwing = -_sinf( leftlegSwing * TwoPi );
+
+//LeftLeg    
+float3 leftLegPos = legPos - make_float3(0.75f, 1.5f, 0.0f);
+
+mat3 leftLeg_rot = rotationMatrix(make_float3(1.0f, 0.0f, 0.0f), leftlegSwing * 1.1f + 0.1f);
+
+leftLegPos = multi(leftLegPos, transpose(leftLeg_rot));
+leftLegPos = leftLegPos + make_float3(0.0f, 1.5f, 0.0f);
+
+mat3 rot_leftLeg = rotationMatrix(make_float3(0.0f, 0.0f, 1.0f), -DEGREE_7_5 );
+float3 leLeg = multi(leftLegPos, transpose(rot_leftLeg));
+float2 leftLeg =  make_float2( sdCylinder( leLeg, make_float2(0.1f, 0.4f) ), DUCK_FOOT);
+
+mat3 rot_leftfoot00 = rotationMatrix(make_float3(0.0f, 0.0f, 1.0f), DEGREE_90 );
+rot_leftfoot00 = multi(rotationMatrix(make_float3(0.0f, 1.0f, 0.0f), -DEGREE_17_5 ), rot_leftfoot00);
+rot_leftfoot00 = multi(rotationMatrix(make_float3(1.0f, 0.0f, 0.0f), _fmaxf(-leftlegSwing, 0.0f) ), rot_leftfoot00);
+
+float3 lf_00 = multi(leftLegPos - make_float3(0.1f, -0.5f, 0.0f), transpose(rot_leftfoot00));
+float3 lf_01 = Blend_Thorn(lf_00, 1.7f);
+
+float2 leftFoot01 = make_float2( sdEllipsoid(lf_01, make_float3(0.1f, 1.0f, 0.3f)), DUCK_FOOT );
+float2 leftFoot02 = make_float2( sdEllipsoid(lf_00 - make_float3(0.0f, 0.0f, 0.8f), make_float3(0.1f, 0.1f, 0.4f)), DUCK_FOOT );
+
+float2 leftFoot = opsU(leftFoot01, leftFoot02, 0.5f);
+leftLeg = opsU(leftLeg, leftFoot, 0.3f);
+
+//peak
+float3 peakPos = headPos - make_float3(0.0f, 2.6f, 0.8f);
+float2 peak_Body = make_float2( sdEllipsoid(peakPos, make_float3(0.6f, 0.1f, 0.5f)), PEAK );
+float2 peak_Up = make_float2( sdEllipsoid(peakPos - make_float3(0.0f, 0.15f, 0.015f), make_float3(0.1f, 0.1f, 0.2f)), PEAK );
+float2 peak = opsU(peak_Body, peak_Up, 0.45f);
+
+//shadow
+float3 shadowPos = p - make_float3( 0.0f, -2.6f, -0.5f);
+float2 shdowBody = make_float2( sdEllipsoid(shadowPos - make_float3( normalSwing * 0.3f, 0.0f, -0.25f), make_float3( 0.9f, 0.05f, 1.2f)), DUCK_SHADOW );
+float2 shdowLeft = make_float2( sdEllipsoid(shadowPos - make_float3( 0.9f + leftlegSwing * 0.3f, 0.0f, 0.2f + leftlegSwing * 1.5f), make_float3( 0.5f, 0.03f, 0.5f)), DUCK_SHADOW );
+float2 shdowRight = make_float2( sdEllipsoid(shadowPos - make_float3( -0.9f - rightlegSwing * 0.3f, 0.0f, 0.2f + rightlegSwing * 1.5), make_float3( 0.5f, 0.03f, 0.5f)), DUCK_SHADOW );
+
+float2 result = head;
+result = opsU(result, body, 1.5f);    
+result = opU(result, peak);
+
+result = opsU(result, rightLeg, 0.2f);
+result = opsU(result, leftLeg, 0.2f);
+
+result = opU(result, shdowBody);
+result = opU(result, shdowLeft);
+result = opU(result, shdowRight);  
+
+return result;
+}
+
+__DEVICE__ float2 stage( float3 p, float3 ro, float3 rd)
+{
+float2 dis = boundingSphere( make_float4(0, 0, 0, 41.0f), ro, rd );
+if(dis.y < 0)
+return make_float2(1000.0f, -1.0f);
+
+return make_float2( sdSphere( p, 40.0f ), PLANE);
+}
+
+__DEVICE__ float2 SunMoon( float3 p, float3 ro, float3 rd)
+{
+float3 center = p; 
+
+mat3 rot = rotationMatrix(make_float3(0, 0, 1), fract( (iTime - 4.0f) / 12.0f) * TwoPi );
+float3 sun = multi(center, transpose(rot));
+sun = sun - make_float3(0, 50.0f, 0);
+
+float3 moon = sun + make_float3(0, 100.0f, 0);
+mat3 rotMoon = rotationMatrix(make_float3(0, 1, 0), -DEGREE_90 );
+moon = multi(moon, transpose(rotMoon));
+moon = Blend_Thorn(moon, 0.7f);
+
+return opU( make_float2( sdSphere( sun, 2.0f ), SUN), make_float2( sdEllipsoid( moon, make_float3(1.0f, 2.6f, 1.0f) ), MOON));
+}
+
+
+__DEVICE__ float2 SDF( float3 p, float3 ro, float3 rd )
+{
+float2 result;
+float upDown = _sinf(iTime * 0.00173f) * 0.5f;
+float3 pos = p;
+result = Duck(pos, ro, rd);
+
+if(PUREDUCK == 0)
+{
+result = opU(result, stage(p - make_float3(0.0f, -42.8f, 0.0f), ro, rd));
+result = opU(result, SunMoon(p - make_float3(0.0f, -42.8f, -10.0f), ro, rd));      
+}
+
+return result;
+}
+
+__DEVICE__ mat3 setCamera( float3 ro, float3 rt, float cr )
+{
+float3 cw = normalize(rt - ro);
+float3 cp = make_float3(_sinf(cr), _cosf(cr), 0.0f);
+float3 cu = normalize( cross(cw,cp) );
+float3 cv = normalize( cross(cu,cw) );
+float3 CW = make_float3(-cw.x, -cw.y, -cw.z);
+return make_mat3( cu, cv, CW);
+}
+
+__DEVICE__ float3 getSurfaceNormal(float3 endPoint, float epsilonParam, float3 ro, float3 rd)
+{
+float epsilon = epsilonParam;
+
+float2 e = make_float2(1.0f, -1.0f) * 0.5773f * epsilon;
+return normalize( make_float3(e.x, e.y, e.y) * (SDF( endPoint + make_float3(e.x, e.y, e.y), ro, rd)).x + 
+	make_float3(e.y, e.y, e.x) * (SDF( endPoint + make_float3(e.y, e.y, e.x), ro, rd)).x + 
+	make_float3(e.y, e.x, e.y) * (SDF( endPoint + make_float3(e.y, e.x, e.y), ro, rd)).x + 
+	make_float3(e.x, e.x, e.x) * (SDF( endPoint + make_float3(e.x, e.x, e.x), ro, rd)).x );
+}
+
+__DEVICE__ float getAO(float3 endPoint, float3 normal)
+{
+float stepLen = 0.12f;
+float AO = 0.0f;
+float att = 1.0f;
+float offset = 0.02f;
+
+for( int i = 0; i < 5; i++ )
+{
+float dist = offset + stepLen * i/4.0f;
+float3 newEndpoint =  normal * dist + endPoint;
+float2 VAL = SDF( newEndpoint, endPoint, normal );
+
+float gap = (dist - VAL.x);
+AO += gap * att;        
+
+att *= 0.95f;
+}
+
+return 1.0f - _saturatef(3.5f * AO);
+}
+
+__DEVICE__ float4 rayMarching(float3 viewVec, float3 eyePos, bool* isHit, float3* normal, float epsilon, float* AO)
+{
+bool ishit = 0;
+float3 norm = make_float3(0);
+float ao = 0.0f;
+float depth = 0.1f;
+
+float3 endPoint;
+
+float3 c = make_float3(10.0f);
+
+int maxRayStep = 128;
+
+for(int i = 0; i < maxRayStep; i++)
+{
+endPoint = eyePos + depth * viewVec;
+
+float2 result = SDF( endPoint, eyePos, viewVec);
+
+float dist = result.x;
+
+if(dist < epsilon * depth) 
+{
+ishit = 1;       
+
+norm = getSurfaceNormal(endPoint, epsilon, eyePos, viewVec);
+ao = getAO(endPoint, norm);
+
+*normal = norm;
+*AO = ao;
+
+return make_float4(endPoint.x, endPoint.y, endPoint.z, result.y);
+}
+
+depth += dist * STEP_SIZE_SCALER; // + epsilon * _logf(float(i) + 1.0f);
+
+if(depth >= MAX_RAYDISTANCE)
+{			
+return make_float4(endPoint.x, endPoint.y, endPoint.z, -1.0f);
+}
+}
+
+return make_float4(endPoint.x, endPoint.y, endPoint.z, -1.0f);
+}
+
+__DEVICE__ void getSurfaceColor(float materialFator, float3 endPoint, float3* BasicColor, float* Roughness, float NoV, float3 backgroundColor )
+{
+float3 basicColor;
+float roughness;
+
+if(materialFator < 0)
+{
+basicColor = make_float3(0);
+roughness = 1;
+}    
+else if( materialFator < PLANE + 0.5f)
+{
+float3 rotatedPoint = endPoint;
+
+rotatedPoint.z += iTime * 10.5f;
+
+float2 UV = make_float2(rotatedPoint.x, rotatedPoint.z);
+float yo = mix( 0.0f, 0.0f, noise(UV) + 0.1f );
+basicColor = make_float3(yo);
+
+if(NoV < 0.3f)
+basicColor = mix(backgroundColor, basicColor, NoV * 10.0f / 3.0f);
+
+float DayOfTime = fract(iTime / 12.0f);            
+
+if(DayOfTime < 0.0625f)
+{
+basicColor = basicColor * mix(0.2f, 1.0f, DayOfTime / 0.0625f);
+}
+else if( 0.625f <= DayOfTime && DayOfTime < 0.6875f)
+{
+basicColor = basicColor * mix(1.0f, 0.2f, (DayOfTime - 0.625f) / 0.0625f);
+}
+else if( 0.6875f <= DayOfTime )
+{
+basicColor = basicColor * 0.2f;
+}
+
+roughness = 0.05f;        
+}
+else if( materialFator < DUCK_SHADOW + 0.5f)
+{
+basicColor = make_float3(0.15f, 0.15f, 0.15f);
+roughness = 1.0f;
+}
+else if( materialFator < POINT_EYE + 0.5f)
+{
+basicColor = make_float3(0.0f, 0.0f, 0.0f);
+roughness = 0.7f;
+}
+else if( materialFator < PEAK + 0.5f)
+{
+basicColor = make_float3(1.0f, 1.0f, 0.0f);
+roughness = 0.3f;
+}
+else if( materialFator < DUCK_FOOT + 0.5f)
+{
+basicColor = make_float3(1.0f, 0.5f, 0.0f);
+roughness = 0.3f;
+}
+else if( materialFator < DUCK_BODY + 0.5f)
+{
+basicColor = make_float3(1.0f, 1.0f, 1.0f);
+roughness = 0.9f;
+} 
+else if( materialFator < SUN + 0.5f)
+{
+basicColor = make_float3(1.0f, 0.7f, 0.0f);
+roughness = 0.9f;
+} 
+else if( materialFator < MOON + 0.5f)
+{
+basicColor = make_float3(1.0f, 1.0f, 0.0f);
+roughness = 0.9f;
+}   
+
+basicColor = CLAMP(basicColor, 0.0f, 1.0f);
+*Roughness = roughness;
+*BasicColor = basicColor;
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+float2 XY = make_float2(X, Y);
+float2 resolution = make_float2(width, height);
+iResolution = resolution;
+iTime = -TIME * 10.0f;
+Ugly = UGLY;
+float2 uv = make_float2(X / width, Y / height);
+
+float2 p = (make_float2(-width, -height) + 2.0f * XY) / height;
+float3 ro = make_float3(-3.7f, 2.83528f, 12.453f);
+float3 ta = make_float3(-7.0f, 3.0f, 0);
+ro.x *= adjust1;
+ro.y *= adjust2;
+ro.z *= 2 - (adjust3 - 0.5f) * 2;
+mat3 ca = setCamera( ro, ta, 0 );
+float3 rd = normalize( multi(make_float3(p.x, p.y, -1.8f), ca) );
+
+float epsilon = 2.0f/(height) * 0.25f;
+
+bool isHit = 0;
+float3 normalVec;
+float AO = 1.0f;
+
+float4 endPoint = rayMarching(rd, ro, &isHit, &normalVec, epsilon, &AO);
+
+float materialFator = endPoint.w;
+
+float3 BasicColor = make_float3(1.0f, 0.5f, 0.0f);
+float Roughness;
+
+float NoV = dot(normalVec, make_float3(-rd.x, -rd.y, -rd.z));
+
+float3 backgroundColor = make_float3(1);
+
+if(PUREDUCK == 0)
+backgroundColor = calBackground(uv);
+else
+backgroundColor = make_float3(0);    
+
+getSurfaceColor(materialFator, make_float3(endPoint.x, endPoint.y, endPoint.z), &BasicColor, &Roughness, NoV, backgroundColor);
+
+float3 color = backgroundColor;
+
+if(materialFator > 0)
+{
+if( ( materialFator > POINT_EYE - 0.5f )  &&  (NoV < 0.4f || AO < 0.3f) )
+{
+color = make_float3(0);
+}
+else
+{
+color = BasicColor;
+}
+}
+
+return color;
+}
