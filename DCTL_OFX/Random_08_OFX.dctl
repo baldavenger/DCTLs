@@ -1,0 +1,257 @@
+// Random 08 OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Shimmer, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(rotateX, Rotate X, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(rotateY, Rotate Y, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+
+__DEVICE__ float time = 0;
+
+#define EDGE_WIDTH 0.15f
+#define RAYMARCH_ITERATIONS 40
+#define SHADOW_ITERATIONS 50
+#define SHADOW_STEP 1.0f
+#define SHADOW_SMOOTHNESS 256.0f
+#define SHADOW_DARKNESS 0.75f
+
+__DEVICE__ float3 ABS(float3 A)
+{
+float3 B;
+B.x = _fabs(A.x);
+B.y = _fabs(A.y);
+B.z = _fabs(A.z);
+return B;
+}
+
+__DEVICE__ float fract(float A)
+{
+float B;
+B = A - _floor(A);
+return B;
+}
+
+__DEVICE__ float3 MAX( float3 A, float B)
+{
+return make_float3(_fmaxf(A.x, B), _fmaxf(A.y, B), _fmaxf(A.z, B));
+}
+
+__DEVICE__ float3 mix(float3 A, float3 B, float C)
+{
+return A * (1.0f - C) + B * C;
+}
+
+__DEVICE__ float fSubtraction(float a, float b)
+{
+return _fmaxf(-a, b);
+}
+
+__DEVICE__ float fIntersection(float d1, float d2)
+{
+return _fmaxf(d1, d2);
+}
+
+__DEVICE__ void fUnion(float* d1, float d2)
+{
+float D = *d1;
+D = _fminf(D, d2);
+*d1 = D;
+}
+
+__DEVICE__ float pSphere(float3 p, float s)
+{
+return length(p) - s;
+}
+
+__DEVICE__ float pRoundBox(float3 p, float3 b, float r)
+{
+return length( MAX( ABS(p) - b, 0) ) - r;
+}
+
+__DEVICE__ float pTorus(float3 p, float2 t)
+{
+float2 q = make_float2(length(make_float2(p.x, p.z)) - t.x, p.y);
+return length(q) - t.y;
+}
+
+__DEVICE__ float pTorus2(float3 p, float2 t)
+{
+float2 q = make_float2( length( make_float2(p.x, p.y)) - t.x, p.z);
+return length(q) - t.y;
+}
+
+__DEVICE__ float pCapsule(float3 p, float3 a, float3 b, float r)
+{
+float3 pa = p - a;
+float3 ba = b - a;
+float h = _clampf( dot(pa, ba) / dot(ba, ba), 0, 1 );
+return length( pa - ba * h ) - r;
+}
+
+__DEVICE__ float distf(float3 p)
+{
+float d = 100000.0f;
+
+fUnion(&d, pRoundBox(make_float3(0, 0, 10) + p, make_float3(21, 21, 1), 1));
+fUnion(&d, pSphere(make_float3(10, 10, 0) + p, 8));
+fUnion(&d, pSphere(make_float3(16, 0, 4) + p, 4));
+fUnion(&d, pCapsule(p, make_float3(10, 10, 12), make_float3(15, 15, -6.5f), 1.5f));
+fUnion(&d, pCapsule(p, make_float3(10, 10, 12), make_float3(5, 15, -6.5f), 1.5f));
+fUnion(&d, pCapsule(p, make_float3(10, 10, 12), make_float3(10, 5, -6.5f), 1.5f));
+fUnion(&d, pTorus(make_float3(15, -15, 0) + p, make_float2(6, 2)));
+fUnion(&d, pTorus2(make_float3(10, -15, 0) + p, make_float2(6, 2)));
+fUnion(&d, pRoundBox(make_float3(-10, 10, -2) + p, make_float3(1, 1, 9), 1));
+fUnion(&d, pRoundBox(make_float3(-10, 10, -4) + p, make_float3(0.5f, 6, 0.5f), 1));
+fUnion(&d, pRoundBox(make_float3(-10, 10, 2) + p, make_float3(6, 0.5f, 0.5f), 1));
+
+return d;
+}
+
+__DEVICE__ float3 normal(float3 p)
+{
+const float eps = 0.01f;
+float m;
+float3 n = make_float3( (distf(make_float3(p.x - eps, p.y, p.z)) - distf(make_float3(p.x + eps, p.y, p.z))),
+(distf(make_float3(p.x, p.y - eps, p.z)) - distf(make_float3(p.x, p.y + eps, p.z))),
+(distf(make_float3(p.x, p.y, p.z - eps)) - distf(make_float3(p.x, p.y, p.z + eps)))
+);
+return normalize(n);
+}
+
+__DEVICE__ float3 raymarch(float3 from, float3 increment)
+{
+const float maxDist = 200.0f;
+const float minDist = 0.001f;
+const int maxIter = RAYMARCH_ITERATIONS;
+
+float dist = 0;
+
+float lastDistEval = 1e10;
+float edge = 0;
+
+for(int i = 0; i < maxIter; i++) {
+float3 pos = from + increment * dist;
+float distEval = distf(pos);
+
+if (lastDistEval < EDGE_WIDTH && distEval > lastDistEval + 0.001f) {
+edge = 1.0f;
+}
+
+if (distEval < minDist) {
+break;
+}
+
+dist += distEval;
+if (distEval < lastDistEval) lastDistEval = distEval;
+}
+
+float mat = 1.0f;
+if (dist >= maxDist) mat = 0;
+
+return make_float3(dist, mat, edge);
+}
+
+__DEVICE__ float shadow(float3 from, float3 increment)
+{
+const float minDist = 1.0f;
+
+float res = 1.0f;
+float t = 1.0f;
+for(int i = 0; i < SHADOW_ITERATIONS; i++) {
+float h = distf(from + increment * t);
+if(h < minDist)
+return 0;
+
+res = _fminf(res, SHADOW_SMOOTHNESS * h / t);
+t += SHADOW_STEP;
+}
+return res;
+}
+
+__DEVICE__ float rand(float x)
+{
+return fract(_sinf(x) * 43758.5453f);
+}
+
+__DEVICE__ float triangle(float x)
+{
+return _fabs(1.0f - _fmod(_fabs(x), 2.0f)) * 2.0f - 1.0f;
+}
+
+__DEVICE__ float3 getPixel(float2 p, float3 from, float3 increment, float3 light)
+{
+float3 c = raymarch(from, increment);
+float3 hitPos = from + increment * c.x;
+float3 normalDir = normal(hitPos);
+
+float diffuse = 1.0f + _fminf(0, dot(normalDir, light * -1));
+float inshadow = 0; // (1.0 - shadow(hitPos, -light)) * SHADOW_DARKNESS;
+
+diffuse = _fmaxf(diffuse, inshadow);
+
+if (c.y == 0) diffuse = _fminf(pow(length(p), 4.0f) * 0.125f, 1.0f);
+
+float xs = rand(time * 6.6f) * 0.1f + 0.9f;
+float ys = rand(time * 6.6f) * 0.1f + 0.9f;
+float hatching = _fmaxf((_clampf((_sinf(p.x * xs * (170.0f + rand(time) * 30.0f) +
+p.y * ys * (110.0f + rand(time * 1.91f) * 30.0f)) * 0.5f + 0.5f) -
+(1.0f - diffuse), 0, 1)),
+(_clampf((_sinf(p.x * xs * (-110.0f + rand(time * 4.74f) * 30.0f) +
+p.y * ys * (170.0f + rand(time * 3.91f) * 30.0f)) * 0.5f + 0.5f) -
+(1.0f - diffuse) - 0.4f, 0, 1)));
+
+float3 mCol = mix(make_float3(1, 0.9f, 0.8f), make_float3(1, 0.9f, 0.8f) * 0.5f, hatching);
+
+return mix(mCol, make_float3(1, 0.9f, 0.8f) * 0.5f, c.z);
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+float2 resolution = make_float2(width, height);
+time = TIME / 100;
+float rotX = rotateX * width;
+float rotY = (rotateY + 1) * height;
+
+float2 q = make_float2(X / width, Y / height);
+float2 p;
+p.x = -1.0f + 2.0f * q.x;
+p.y = -1.0f + 2.0f * q.y;
+p.x *= -width / height;
+p = p + make_float2(triangle(p.y * rand(time) * 4.0f) * rand(time * 1.9f) * 0.015f,
+triangle(p.x * rand(time * 3.4f) * 4.0f) * rand(time * 2.1f) * 0.015f);
+p = p + make_float2(rand(p.x * 3.1f + p.y * 8.7f) * 0.01f,
+rand(p.x * 1.1f + p.y * 6.7f) * 0.01f);
+
+// mouse
+float2 iMouse = make_float2(rotX, rotY);
+float2 mo = iMouse / resolution;
+float2 m = iMouse / resolution;
+if (iMouse.x == 0 && iMouse.y == 0) {
+m = make_float2(time * 0.06f + 1.67f, 0.78f);	
+}
+m.x = -1.0f + 2.0f * m.x;
+m.y = -1.0f + 2.0f * m.y;
+m = m * make_float2(4.0f, -0.75f);
+m.y += 0.75f;
+
+// camera position
+float dist = 50.0f;
+float3 ta = make_float3(0);
+float3 ro = make_float3(_cosf(m.x) * _cosf(m.y) * dist, _sinf(m.x) * _cosf(m.y) * dist, _sinf(m.y) * dist);
+float3 light = make_float3(_cosf(m.x - 2.27f) * 50.0f, _sinf(m.x - 2.27f) * 50.0f, -20.0f);
+
+// camera direction
+float3 cw = normalize( ta - ro );
+float3 cp = make_float3( 0, 0, 1 );
+float3 cu = normalize( cross(cw,cp) );
+float3 cv = normalize( cross(cu,cw) );
+float3 rd = normalize( (cu * p.x) + (cv * p.y) + (cw * 2.5f) );
+
+// calculate color
+float3 col = getPixel(p, ro, rd, normalize(light));
+return col;
+
+}
