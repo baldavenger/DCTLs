@@ -1,0 +1,498 @@
+// Random 09 OFX DCTL
+
+DEFINE_UI_PARAMS(time, Rotate, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+
+typedef struct
+{
+float3 r0, r1, r2;
+} mat3;
+
+typedef struct
+{
+float4 r0, r1, r2, r3;
+} mat4;
+
+typedef struct
+{
+float2 r0, r1;
+} mat2;
+
+__DEVICE__ mat2 make_mat2(float2 A, float2 B)
+{
+mat2 C;
+C.r0 = A;
+C.r1 = B;
+return C;
+}
+
+__DEVICE__ float2 multi(float2 A, mat2 B)
+{
+float2 C;
+C.x = A.x * B.r0.x + A.y * B.r0.y;
+C.y = A.x * B.r1.x + A.y * B.r1.y;
+return C;
+}
+
+__DEVICE__ float3 multi(float3 A, mat3 B)
+{
+float3 C;
+C.x = A.x * B.r0.x + A.y * B.r0.y + A.z * B.r0.z;
+C.y = A.x * B.r1.x + A.y * B.r1.y + A.z * B.r1.z;
+C.z = A.x * B.r2.x + A.y * B.r2.y + A.z * B.r2.z;
+return C;
+}
+
+__DEVICE__ mat3 make_mat3(float3 A, float3 B, float3 C)
+{
+mat3 D;
+D.r0 = A;
+D.r1 = B;
+D.r2 = C;
+return D;
+}
+
+__DEVICE__ mat3 MAT3( mat4 A)
+{
+mat3 B;
+B.r0 = make_float3(A.r0.x, A.r0.y, A.r0.z);
+B.r1 = make_float3(A.r1.x, A.r1.y, A.r1.z);
+B.r2 = make_float3(A.r2.x, A.r2.y, A.r2.z);
+return B;
+}
+
+__DEVICE__ mat4 make_mat4(float m00, float m01, float m02, float m03, float m10, float m11, float m12, float m13, 
+float m20, float m21, float m22, float m23, float m30, float m31, float m32, float m33)
+{
+mat4 M;
+M.r0 = make_float4(m00, m01, m02, m03);
+M.r1 = make_float4(m10, m11, m12, m13);
+M.r2 = make_float4(m20, m21, m22, m23);
+M.r3 = make_float4(m30, m31, m32, m33);
+return M;
+}
+
+__DEVICE__ mat3 multi(mat3 A, mat3 B)
+{
+float r[3][3];
+float a[3][3] =	{{A.r0.x, A.r0.y, A.r0.z},
+{A.r1.x, A.r1.y, A.r1.z},
+{A.r2.x, A.r2.y, A.r2.z}};
+float b[3][3] =	{{B.r0.x, B.r0.y, B.r0.z},
+{B.r1.x, B.r1.y, B.r1.z},
+{B.r2.x, B.r2.y, B.r2.z}};
+
+for( int i = 0; i < 3; ++i)
+{
+for( int j = 0; j < 3; ++j)
+{
+r[i][j] = 0.0f;
+for( int k = 0; k < 3; ++k)
+{
+r[i][j] = r[i][j] + a[i][k] * b[k][j];
+}
+}
+}
+mat3 R = make_mat3(make_float3(r[0][0], r[0][1], r[0][2]), 
+make_float3(r[1][0], r[1][1], r[1][2]), make_float3(r[2][0], r[2][1], r[2][2]));
+return R;
+}
+
+__DEVICE__ float2 SN( float2 A)
+{
+float2 sn;
+sn.x = A.x == 0.0f ? 0.0f : A.x < 0.0f ? -1.0f : 1.0f;
+sn.y = A.y == 0.0f ? 0.0f : A.y < 0.0f ? -1.0f : 1.0f;
+return sn;
+}
+
+__DEVICE__ float fract(float A)
+{
+float B;
+B = A - _floor(A);
+return B;
+}
+
+__DEVICE__ float2 fract(float2 A)
+{
+float2 B;
+B.x = A.x - _floor(A.x);
+B.y = A.y - _floor(A.y);
+return B;
+}
+
+__DEVICE__ float mix(float A, float B, float C)
+{
+return A * (1.0f - C) + B * C;
+}
+
+__DEVICE__ float3 mix(float3 A, float3 B, float C)
+{
+return A * (1.0f - C) + B * C;
+}
+
+__DEVICE__ float3 mix(float3 A, float3 B, float3 C)
+{
+return A * (1.0f - C) + B * C;
+}
+
+__DEVICE__ float2 ABS( float2 A)
+{
+return make_float2(_fabs(A.x), _fabs(A.y));
+}
+
+__DEVICE__ float2 MAX( float2 A, float B)
+{
+return make_float2(_fmaxf(A.x, B), _fmaxf(A.y, B));
+}
+
+__DEVICE__ float2 POW( float2 A, float2 B)
+{
+return make_float2(_powf(A.x, B.x), _powf(A.y, B.y));
+}
+
+__DEVICE__ float3 SQRT( float3 A)
+{
+return make_float3(_sqrtf(A.x), _sqrtf(A.y), _sqrtf(A.z));
+}
+
+__DEVICE__ float sdSphere(float3 p, float s)
+{
+return length(p) - s;
+}
+
+__DEVICE__ float3 CLAMP( float3 in, float clampMin, float clampMax)
+{
+float3 out;
+out.x = _clampf( in.x, clampMin, clampMax);
+out.y = _clampf( in.y, clampMin, clampMax);
+out.z = _clampf( in.z, clampMin, clampMax);   
+return out;
+}
+
+__DEVICE__ float2 sdCapsule(float3 p, float3 a, float3 b)
+{
+float3 pa = p - a, ba = b - a;
+float h = _clampf(dot(pa, ba) / dot(ba, ba), 0.0f, 1.0f);
+return make_float2(length(pa - ba * h),h);
+}
+
+__DEVICE__ float2 sdCapsuleEllipse(float3 p, float3 a, float3 b, float3 r)
+{
+float3 pa = p - a, ba = b - a;
+float h = _clampf(dot(pa, ba) / dot(ba, ba), 0.0f, 1.0f);
+return make_float2(length((pa - ba * h)/r),h);
+}
+
+__DEVICE__ float sdEllipsoid(float3 p, float3 a, float3 r)
+{
+return (length((p - a) / r) - 1.0f) * _fminf(_fminf(r.x, r.y), r.z);
+}
+
+__DEVICE__ float sdEllipsoid(float3 p, mat4 m, float3 r)
+{
+return (length(( multi(p - make_float3(m.r3.x, m.r3.y, m.r3.z), MAT3(m)) ) / r) - 1.0f) * _fminf(_fminf(r.x, r.y), r.z);
+}
+
+__DEVICE__ float sdSphere(float3 p, mat4 m, float r)
+{
+return length( multi(p - make_float3(m.r3.x, m.r3.y, m.r3.z), MAT3(m)) ) - r;
+}
+
+__DEVICE__ float sminPoly( float a, float b, float k )
+{
+float h = _clampf( 0.5f + 0.5f * (b - a)/k, 0.0f, 1.0f );
+return mix( b, a, h ) - k * h * (1.0f - h);
+}
+
+__DEVICE__ float smin( float a, float b, float k )
+{
+return sminPoly(a,b,k);
+}
+
+__DEVICE__ float2 sdBezier(float3 A, float3 B, float3 C, float3 pos)
+{    
+float3 a = B - A;
+float3 b = B * -2.0f + C + A;
+float3 c = a * 2.0f;
+float3 d = A - pos;
+
+float kk = 1.0f / dot(b, b);
+float kx = kk * dot(a, b);
+float ky = kk * (2.0f * dot(a, a) + dot(d, b)) / 3.0f;
+float kz = kk * dot(d, a);      
+
+float2 res;
+
+float p = ky - kx * kx;
+float p3 = p * p * p;
+float q = kx * (2.0f * kx * kx - 3.0f * ky) + kz;
+float h = q * q + 4.0f * p3;
+
+if(h >= 0.0f) 
+{ 
+h = _sqrtf(h);
+float2 x = (make_float2(h, -h) - q) / 2.0f;
+float2 uv = POW(ABS(x), make_float2(1.0f / 3.0f));
+uv = uv * SN(x);
+float t = uv.x + uv.y - kx;
+t = _clampf( t, 0.0f, 1.0f );
+
+// 1 root
+float3 qos = d + (c + b * t) * t;
+res = make_float2( length(qos), t);
+}
+else
+{
+float z = _sqrtf(-p);
+float v = _acosf( q / (p * z * 2.0f) ) / 3.0f;
+float m = _cosf(v);
+float n = _sinf(v) * 1.732050808f;
+float3 t = make_float3(m + m, -n - m, n - m) * z - kx;
+t = CLAMP( t, 0.0f, 1.0f );
+
+// 3 roots
+float3 qos = d + (c + b * t.x) * t.x;
+float dis = dot(qos, qos);
+
+res = make_float2(dis, t.x);
+
+qos = d + (c + b * t.y) * t.y;
+dis = dot(qos, qos);
+if( dis < res.x ) res = make_float2(dis, t.y );
+
+qos = d + (c + b * t.z) * t.z;
+dis = dot(qos, qos);
+if( dis < res.x ) res = make_float2(dis, t.z );
+
+res.x = _sqrtf( res.x );
+}
+
+return res;
+}
+
+#define uLoc1  make_float3(0.0f, 0.00203843f, 0.00360684f)
+#define uLoc3  make_float3(0.0f, 0.306208f, 0.11644f)
+#define uLoc4  make_float3(0.0f, 0.324002f, -0.00769925f)
+#define uLoc7  make_float3(0.0183471f, 0.287671f, -0.546344f)
+#define uLoc12  make_float3(0.000250067f, 0.241125f, 0.0758075f)
+#define uLoc13  make_float3(0.0110198f, 0.241354f, 0.0817071f)
+#define uLoc14  make_float3(0.0227902f, 0.251562f, 0.0491019f)
+#define uLoc15  make_float3(0.00461896f, 0.248268f, 0.0754393f)
+#define uLoc16  make_float3(0.0152348f, 0.246408f, 0.070115f)
+#define uLoc17  make_float3(0.0306791f, 0.245639f, 0.0403069f)
+#define uLoc18  make_float3(0.000147426f, 0.235244f, 0.0736692f)
+#define uLoc19  make_float3(0.0276588f, 0.241318f, 0.0750517f)
+#define uLoc20  make_float3(0.0443396f, 0.234284f, 0.0277071f)
+#define uLoc21  make_float3(0.0f, 0.251592f, 0.0764101f)
+#define uLoc22  make_float3(0.0726629f, 0.259075f, 0.0646102f)
+#define uLoc23  make_float3(-0.0617832f, 0.229258f, -0.104316f)
+#define uLoc24  make_float3(0.0f, 0.318978f, 0.0737746f)
+#define uLoc25  make_float3(0.0f, 0.293775f, 0.0796922f)
+#define uLoc26  make_float3(-0.000892206f, 0.277262f, 0.0893624f)
+#define uLoc27  make_float3(0.00638537f, 0.276021f, 0.0804291f)
+#define uLoc31  make_float3(0.20228f, 0.348349f, 0.120626f)
+#define uLoc32  make_float3(0.0f, -1.16415e-10, -0.0378109f)
+#define uLoc33  make_float3(0.140931f, 0.126447f, -0.0456791f)
+#define uLoc34  make_float3(0.0231488f, 0.109465f, 0.023192f)
+#define uLoc36  make_float3(0.0f, -0.0104738f, -0.183424f)
+#define uLoc37  make_float3(0.0f, -0.0100463f, 0.0703228f)
+#define uLoc38  make_float3(0.0f, 0.0259907f, -0.039358f)
+#define uLoc39  make_float3(0.0f, 0.0988484f, -0.0512504f)
+#define uLoc42  make_float3(0.0f, 0.125604f, -0.0484375f)
+#define uLoc43  make_float3(1.16415e-10, 0.387246f, 0.00678631f)
+#define uLoc44  make_float3(0.106815f, 0.452016f, 0.00219224f)
+#define uLoc45  make_float3(0.0370535f, 0.174836f, 0.00913381f)
+#define uLoc46  make_float3(0.00114844f, 0.402296f, 0.00267714f)
+#define uLoc47  make_float3(0.122269f, 0.437704f, 0.0f)
+#define uLoc48  make_float3(0.0385304f, 0.146079f, 0.00786149f)
+#define uLoc49  make_float3(0.0f, 0.415296f, -0.0035327f)
+#define uLoc50  make_float3(0.146797f, 0.436727f, 0.0f)
+#define uLoc51  make_float3(0.0258521f, 0.138664f, 0.00117993f)
+#define uLoc52  make_float3(0.0f, 0.392706f, 0.0209802f)
+#define uLoc53  make_float3(0.137235f, 0.427677f, 0.0180633f)
+#define uLoc54  make_float3(0.0263039f, 0.136626f, 0.0155087f)
+#define uLoc55  make_float3(0.0f, 0.213307f, 0.0548081f)
+#define uLoc56  make_float3(0.140222f, 0.171291f, 0.0624294f)
+#define uLoc57  make_float3(0.0429538f, 0.0682408f, 0.0372264f)
+
+// matrixs from SdfEditor
+#define uLoc0  make_mat4(0.774993f, 0.0f, 0.0f, 0.0f, 0.0f, -1.1667f, -1.14583f, 0.0f, 0.0f, 0.658059f, -0.670043f, 0.0f, -2.91038e-11f, 0.267095f, 0.0594358f, 1.0f)
+#define uLoc5  make_mat4(1.61052f, 0.0f, 0.0f, 0.0f, 0.0f, 0.804379f, 0.594113f, 0.0f, 0.0f, -0.46788f, 0.633471f, 0.0f, 0.00135185f, 0.2467f, 0.0239092f, 1.0f)
+#define uLoc6  make_mat4(0.811406f, 0.0f, 0.0f, 0.0f, 0.0f, 0.921883f, 0.387467f, 0.0f, 0.0f, -0.286288f, 0.681152f, 0.0f, -0.00513797f, 0.243955f, -0.00344948f, 1.0f)
+#define uLoc8  make_mat4(0.604029f, 0.0f, 0.0f, 0.0f, 0.0f, 1.28311f, 0.0f, 0.0f, 0.0f, 0.0f, 1.59333f, 0.0f, 0.0426618f, 0.303089f, 0.0798052f, 1.0f)
+#define uLoc9  make_mat4(0.730816f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.999989f, 0.0f, 0.0469761f, 0.186637f, 0.0f, 1.0f)
+#define uLoc10  make_mat4(1.58959f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0653f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0243361f, 0.271856f, 0.0172644f, 1.0f)
+#define uLoc11  make_mat4(1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.999964f, 0.0f, 0.0f, 0.0f, 0.0f, 0.999964f, 0.0f, 0.0957007f, 0.243697f, -0.0194892f, 1.0f)
+#define uLoc28  make_mat4(1.49882f, 0.0279406f, 0.0525695f, 0.0f, 0.000536533f, 0.34667f, -0.199552f, 0.0f, -0.0594995f, 0.747796f, 1.29895f, 0.0f, 0.00690892f, 0.269552f, 0.0868132f, 1.0f)
+#define uLoc29  make_mat4(0.985338f, 0.0f, -0.170407f, 0.0f, 0.0f, 0.999996f, 0.0f, 0.0f, 0.170405f, 0.0f, 0.98533f, 0.0f, 0.0259051f, 0.305124f, 0.0514075f, 1.0f)
+#define uLoc30  make_mat4(1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.825584f, 0.0f, 0.0f, 0.0f, 0.0f, 0.882683f, 0.0f, 0.00494779f, 0.270636f, 0.0179259f, 1.0f)
+#define uLoc35  make_mat4(0.458626f, 0.0f, 0.0f, 0.0f, 0.0f, 0.694593f, 0.0f, 0.0f, 0.0f, 0.0f, 0.724171f, 0.0f, 0.0f, 0.0715221f, -0.0525544f, 1.0f)
+#define uLoc40  make_mat4(1.63833f, 0.0f, 0.0f, 0.0f, 0.0f, 2.3324f, 0.361054f, 0.0f, 0.0f, -0.152977f, 0.988227f, 0.0f, -1.16415e-10f, 0.244062f, -0.0111016f, 1.0f)
+#define uLoc41  make_mat4(0.888535f, 0.0f, 0.458809f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, -0.103254f, 0.0f, 0.199963f, 0.0f, 0.0610963f, 0.304203f, 0.0864888f, 1.0f)
+
+__DEVICE__ float getLibs(float3 p)
+{
+float2 i = sdBezier(uLoc12, uLoc13, uLoc14, p);
+float di = i.x - 0.008f;
+float2 ic = sdBezier(uLoc18, uLoc19, uLoc20, p);
+di = smin(di, ic.x - 0.005f, -0.001f);
+float2 s = sdBezier(uLoc15, uLoc16, uLoc17, p);
+float ds = s.x - 0.008f;
+float2 sc = sdBezier(uLoc21, uLoc22, uLoc23, p);
+ds = smin(ds, sc.x - 0.005f, -0.001f);
+return _fminf(di, ds);
+}
+
+__DEVICE__ float getNoze(float3 p)
+{
+float2 bez = sdBezier(uLoc24, uLoc25, uLoc26, p);
+float d = bez.x  - mix(0.001f, 0.01f, bez.y);
+d = smin(d, sdSphere(p-uLoc27, 0.008f), 0.008f);
+d = smin(d, -sdSphere(p, uLoc28, 0.005f), -0.003f);
+return d;
+}
+
+__DEVICE__ float getEyes(float3 p)
+{
+float d = length(p) - 0.02f;
+p.y = _fabs(p.y);
+d = smin(d, -(length(p - make_float3(0.0f, -0.013f, 0.015f)) - 0.02f), -0.001f);
+d = _fminf(d, length(p) - 0.018f);
+return smin(d, -(length(make_float2(length(make_float2(p.x, p.y)) - 0.005f, p.z - 0.017f)) - 0.001f), -0.001f);
+}
+
+__DEVICE__ mat3 getRotXMat(float a)
+{
+return make_mat3(make_float3(1.0f, 0.0f, 0.0f),make_float3(0.0f, _cosf(a), -_sinf(a)), make_float3(0.0f, _sinf(a), _cosf(a)));
+}
+
+__DEVICE__ float getHairsOrHat(float3 p)
+{
+float3 q = p;
+float3 q2 = p;
+p = p * make_float3(1.0f, 1.0f, 0.2f);
+float2 bez = sdBezier(uLoc43, uLoc44, uLoc45, p);
+float d = bez.x - mix(0.01f, 0.0001f, bez.y);
+bez = sdBezier(uLoc46, uLoc47, uLoc48, p);
+d = smin(d, bez.x - mix(0.01f, 0.0001f, bez.y), 0.004f);
+bez = sdBezier(uLoc49, uLoc50, uLoc51, p);
+d = smin(d, bez.x - mix(0.01f, 0.0001f, bez.y), 0.004f);
+q = multi(q, getRotXMat(0.4f));
+q = q * make_float3(1.0f, 1.0f, 0.2f);
+bez = sdBezier(uLoc52, uLoc53, uLoc54, q);
+d = smin(d, bez.x - mix(0.01f, 0.0001f, bez.y), 0.003f);
+q2 = multi(q2, getRotXMat(1.3f));
+q2 = q2 * make_float3(1.0f, 1.0f, 0.2f);
+bez = sdBezier(uLoc55, uLoc56, uLoc57, q2);
+return smin(d, bez.x - mix(0.01f, 0.0001f, bez.y), 0.02f);
+}
+
+__DEVICE__ float getBuste(float3 p)
+{
+float d = sdEllipsoid(p, uLoc38, make_float3(0.2f, 0.13f, 0.1f));
+d = smin(d, sdEllipsoid(p, uLoc39, make_float3(0.12f, 0.1f, 0.2f)), -0.001f);
+return smin(d, sdCapsule(p, uLoc42, uLoc42+make_float3(0.0f, 0.2f, 0.05f)).x - 0.045f, 0.025f);
+}
+
+__DEVICE__ float map(float3 p)
+{
+float d = 1e5;
+
+p.x *= 0.9f;
+p.x = _fabs(p.x);
+
+d = smin(d, sdSphere(p, uLoc0, 0.025f), 0.01f);
+d = smin(d, sdSphere(p - uLoc4, 0.1f), 0.01f);
+d = smin(d, sdEllipsoid(p, uLoc5, make_float3(0.05f, 0.025f, 0.05f)), 0.01f);
+d = smin(d, -sdSphere(p, uLoc8, 0.025f), -0.01f);
+d = smin(d, dot(p, multi(make_float3(1.0f, 0.0f, 0.0f), MAT3(uLoc9))) - uLoc9.r3.x, -0.04f);
+d = smin(d, sdEllipsoid(p, uLoc6, make_float3(0.05f, 0.025f, 0.05f)), 0.01f);
+d = smin(d, sdSphere(p, uLoc10, 0.05f), 0.01f);
+d = smin(d, -sdSphere(p, uLoc41, 0.02f), -0.01f);
+d = smin(d, getLibs(p - uLoc1), 0.01f);
+d = smin(d, -(length(make_float2(p.y, p.z) - make_float2(uLoc3.y, uLoc3.z)) - 0.03f), -0.04f);
+d = smin(d, getNoze(p), 0.01f);
+d = smin(d, getEyes(multi((p - make_float3(uLoc29.r3.x, uLoc29.r3.y, uLoc29.r3.z)), MAT3(uLoc29))), 0.003f);
+d = smin(d, sdSphere(p, uLoc30, 0.05f), 0.01f);
+d = smin(d, -sdSphere(p-uLoc31, 0.05f), -0.1f);
+d = smin(d, sdSphere(p, uLoc40, 0.05f), 0.05f);
+d = smin(d, getBuste(p), 0.025f);
+
+return smin(d, getHairsOrHat(p), 0.005f);
+}
+
+__DEVICE__ float3 nor( float3 p, float prec )
+{
+float2 e = make_float2( prec, 0.0f );
+float3 n = make_float3(
+map(p + make_float3(e.x, e.y, e.y)) - map(p - make_float3(e.x, e.y, e.y)),
+map(p + make_float3(e.y, e.x, e.y)) - map(p - make_float3(e.y, e.x, e.y)),
+map(p + make_float3(e.y, e.y, e.x)) - map(p - make_float3(e.y, e.y, e.x)) );
+return normalize(n);
+}
+
+__DEVICE__ float3 shade(float3 ro, float3 rd, float d, float3 lp, float li)
+{
+float3 p = ro + rd * d;
+float3 n = nor(p, 0.001f); 													// precise normale at surf point
+float sb = _clampf(map(p - n * 0.2f) / 0.004f, 0.0f, 1.0f);	
+float3 bb = mix(make_float3(0.0f, 0.4f, 0.1f), make_float3(0.1f, 0.7f, 0.1f), make_float3(1.0f - sb));
+float3 ld = normalize(lp - p); 												// light dir
+
+float3 refl = reflect(rd,n);												// reflected ray dir at surf point 
+float amb = 0.5f; 															// ambiance factor
+float diff = _clampf( dot( n, ld ), 0.0f, 1.0f ); 							// diffuse
+float fre = _powf( _clampf( 1.0f + dot(n,rd), 0.0f, 1.0f), 4.0f ); 			// fresnel
+float spe = _powf(_clampf( dot( refl, ld ), 0.0f, 1.0f ), 16.0f);			// specular
+float sss = 1.0f - map(p - n * 4.0f); 										// one step sub density of df
+float3 col = CLAMP((diff + fre + bb * sb * 0.608f + sss * 0.352f) * amb * li + spe * 0.6f, 0.0f, 1.0f);
+
+return mix(col, make_float3(1.0f), bb * diff + 0.1f * spe);
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+float2 XY = make_float2(X, Y);
+
+float3 RGB = make_float3(0.8f, 0.8f, 0.8f);
+
+float2 si = make_float2(width, height);
+float2 uvc = (2.0f * XY- si) / _fminf(si.x, si.y);
+float2 uv = XY / si;
+
+float maxd = 2.0f;
+
+float t = (time * 10.0f) * 0.3f;
+
+float3 ro = make_float3(_cosf(t), 0.4f, _sinf(t));
+ro.x *= 0.6f;
+ro.z *= 0.6f;
+float3 z = normalize(make_float3(0.0f, 0.25f, 0.0f) - ro);
+float3 x = normalize(cross(make_float3(0.0f, 1.0f, 0.0f), z));
+float3 y = normalize(cross(z, x));
+uvc = uvc * 0.5f; // fov
+float3 rd = normalize(z + uvc.x * x + uvc.y * y);
+
+float s = 1.0f;
+float d = 0.0f;
+for (int i = 0; i < 150; i++) 
+{
+if (d * d / s > 1000.0f || d > maxd) break;
+s = map(ro + rd * d);
+d += s * 0.5f;
+}
+
+if (d < maxd)
+{
+RGB = shade(ro, rd, d, ro, 0.6f);
+}
+
+RGB = RGB * make_float3(0.5f + 0.5 *_powf( 16.0f * uv.x * uv.y * (1.0f - uv.x) * (1.0f - uv.y), 0.55f ));
+RGB = SQRT(RGB * RGB * 1.5f);
+return RGB;
+}
