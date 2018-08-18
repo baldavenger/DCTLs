@@ -1,0 +1,185 @@
+// Random 11 OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Animate, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+
+__DEVICE__ float time = 0;
+
+__DEVICE__ float2 ABS( float2 A)
+{
+return make_float2(_fabs(A.x), _fabs(A.y));
+}
+
+__DEVICE__ float3 ABS( float3 A)
+{
+return make_float3(_fabs(A.x), _fabs(A.y), _fabs(A.z));
+}
+
+__DEVICE__ float3 POW( float3 in, float3 pw)
+{
+float3 out;
+out.x = _powf( in.x, pw.x);
+out.y = _powf( in.y, pw.y);
+out.z = _powf( in.z, pw.z);
+return out;
+}
+
+__DEVICE__ float2 MAX( float2 A, float B)
+{
+return make_float2(_fmaxf(A.x, B), _fmaxf(A.y, B));
+}
+
+__DEVICE__ float3 mix(float3 A, float3 B, float C)
+{
+return A * (1.0f - C) + B * C;
+}
+
+__DEVICE__ float surf(float2 p)
+{
+p.x = _fmod(p.x + 2.0f, 4.0f) - 2.0f;
+p.y = _fmod(p.y + 2.0f, 4.0f) - 2.0f;
+
+for(int i = 0; i < 10; i++) {
+p = ABS(p) / _clampf(dot(p, p), 0.4f, 1.0f) - make_float2(0.2f, 0.3f);
+}
+return smoothstep(0.0f, 0.1f, _fabs(p.y));
+}
+
+__DEVICE__ float surfcube(float3 p, float3 n)
+{
+float3 m = POW(ABS(n), make_float3(10.0f));
+
+float x = surf(make_float2(p.y, p.z));
+float y = surf(make_float2(p.x, p.z));
+float z = surf(make_float2(p.x, p.y));
+
+return (m.x*x + m.y*y + m.z*z)/(m.x + m.y + m.z);
+}
+
+__DEVICE__ float3 bump(float3 p, float3 n)
+{
+float2 h = make_float2(0.005f, 0.0f);
+float3 b = make_float3(
+surfcube(p + make_float3(h.x, h.y, h.y), n) - surfcube(p - make_float3(h.x, h.y, h.y), n),
+surfcube(p + make_float3(h.y, h.x, h.y), n) - surfcube(p - make_float3(h.y, h.x, h.y), n),
+surfcube(p + make_float3(h.y, h.y, h.x), n) - surfcube(p - make_float3(h.y, h.y, h.x), n));
+
+b = b - n*dot(n, b);
+return normalize(n + 4.0f * b);
+}
+
+__DEVICE__ float de(float3 p)
+{
+float4 q = make_float4(p, 1.0f);
+
+q.x = _fmod(q.x + 2.0f, 4.0f) - 3.0f;
+q.z = _fmod(q.z + 2.0f, 4.0f) - 3.0f;
+q.y -= 1.0f;
+
+for(int i = 0; i < 3; i++) {
+q.x = _fabs(q.x + 1.0f) - 1.0f;
+q.y = _fabs(q.y + 1.0f) - 1.0f;
+q.z = _fabs(q.z + 1.0f) - 1.0f;
+q = q / _clampf(dot(make_float3(q.x, q.y, q.z), make_float3(q.x, q.y, q.z)), 0.4f, 1.0f);
+q = q * 1.3f;
+}
+return _fminf(p.y + 1.0f, length(MAX(ABS(make_float2(q.x, q.z)) - make_float2(1.2f), 0.0f)) / q.w);
+}
+
+__DEVICE__ float trace(float3 ro, float3 rd, float mx)
+{
+float t = 0.0f;
+for(int i = 0; i < 100; i++) {
+float d = de(ro + rd * t);
+if (d < 0.001f || t >= mx) break;
+t += d * 0.6f;
+}
+return t;
+}
+
+__DEVICE__ float3 normal(float3 p)
+{
+float2 h = make_float2(0.001f, 0.0f);
+float3 n = make_float3(
+de(p + make_float3(h.x, h.y, h.y)) - de(p - make_float3(h.x, h.y, h.y)),
+de(p + make_float3(h.y, h.x, h.y)) - de(p - make_float3(h.y, h.x, h.y)),
+de(p + make_float3(h.y, h.y, h.x)) - de(p - make_float3(h.y, h.y, h.x)));
+
+return normalize(n);
+}
+
+__DEVICE__ float ao(float3 p, float3 n)
+{
+float o = 0.0f;
+float s = 0.005f;
+float w = 1.0f;
+
+for(int i = 0; i < 15; i++) {
+float d = de(p + n * s);
+o += (s - d) * w;
+w *= 0.98f;
+s += s / (float)(i + 1.0f);
+}
+
+return _clampf(1.0f - o, 0.0f, 1.0f);
+}
+
+__DEVICE__ float3 render(float3 ro, float3 rd)
+{
+float3 col = make_float3(0.0f);
+
+float t = trace(ro, rd, 50.0f);
+if(t < 50.0f) {
+float3 pos = ro + rd * t;
+float3 nor = normal(pos);
+
+nor = bump(pos, nor);
+float3 ref = reflect(rd, nor);
+
+float occ = ao(pos, nor);
+
+col = make_float3(occ);
+col = col + _powf(_clampf(dot(ref, -rd), 0.0f, 1.0f), 2.0f);
+if (pos.y > -0.99f) {
+col = col + make_float3(20.0f, 0.6f * _sinf(time), 0.0f) * (1.0f - occ);
+} else {
+float3 npos = pos;
+npos.x = _fmod(npos.x + 2.0f, 4.0f) - 2.0f;
+npos.z = _fmod(npos.z + 2.0f, 4.0f) - 2.0f;
+col = col + make_float3(10.0f, 0.3f * _sinf(time), 0.0f) * _clampf(dot(normalize(npos) * -1.0f, nor), 0.0f, 1.0f) / (0.01f + 4.0f * length(npos));
+}
+}
+
+col = mix(make_float3(0.0f), col, _expf(-0.5f * t));
+
+return col;
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+float2 XY = make_float2 (X, Y);
+float2 resolution = make_float2(width, height);
+time = TIME * 50;
+
+float2 p = ((resolution * -1.0f) + 2.0f * XY) / resolution.y;
+
+float t = 0.3f * time;
+float3 ro = make_float3(2.0f, 1.0f + 1.9f * _sinf(t), t);
+float3 ww = normalize(make_float3(2.0f + _sinf(t), _sinf(t), t + 1.0f) - ro);
+float3 uu = normalize(cross(make_float3(0.0f, 1.0f, 0.0f), ww));
+float3 vv = normalize(cross(ww, uu));
+float3 rd = normalize(p.x * uu + p.y * vv + 1.97f * ww);
+
+float3 col = render(ro, rd);
+
+col.x = 1.0f - _expf(-0.1f * col.x);
+col.y = 1.0f - _expf(-0.1f * col.y);
+col.z = 1.0f - _expf(-0.1f * col.z);
+col = POW(ABS(col), make_float3(1.0f/2.2f));
+
+return col;
+}
