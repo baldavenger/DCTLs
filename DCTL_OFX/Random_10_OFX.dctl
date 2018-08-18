@@ -1,0 +1,510 @@
+// Random 10 OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Rotate Shapes, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(ROTATE, Rotate Stage, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+
+#define minkowski(v, m) pow(dot(pow(v, v * 0.0f + m), v * 0.0f + 1.0f), 1.0f/m)
+#define TAU 	(8.0f * atan(1.0f))
+#define PHI 	((_sqrtf(5.0f) + 1.0f) * 0.5f)
+#define PHI2 	(PHI * PHI)
+#define PHI3 	(PHI * PHI * PHI)
+
+#define VIEW_POSITION 		make_float3(0.0f, 2.9f, -24.0f)
+#define MAX_FLOAT 			(_powf(2.0f, 128.0f) - 1.0f)
+
+__DEVICE__ float3 g_color = {0.0f, 0.0f, 0.0f};
+__DEVICE__ float2 mouse = {0.0f, 0.0f};
+__DEVICE__ float time = 0.0f;
+
+typedef struct
+{
+float2 r0, r1;
+} mat2;
+
+__DEVICE__ mat2 make_mat2(float2 A, float2 B)
+{
+mat2 C;
+C.r0 = A;
+C.r1 = B;
+return C;
+}
+
+__DEVICE__ float2 multi(float2 A, mat2 B)
+{
+float2 C;
+C.x = A.x * B.r0.x + A.y * B.r0.y;
+C.y = A.x * B.r1.x + A.y * B.r1.y;
+return C;
+}
+
+__DEVICE__ float fract(float A)
+{
+float B;
+B = A - _floor(A);
+return B;
+}
+
+__DEVICE__ float2 fract(float2 A)
+{
+float2 B;
+B.x = A.x - _floor(A.x);
+B.y = A.y - _floor(A.y);
+return B;
+}
+
+__DEVICE__ float3 fract(float3 A)
+{
+float3 B;
+B.x = A.x - _floor(A.x);
+B.y = A.y - _floor(A.y);
+B.z = A.z - _floor(A.z);
+return B;
+}
+
+__DEVICE__ float mix(float A, float B, float C)
+{
+return A * (1.0f - C) + B * C;
+}
+
+__DEVICE__ float3 mix(float3 A, float3 B, float C)
+{
+return A * (1.0f - C) + B * C;
+}
+
+__DEVICE__ float2 FLOOR( float2 A)
+{
+return make_float2(_floor(A.x), _floor(A.y));
+}
+
+__DEVICE__ float3 ABS( float3 A)
+{
+return make_float3(_fabs(A.x), _fabs(A.y), _fabs(A.z));
+}
+
+__DEVICE__ float3 MAX( float3 A, float B)
+{
+return make_float3(_fmaxf(A.x, B), _fmaxf(A.y, B), _fmaxf(A.z, B));
+}
+
+__DEVICE__ float3 POW( float3 in, float3 pw)
+{
+float3 out;
+out.x = _powf( in.x, pw.x);
+out.y = _powf( in.y, pw.y);
+out.z = _powf( in.z, pw.z);
+return out;
+}
+
+__DEVICE__ float3 CLAMP( float3 in, float clampMin, float clampMax)
+{
+float3 out;
+out.x = _clampf( in.x, clampMin, clampMax);
+out.y = _clampf( in.y, clampMin, clampMax);
+out.z = _clampf( in.z, clampMin, clampMax);   
+return out;
+}
+
+__DEVICE__ float3 hsv(float h, float s, float v)
+{
+return mix( make_float3(1.0f), CLAMP(( ABS( fract(h + make_float3(3.0f, 2.0f, 1.0f) / 3.0f) * 6.0f - 3.0f) -1.0f), 0.0f, 1.0f), s) * v;
+}
+
+__DEVICE__ mat2 rmat(float t)
+{
+float c = _cosf(t);
+float s = _sinf(t);
+return make_mat2(make_float2(c, s), make_float2(-s, c));
+}
+
+//generalized distance functions
+#define n1   make_float3(1.0f, 0.0f, 0.0f)
+#define n2   make_float3(0.0f, 1.0f, 0.0f)
+#define n3   make_float3(0.0f, 0.0f, 1.0f)
+#define n4   make_float3(0.577f, 0.577f, 0.577f)
+#define n5   make_float3(-0.577f, 0.577f, 0.577f)
+#define n6   make_float3(0.577f, -0.577f, 0.577f)
+#define n7   make_float3(0.577f, 0.577f, -0.577f)
+#define n8   make_float3(0.0f, 0.357f, 0.934f)
+#define n9   make_float3(0.0f, -0.357f, 0.934f)
+#define n10   make_float3(0.934f, 0.0f, 0.357f)
+#define n11   make_float3(-0.934f, 0.0f, 0.357f)
+#define n12   make_float3(0.357f, 0.934f, 0.0f)
+#define n13   make_float3(-0.357f, 0.934f, 0.0f)
+#define n14   make_float3(0.0f, 0.851f, 0.526f)
+#define n15   make_float3(0.0f, -0.851f, 0.526f)
+#define n16   make_float3(0.526f, 0.0f, 0.851f)
+#define n17   make_float3(-0.526f, 0.0f, 0.851f)
+#define n18   make_float3(0.851f, 0.526f, 0.0f)
+#define n19   make_float3(-0.851f, 0.526f, 0.0f)
+
+__DEVICE__ float octahedral(float3 p, float e, float r) 
+{
+float s = _powf(_fabs(dot(p, n4)), e);
+s 	+= _powf(_fabs(dot(p, n5)), e);
+s 	+= _powf(_fabs(dot(p, n6)), e);
+s 	+= _powf(_fabs(dot(p, n7)), e);
+s 	= _fminf(s, MAX_FLOAT);
+s 	= _powf(s, 1.0f/e);
+return s - r;
+}
+
+__DEVICE__ float dodecahedral(float3 p, float e, float r)
+{
+float s = _powf(_fabs(dot(p, n14)), e);
+s 	+= _powf(_fabs(dot(p, n15)), e);
+s 	+= _powf(_fabs(dot(p, n16)), e);
+s 	+= _powf(_fabs(dot(p, n17)), e);
+s 	+= _powf(_fabs(dot(p, n18)), e);
+s 	+= _powf(_fabs(dot(p, n19)), e);
+s 	= _fminf(s, MAX_FLOAT);
+s 	= _powf(s, 1.0f/e);
+return s - r;
+}
+
+__DEVICE__ float icosahedral(float3 p, float e, float r)
+{
+float s = _powf(_fabs(dot(p, n4)), e);
+s 	+= _powf(_fabs(dot(p, n5)), e);
+s 	+= _powf(_fabs(dot(p, n6)), e);
+s 	+= _powf(_fabs(dot(p, n7)), e);
+s 	+= _powf(_fabs(dot(p, n8)), e);
+s 	+= _powf(_fabs(dot(p, n9)), e);
+s 	+= _powf(_fabs(dot(p, n10)), e);
+s 	+= _powf(_fabs(dot(p, n11)), e);
+s 	+= _powf(_fabs(dot(p, n12)), e);
+s 	+= _powf(_fabs(dot(p, n13)), e);
+s 	= _fminf(s, MAX_FLOAT);
+s 	= _powf(s, 1.0f/e);
+return s - r;
+}
+
+__DEVICE__ float toctahedral(float3 p, float e, float r)
+{
+float s = _powf(_fabs(dot(p, n1)), e);
+s 	+= _powf(_fabs(dot(p, n2)), e);
+s 	+= _powf(_fabs(dot(p, n3)), e);
+s 	+= _powf(_fabs(dot(p, n4)), e);
+s 	+= _powf(_fabs(dot(p, n5)), e);
+s 	+= _powf(_fabs(dot(p, n6)), e);
+s 	+= _powf(_fabs(dot(p, n7)), e);
+s 	= _fminf(s, MAX_FLOAT);
+s 	= _powf(s, 1.0f/e);
+return s - r;
+}
+
+__DEVICE__ float ticosahedral(float3 p,  float e, float r)
+{
+float s = _powf(_fabs(dot(p, n4)), e);
+s 	+= _powf(_fabs(dot(p, n5)), e);
+s 	+= _powf(_fabs(dot(p, n6)), e);
+s 	+= _powf(_fabs(dot(p, n7)), e);
+s 	+= _powf(_fabs(dot(p, n8)), e);
+s 	+= _powf(_fabs(dot(p, n9)), e);
+s 	+= _powf(_fabs(dot(p, n10)), e);
+s 	+= _powf(_fabs(dot(p, n11)), e);
+s 	+= _powf(_fabs(dot(p, n12)), e);
+s 	+= _powf(_fabs(dot(p, n13)), e);
+s 	+= _powf(_fabs(dot(p, n14)), e);
+s 	+= _powf(_fabs(dot(p, n15)), e);
+s 	+= _powf(_fabs(dot(p, n16)), e);
+s 	+= _powf(_fabs(dot(p, n17)), e);
+s 	+= _powf(_fabs(dot(p, n18)), e);
+s 	+= _powf(_fabs(dot(p, n19)), e);
+s 	= _fminf(s, MAX_FLOAT);
+s 	= _powf(s, 1.0f/e);
+return s - r;
+}
+
+__DEVICE__ float icosidodecahedron(float3 p,  float e, float r)
+{
+float4 v = normalize(make_float4(PHI3, PHI2, PHI, 0.0f));
+p	= ABS(p);
+float s = 0.0f;
+s	+= _powf(_fabs(dot(p, make_float3(v.x, v.y, v.w))), e);
+s 	+= _powf(_fabs(dot(p, make_float3(v.y, v.w, v.x))), e);
+s 	+= _powf(_fabs(dot(p, make_float3(v.w, v.x, v.y))), e);
+s 	+= _powf(_fabs(dot(p, make_float3(v.y, v.y, v.y))), e);
+s 	+= _powf(_fabs(dot(p, make_float3(v.x, v.w, v.z))), e);
+s 	+= _powf(_fabs(dot(p, make_float3(v.z, v.x, v.w))), e);
+s 	+= _powf(_fabs(dot(p, make_float3(v.w, v.z, v.x))), e);
+s 	= _fminf(s, MAX_FLOAT);
+s 	= _powf(s, 1.0f/e);
+return s - r;
+}
+
+__DEVICE__ float rhombictriacontahedron(float3 p,  float e, float r)
+{
+p	= ABS(p);
+float4 v = normalize(make_float4(PHI3, PHI2, PHI, 0.0f));	
+float3 f0 = (make_float3(v.y, v.y, v.y) + make_float3(v.x, v.w, v.z))/2.0f;
+float3 f1 = make_float3(v.x, v.w, v.w);
+float3 f2 = make_float3(v.w, v.x, v.w);
+float3 f3 = make_float3(v.w, v.w, v.x);
+float3 f4 = (make_float3(v.w, v.x, v.y) + make_float3(v.y, v.w, v.x))/2.0f;		
+float3 f5 = (make_float3(v.y, v.y, v.y) + make_float3(v.z, v.x, v.w))/2.0f;		
+float s = 0.0f;
+s	+= _powf(_fabs(dot(p, f0)), e);
+s	+= _powf(_fabs(dot(p, f1)), e);
+s 	+= _powf(_fabs(dot(p, f2)), e);
+s 	+= _powf(_fabs(dot(p, f3)), e);
+s 	+= _powf(_fabs(dot(p, f4)), e);
+s 	+= _powf(_fabs(dot(p, f5)), e);
+
+s 	= _fminf(s, MAX_FLOAT);
+s 	= _powf(s, 1.0f/e);
+return s - r;
+}
+
+__DEVICE__ float cube(float3 p, float3 s)
+{
+float3 d = ABS(p) - s;
+return _fminf(_fmaxf(d.x, _fmaxf(d.y, d.z)), 0.0f) + length(MAX(d, 0.0f));
+}
+
+__DEVICE__ float segment(float3 p, float3 a, float3 b, float r)
+{
+
+float3 pa = p - a;
+float3 ba = b - a;
+float h = _clampf(dot(pa, ba) / dot(ba, ba), 0.0f, 1.0f);
+return length(pa - ba * h) - r;
+}
+
+__DEVICE__ float rtc_edges(float3 position, float scale, float radius)
+{		
+position	= ABS(position);
+
+float4 v 	= make_float4(PHI3, PHI2, PHI, 0.0f) * scale;
+
+float ea	= segment(position, make_float3(v.x, v.y, v.w), make_float3(v.y, v.y, v.y), radius);
+float eb	= segment(position, make_float3(v.x, v.y, v.w), make_float3(v.x, v.w, v.z), radius);
+float ec	= segment(position, make_float3(v.x, v.y, v.w), make_float3(v.z, v.x, v.w), radius);
+float ed	= segment(position, make_float3(v.y, v.w, v.x), make_float3(v.y, v.y, v.y), radius);
+float ee	= segment(position, make_float3(v.y, v.w, v.x), make_float3(v.w, v.z, v.x), radius);
+float ef	= segment(position, make_float3(v.y, v.w, v.x), make_float3(v.x, v.w, v.z), radius);
+float eg	= segment(position, make_float3(v.w, v.x, v.y), make_float3(v.y, v.y, v.y), radius);
+float eh	= segment(position, make_float3(v.w, v.x, v.y), make_float3(v.w, v.z, v.x), radius);
+float ei	= segment(position, make_float3(v.w, v.x, v.y), make_float3(v.z, v.x, v.w), radius);
+float edges	= _fminf(_fminf(_fminf(_fminf(_fminf(_fminf(_fminf(_fminf(ea, eb), ec), ed), ee), ef), eg), eh), ei);
+
+return edges;
+}
+
+__DEVICE__ float2 inverse_ulam(float n)
+{
+float r	= _sqrtf(n + 0.25f);
+float s = 3.0f - fract(r) * 4.0f;	
+r *= _fmod(r, 2.0f) > 1.0f ? 0.5f : -0.5f;
+
+return s > 1.0f ? make_float2(r, 2.0f * r - r * s) : make_float2(r * s, r);
+}
+
+__DEVICE__ float ulam_spiral(float2 p)
+{
+float x = _fabs(p.x);
+float y	= _fabs(p.y);
+bool q	= x > y;
+
+x	= _fmaxf(x, y);
+y	= q ? _fabs(p.x + p.y) : _fabs(p.x - p.y);
+y 	= y + 4.0f * (x * x);
+x 	*= 2.0f;
+
+if(_fabs(p.x) <= _fabs(p.y))
+{
+return p.y > 0.0f ? y - x : y + x;
+}
+else
+{
+return p.x > 0.0f ? y - x - x : y;
+}
+}
+
+__DEVICE__ float map(float3 position)
+{
+
+float3 origin 	= position;
+float2 originXZ = make_float2(origin.x, origin.z);
+
+//origin.xz 	*= rmat(mouse.x * TAU + TAU/2.0f);
+originXZ = multi(originXZ, rmat(mouse.x * TAU + TAU/2.0f));
+origin = make_float3(originXZ.x, origin.y, originXZ.y);
+
+float radius 	= 0.95f;
+float exponent  = 256.0f;
+
+float base	= cube(origin + make_float3(0.0f, 4.0f, 0.0f), make_float3( 9.0f, 0.025f, 9.0f));
+
+//float index 	= floor(ulam_spiral(floor(origin.xz/6.+.5)));
+float index 	= _floor(ulam_spiral(FLOOR(make_float2(origin.x, origin.z)/6.0f + 0.5)));
+
+float range 	= 64.0f;
+
+float2 offset 	= FLOOR(inverse_ulam(index) * 6.0f + 2.0f);
+
+if(position.y < 0.2f)
+{
+origin		= origin - (index <= 9. ? make_float3(offset.x, 0.0f, offset.y) : make_float3(0.0f,0.0f, 0.0f));
+origin.y	+= 1.75f + _cosf(index + time * 0.8f) * 0.125f;
+//origin.zy 	*= rmat(time * 0.0625f + index);
+float2 originZY = make_float2(origin.z, origin.y);
+originZY 	= multi(originZY, rmat(time * 0.0625f + index));
+origin = make_float3(origin.x, originZY.y, originZY.x);
+
+//origin.xz 	*= rmat(time * 0.3f + index);
+originXZ 	= make_float2(origin.x, origin.z);
+originXZ 	= multi(originXZ, rmat(time * 0.3f + index));
+origin 		= make_float3(originXZ.x, origin.y, originXZ.y);
+float oct 	= octahedral(origin, exponent, radius);
+float dod	= dodecahedral(origin, exponent, radius);
+float ico 	= icosahedral(origin, exponent, radius);
+float toc	= toctahedral(origin, exponent, radius);
+float tic	= ticosahedral(origin, exponent, radius);
+float ics	= icosidodecahedron(origin, exponent, radius);
+float rtc	= rhombictriacontahedron(origin, exponent, radius);//
+float edg	= rtc_edges(origin, 0.25f, 0.0625f);
+float cub	= cube(origin, make_float3(1.0f, 1.0f, 1.0f));
+
+float prim 	= index == 0.0f ? oct :
+index == 1.0f ? dod :
+index == 2.0f ? ico :
+index == 3.0f ? toc :
+index == 4.0f ? tic :
+index == 5.0f ? ics :
+index == 6.0f ? rtc :
+index == 7.0f ? edg :
+index == 8.0f ? cub :
+64.0f;
+
+range 		= _fminf(prim, base);
+
+g_color 	= prim == range ? hsv(index/9.0f, 2.0f, 1.0f) : make_float3(1.0f, 1.0f, 1.0f) * 1.9f;
+}	
+return range;
+}
+
+__DEVICE__ float3 derive(float3 position, float range)
+{
+float2 offset     = make_float2(0.0f, range);
+float3 normal     = make_float3(0.0f);
+normal.x    	= map(position + make_float3(offset.y, offset.x, offset.x)) - map(position - make_float3(offset.y, offset.x, offset.x));
+normal.y    	= map(position + make_float3(offset.x, offset.y, offset.x)) - map(position - make_float3(offset.x, offset.y, offset.x));
+normal.z    	= map(position + make_float3(offset.x, offset.x, offset.y)) - map(position - make_float3(offset.x, offset.x, offset.y));
+return normalize(normal);
+}
+
+__DEVICE__ float smoothmin(float a, float b, float x)
+{
+return -(_logf(_expf(x * -a) +_expf(x * -b)) / x);
+}
+
+__DEVICE__ float shadow(float3 origin, float3 direction, float mint, float maxt, float k) 
+{
+float sh = 1.0f;
+float t = mint;
+float h = 0.0f;
+for (int i = 0; i < 32; i++) 
+{
+if (t > maxt)			
+continue;
+h 	= map(origin + direction * t);
+sh 	= smoothmin(sh, k * h/t, 8.0f);
+t 	+= _clampf( h, mint, 0.95f );		
+}
+return _clampf(sh, 0.0f, 1.0f);
+}
+
+__DEVICE__ float ambient_occlusion(float3 position, float3 normal)
+{	   
+float delta 	= 0.125f;
+float occlusion = 0.0f;
+float t 	= 0.6f;
+for (float i = 1.0f; i <= 12.0f; i++)
+{
+occlusion	+= t * (i * delta - map(position + normal * delta * i));
+t 		*= 0.61f;
+}
+
+const float k 	= 1.0f;
+return 1.0f - _clampf(k * occlusion, 0.0f, 1.0f);
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+time = TIME * 30;
+mouse.x = ROTATE;
+float2 resolution = make_float2(width, height);
+float2 XY = make_float2(X, Y);
+float2 aspect		= resolution / resolution.y;
+
+float2 uv 	= XY / resolution;
+uv 			= (uv - 0.5f) * aspect;
+
+float2 m			= (mouse - 0.5f) * aspect;
+
+float3 direction  	= normalize( make_float3(uv - make_float2(0.0f, 0.45f), PHI));
+
+float3 origin		= VIEW_POSITION;
+origin.z += ROTATE * 10;
+float3 position		= origin;
+
+//raytrace
+float minimum_range	= 1.0f / _fmaxf(resolution.x, resolution.y);
+float max_range		= 36.0f;
+float range		= max_range;
+float total_range	= 10.0f;
+float steps 		= 1.0f;
+
+//float prior_range	= max_range;
+for(int count = 1; count < 72; count++)
+{
+if(range >= minimum_range && total_range < max_range)
+{		
+range 		= _fminf( map(position), 0.71f);
+range		*= _clampf(0.985f + 0.125f/range - 0.125f, 1.05f, 1.125f);
+
+if(_fabs(range) < 0.125f)
+{
+total_range	*= 1.0015f;
+}
+
+total_range	+= range;
+position 	= origin + direction * total_range;
+
+steps++;
+}
+}
+
+float3 background_color 	= (make_float3(0.375f, 0.375f, 0.5f) - uv.y) * 0.8625f;
+float3 color 		= background_color;	
+if(steps < 71.0f && total_range < max_range)
+{
+position		= position - direction * minimum_range;
+
+float3 surface_direction 	= derive(position, minimum_range * 8.0f);
+
+float3 light_position 	= VIEW_POSITION + make_float3(-64.0f, 64.0f, -16.0f);
+float3 light_direction	= normalize(light_position - position);
+
+float light		= _fmaxf(dot(surface_direction, light_direction), 0.0f);			
+float3 reflection 	= reflect(direction, surface_direction);
+float specular 		= _powf(_clampf(dot(reflection, light_direction), 0.0f, 1.0f), 8.0f);
+float bounce 		= _powf(_clampf(dot(light_direction, reflect(direction, surface_direction) * -1.0f), 0.0f, 1.0f), 2.0f);
+float3 material_color	= make_float3(1.0f, 1.0f, 1.0f);
+
+color 			= (material_color + g_color) * 0.25f + light * 1.25f + g_color * specular * 0.85f + specular + bounce * 0.125f;
+color 			= color * (0.9f + 0.0625f * shadow(position+surface_direction*minimum_range, light_direction, 0.125f, 32.0f, 322.0f));
+color 			= color + (_cosf(ambient_occlusion(position, light_direction-surface_direction)) * 0.125f);
+color			= color * ((1.0f - _fabs(_logf(steps * 0.25f/total_range)) * 0.0125f) + bounce * 0.75f);
+}
+
+color				= color + (steps * steps * 0.00025f);
+color 				= POW(color * 0.5f, make_float3(1.6f, 1.6f, 1.6f));
+
+return color;
+}
