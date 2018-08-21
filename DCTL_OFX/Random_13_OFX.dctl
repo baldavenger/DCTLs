@@ -1,0 +1,210 @@
+// Random 13 OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Animate, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(SCALE, Scale, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(PAN, Pan, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(TILT, Tilt, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(BKG1, Use Input Reflection, DCTLUI_CHECK_BOX, 0)
+DEFINE_UI_PARAMS(BKG2, Use Input Background, DCTLUI_CHECK_BOX, 1)
+
+#define lightDirection		normalize( make_float3(-1.0f, -2.6f, 5.0f))
+
+__DEVICE__ float time = 0;
+__DEVICE__ float width = 0;
+__DEVICE__ float height = 0;
+__DEVICE__ float scale = 1;
+__DEVICE__ float pan = 0;
+__DEVICE__ float tilt = 0;
+
+__DEVICE__ __TEXTURE__ TexR;
+__DEVICE__ __TEXTURE__ TexG;
+__DEVICE__ __TEXTURE__ TexB;
+
+__DEVICE__ bool Bkg1 = 0;
+
+typedef struct
+{
+float3 r0, r1, r2;
+} mat3;
+
+__DEVICE__ mat3 make_mat3(float3 A, float3 B, float3 C)
+{
+mat3 D;
+D.r0 = A;
+D.r1 = B;
+D.r2 = C;
+return D;
+}
+
+__DEVICE__ float3 multi(float3 A, mat3 B)
+{
+float3 C;
+C.x = A.x * B.r0.x + A.y * B.r0.y + A.z * B.r0.z;
+C.y = A.x * B.r1.x + A.y * B.r1.y + A.z * B.r1.z;
+C.z = A.x * B.r2.x + A.y * B.r2.y + A.z * B.r2.z;
+return C;
+}
+
+__DEVICE__ float3 SIN( float3 A)
+{
+float3 B;
+B.x = _sinf(A.x);
+B.y = _sinf(A.y);
+B.z = _sinf(A.z);
+return B;
+}
+
+__DEVICE__ float3 mix(float3 A, float3 B, float C)
+{
+return A * (1.0f - C) + B * C;
+}
+
+__DEVICE__ float cubicIn( float t)
+{
+return t * t * t;
+}
+
+__DEVICE__ float sphere( float3 pos, float radius)
+{
+return length(pos) - radius;	
+}
+
+__DEVICE__ float3 mapP( float3 p )
+{
+p = p + 1.0f * SIN(  2.0f * make_float3(p.y,p.z,p.x) ) * cubicIn(_sinf(time)) * 0.5f;
+p = p + 0.5f * SIN(  4.0f * make_float3(p.y,p.z,p.x) ) * cubicIn(_sinf(time)) * 0.5f;
+return p;
+}
+
+__DEVICE__ float map( float3 pos)
+{
+float3 spherePos = mapP(pos);    
+float s1 = sphere(spherePos, 1.6451f * scale);
+return s1;
+}
+
+__DEVICE__ float3 computeNormal( float3 pos)
+{
+float2 eps = make_float2(0.01f, 0.0f);
+return normalize(make_float3(
+map(pos + make_float3(eps.x,eps.y,eps.y)) - map(pos - make_float3(eps.x,eps.y,eps.y)),
+map(pos + make_float3(eps.y,eps.x,eps.y)) - map(pos - make_float3(eps.y,eps.x,eps.y)),
+map(pos + make_float3(eps.y,eps.y,eps.x)) - map(pos - make_float3(eps.y,eps.y,eps.x))
+));
+}
+
+__DEVICE__ float diffuse( float3 normal, float3 lightDir)
+{
+return _fmaxf(dot(normal, lightDir), 0.0f);
+}
+
+__DEVICE__ mat3 setCamera( float3 ro, float3 ta, float cr )
+{
+float3 cw = normalize(ta - ro);
+float3 cp = make_float3(_sinf(cr), _cosf(cr), 0.0f);
+float3 cu = normalize( cross(cw,cp) );
+float3 cv = normalize( cross(cu,cw) );
+return make_mat3( cu, cv, cw );
+}
+
+__DEVICE__ float specular( float3 normal, float3 dir) 
+{
+float3 h = normalize(normal - dir);
+return _powf( _fmaxf( dot(h, normal), 0.0f), 50.0f);
+}
+
+__DEVICE__ float3 envLight( float3 normal, float3 dir)
+{
+float3 eye = dir * 1.0f;
+float3 r = reflect( eye, normal );
+float m = 1.0f * _sqrtf( _powf( r.x, 2.0f ) + _powf( r.y, 2.0f ) + _powf( r.z + 1.0f, 2.0f ));
+r = (r + 1.0f) * 0.5f;
+r.x = r.x * (pan + 1)/2;
+r.y += tilt;
+float a = _tex2D(TexR, (int)(r.x * width), (int)(r.y * height));
+float b = _tex2D(TexG, (int)(r.x * width), (int)(r.y * height));
+float c = _tex2D(TexB, (int)(r.x * width), (int)(r.y * height));
+float3 color = make_float3(a, b, c);
+if (!Bkg1)
+color = make_float3(0.3f, 0.5f, 0.3f);
+
+return color;
+}
+
+__DEVICE__ float3 createColor(float3 pos, float3 normal, float3 dir, float3 lightDir)
+{
+float3 albedo = make_float3(0.5f, 0.5f, 0.5f);
+float diff = diffuse(normal, lightDir);
+float spec = specular(normal, lightDir);
+float3 env = envLight(normal, dir);
+
+float3 yo = (diff + spec + env) * albedo;
+return (yo - 0.5f) * 1.5f + 0.5f;
+}
+
+__DEVICE__ float3 rgb( float3 color) 
+{
+return make_float3(color.x / 255.0f, color.y / 255.0f, color.z / 255.0f);
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+width = (float)p_Width;
+height = (float)p_Height;
+Y = height - Y;
+float2 resolution = make_float2(width, height);
+float2 XY = make_float2(X, Y);
+Bkg1 = BKG1;
+scale = SCALE;
+time = TIME * 20;
+TexR = p_TexR;
+TexG = p_TexG;
+TexB = p_TexB;
+pan = PAN;
+tilt = TILT;
+float3 RGB = make_float3(_tex2D(p_TexR, p_X, p_Y), _tex2D(p_TexG, p_X, p_Y), _tex2D(p_TexB, p_X, p_Y));
+
+float3 lightDir = lightDirection;
+lightDir.x *= _sinf(time * 1.0f);
+lightDir.x -= pan/2;
+lightDir.y += tilt/4;
+
+float2 uv = XY / resolution;
+uv = -1.0f + uv * 2.0f;    
+uv.x *= resolution.x / resolution.y;
+uv.x -= pan * 2.5f;
+uv.y -= tilt * 2;
+
+float d;
+bool hit = 0;
+float3 ta = make_float3(0.0f);
+float3 pos = make_float3(0.0f, 0.0f, -3.0f);
+mat3 cam = setCamera(pos, ta, 0.0f);
+float3 color = make_float3(0.0f, 0.0f, 0.0f);
+float3 dir = multi( normalize(make_float3(uv, 1.0f)), cam);
+
+for (int i = 0; i < 64; i++)
+{
+d = map(pos);
+if (d < _powf(0.1f, 5.0f))
+{       		
+hit = 1;            
+}
+pos = pos + d * dir;
+}
+
+if(hit)
+{
+float3 normal = computeNormal(pos);
+color = createColor(pos, normal, dir, lightDir);       
+} else {
+
+float3 col1 = rgb(make_float3(258.0f, 208.0f, 196.0f)) * 0.8f;
+float3 col2 = rgb(make_float3(255.0f, 209.0f, 255.0f)) * 0.5f;
+color = BKG2 ? RGB : mix(col1, col2, length(uv * 0.55f));
+}
+
+return color;
+}
