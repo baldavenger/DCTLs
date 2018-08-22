@@ -1,0 +1,100 @@
+// Random 17 OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Animate, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(SCALE, Scale, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(msX, Horizontal, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(msY, Vertical, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+
+#define DEG2RAG			0.0174532925199f
+
+typedef struct
+{
+float2 r0, r1;
+} mat2;
+
+__DEVICE__ mat2 make_mat2(float A1, float A2, float B1, float B2)
+{
+mat2 C;
+C.r0 = make_float2(A1, A2);
+C.r1 = make_float2(B1, B2);
+return C;
+}
+
+__DEVICE__ float2 multi(float2 A, mat2 B)
+{
+float2 C;
+C.x = A.x * B.r0.x + A.y * B.r0.y;
+C.y = A.x * B.r1.x + A.y * B.r1.y;
+return C;
+}
+
+__DEVICE__ float3 mix(float3 A, float3 B, float C)
+{
+return A * (1.0f - C) + B * C;
+}
+
+__DEVICE__ float tri2(float2 pos)
+{
+float a = dot(pos, make_float2(_sinf( 60.0f * DEG2RAG), _cosf( 60.0f * DEG2RAG)));
+float b = dot(pos, make_float2(_sinf(-60.0f * DEG2RAG), _cosf(-60.0f * DEG2RAG)));	
+float c = -pos.y;
+float d = 0.2f * _cosf(60.0f * DEG2RAG);
+
+float u1 = a - d * 0.25f;
+float v1 = b - d * 0.25f;
+float w1 = c - d * 0.3f;
+
+float u2 = c + d * 1.25f;
+float v2 = b + d * 1.25f;
+float w2 = a + d * 1.25f;
+
+float t1 = _fminf(u2, _fminf(u1, v1));
+float t2 = _fminf(v2, _fminf(w1, u1));
+float t3 = _fminf(w2, _fminf(v1, w1));
+
+float res = _fmaxf(_fmaxf(t1, t2), t3);
+return 0.002f / _fabs(res);
+}
+
+__DEVICE__ float tri(float2 pos)
+{
+float a = dot(pos, make_float2(_sinf( 60.0f * DEG2RAG), _cosf( 60.0f * DEG2RAG)));
+float b = dot(pos, make_float2(_sinf(-60.0f * DEG2RAG), _cosf(-60.0f * DEG2RAG)));	
+float c = -pos.y;
+
+float result = 0.002f / _fabs(_fminf(_fminf(0.05f - a, 0.05f - b), 0.05f - c));
+return result;
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+float2 resolution = make_float2(width, height);
+float2 XY = make_float2(X, Y);
+float time = (TIME + 1) * 5;
+float2 mouse = make_float2(msX/4, msY/5);
+XY = XY - (resolution/2);
+
+float2 pos = (0.5f * XY) / _fmaxf(1.0f, 17.0f) / 160.0f;
+pos = (pos - mouse) / (SCALE + 0.01f);
+mat2 rot = make_mat2(_cosf(time - 1.0f), -_sinf(time - 1.0f), _sinf(time - 1.0f), _cosf(time - 1.0f));
+pos = multi(pos, rot);
+float zoom = 1.0f / (_fmod(time, 1.0f) + 1.0f) * 3.0f - 1.0f;
+pos = pos * zoom;
+
+float3 result = make_float3(0);
+for(int i = 0; i < 6; i++)
+{
+result = result + make_float3(tri(pos), tri(pos * -0.5f), tri2(pos));
+pos = pos / 0.25f;
+}
+float3 color = mix(make_float3(0.0f, 0.0f, 0.0f), make_float3(0.5f, 0.0f, 1.0f), result.x)
++ mix(make_float3(0.0f, 0.0f, 0.0f), make_float3(0.5f, 0.25f, 0.0f), result.y)
++ mix(make_float3(0.0f, 0.0f, 0.0f), make_float3(0.0f, 0.5f, 0.1f), result.z);
+
+return color;
+}
