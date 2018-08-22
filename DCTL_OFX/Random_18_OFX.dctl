@@ -1,0 +1,107 @@
+// Random 18 OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Animate, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(SCALE, Scale, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(msX, Horizontal, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(msY, Vertical, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+
+#define PI 			3.14159265359f
+#define TWO_PI 		6.28318530718f
+
+
+__DEVICE__ float3 fract(float3 A)
+{
+float3 B;
+B.x = A.x - _floor(A.x);
+B.y = A.y - _floor(A.y);
+B.z = A.z - _floor(A.z);
+return B;
+}
+
+__DEVICE__ float3 CLAMP( float3 in, float clampMin, float clampMax)
+{
+float3 out;
+out.x = _clampf( in.x, clampMin, clampMax);
+out.y = _clampf( in.y, clampMin, clampMax);
+out.z = _clampf( in.z, clampMin, clampMax);   
+return out;
+}
+
+__DEVICE__ float3 ABS( float3 A)
+{
+return make_float3(_fabs(A.x), _fabs(A.y), _fabs(A.z));
+}
+
+__DEVICE__ float3 mix(float3 A, float3 B, float C)
+{
+return A * (1.0f - C) + B * C;
+}
+
+__DEVICE__ float distLine(float2 p, float2 a, float2 b)
+{
+float2 ap = p - a;
+float2 ab = b - a;
+float t = _clampf(dot(ap, ab) / dot(ab, ab), 0.0f, 1.0f);
+return length(ap - ab * t);
+}
+
+__DEVICE__ float line(float2 p, float2 a, float2 b, float t)
+{
+return smoothstep(t, t + 0.025f, distLine(p, a, b));
+}
+
+
+__DEVICE__ float circle(float2 p, float2 l, float t)
+{
+return smoothstep(t, t + 0.025f, length(p - l));
+}
+
+
+__DEVICE__ float3 hsv2rgb(float3 c)
+{
+float4 K = make_float4(1.0f, 2.0f / 3.0f, 1.0f / 3.0f, 3.0f);
+float3 p = ABS(fract(make_float3(c.x) + make_float3(K.x, K.y, K.z)) * 6.0f - make_float3(K.w));
+return c.z * mix(make_float3(K.x), CLAMP(p - make_float3(K.x), 0.0f, 1.0f), c.y);
+}
+
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+float2 XY = make_float2(X, Y);
+
+float T = TIME * 10;
+float2 R = make_float2(width, height);;
+float2 uv = (2.0f * XY - R) / R.y;
+float2 M = make_float2(msX, msY);
+uv = (uv - M) / (SCALE + 0.01f);
+M = M + 0.5f;
+float t = 0.0f;
+const float amount = 32.0f;
+const float stp = 1.0f / amount;
+float3 color = make_float3(0);
+for (float i = 0.0f; i < 1.0f; i += stp) {
+float ampA1 = 0.8f;
+float phaseA1 = i * TWO_PI * M.x;
+float ampA2 = 0.8f;
+float phaseA2 = i * TWO_PI * M.y * 0.25f;
+float ampB1 = 0.8f;
+float phaseB1 = i * TWO_PI * M.x * 0.25f;
+float ampB2 = 0.8f;
+float phaseB2 = i * TWO_PI * M.y;
+float2 a = make_float2(ampA1 * _cosf(T + phaseA1), ampA2 * _sinf(T + phaseA2));
+float2 b = make_float2(ampB1 * _cosf(T + phaseB1), ampB2 * _sinf(T + phaseB2));
+t = 0.1f / line(uv, a, b, 0.004f);
+color = color + mix(make_float3(0), make_float3(0.0f, 0.3f, 0.9f), (t / amount));
+t = 0.1f / circle(uv, a, 0.03f * i);
+color = color + (t / amount) * make_float3(0.0f, 0.0f, 1.0f);
+t = 0.1f / circle(uv, b, 0.03f * i);
+color = color + (t / amount) * make_float3(1.0f, 0.5f, 0.0f);
+}
+
+return color;
+}
