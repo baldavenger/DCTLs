@@ -1,0 +1,63 @@
+// Random 21 OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Animate, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(SCALE, Scale, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(msX, Horizontal, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(msY, Vertical, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+//DEFINE_UI_PARAMS(MAX_ITER, Iterations, DCTLUI_SLIDER_INT, 8, 1, 16, 1)
+
+#include "DCTL_Functions.h"
+
+__DEVICE__ float width = 0;
+__DEVICE__ float height = 0;
+__DEVICE__ float time = 0;
+__DEVICE__ float2 mouse = {0.0f, 0.0f};
+__DEVICE__ float2 UV = {0.0f, 0.0f};
+
+#define stripes 		1.0f
+#define k 				4.0f
+#define sy 				UV.y
+#define sx 				UV.x
+
+#define Pie				k * atan(stripes)
+
+__DEVICE__ float3 getColor(float phase)
+{
+float x = sx * 0.1f;
+float y = sy * 0.1f;
+float theta = _atan2f(y, x);
+float r = _logf((x * x + y * y));
+float c = 0.0f;
+float a = 0.0f;
+float tt;
+for (float t = 0.0f; t < k; t++) {
+tt = t * Pie;
+c += _sinf(((k - t) * theta * _cosf(tt) + t * r * _sinf(k - t)) * stripes - phase);
+a += _sinf(((k - t) * theta * _cosf(tt) + t * r * _sinf(k - t)) * stripes + phase);
+phase *= 0.5f;
+}
+c *= 0.2f;
+a *= 0.3f;
+return make_float3(_fabs(c * 0.1f * mouse.x), _fabs(a * a), -c + 0.1f * mouse.y);
+}
+
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{
+time = TIME * 40;
+float X = (float)p_X;
+float Y = (float)p_Y;
+width = (float)p_Width;
+height = (float)p_Height;
+Y = height - Y;
+float2 XY = make_float2(X, Y);
+float2 resolution = make_float2(width, height);
+float2 mouse = make_float2(msX, msY);
+
+UV = XY / resolution - 0.5f;
+UV = (UV - mouse) / (SCALE + 0.1f);
+
+float3 col = getColor(time * 0.1f * Pie);
+
+return col;
+}
