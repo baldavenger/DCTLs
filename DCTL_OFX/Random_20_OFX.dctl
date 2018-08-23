@@ -1,0 +1,49 @@
+// Random 20 OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Animate, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(SCALE, Scale, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(msX, Horizontal, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(msY, Vertical, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(MAX_ITER, Iterations, DCTLUI_SLIDER_INT, 8, 1, 16, 1)
+
+#include "DCTL_Functions.h"
+
+__DEVICE__ float width = 0;
+__DEVICE__ float height = 0;
+__DEVICE__ float time = 0;
+
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{
+time = TIME * 10;
+float X = (float)p_X;
+float Y = (float)p_Y;
+width = (float)p_Width;
+height = (float)p_Height;
+Y = height - Y;
+float2 XY = make_float2(X, Y);
+float2 resolution = make_float2(width, height);
+float2 mouse = make_float2(msX, msY);
+
+float2 uv = XY / resolution;
+uv = uv - 0.5f;
+uv = (uv - mouse) / (SCALE);
+
+float2 p = uv * 10.0f;
+float2 i = p;
+float c = 0.1f;
+float inten = 5.0f;
+
+for (int n = 0; n < MAX_ITER; n++) {
+float t = time;
+i = p + make_float2(_cosf(t - i.x) + _cosf(t + i.y), (t - i.y) + _cosf(t + i.x));
+c += 1.0f / length( make_float2(p.x / (_cosf(i.x + t) * inten), p.y / (_cosf(i.y + t) / inten)));
+}
+c /= (float)MAX_ITER;
+float pulse = 0.1f;
+float pulse2 = 0.1f;
+float pulse3 = 0.1f;
+float3 RGB = make_float3(_powf(c, 1.5f + pulse/2.0f)) * make_float3(1.0f + pulse2, 2.0f - pulse, 1.5f + pulse3) * (1.0f + pulse)/2.0f;
+
+return RGB;
+}

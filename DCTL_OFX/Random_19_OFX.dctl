@@ -1,0 +1,39 @@
+// Random 19 OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Animate, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(SCALE, Scale, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(msX, Horizontal, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(msY, Vertical, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+
+#include "DCTL_Functions.h"
+
+__DEVICE__ float width = 0;
+__DEVICE__ float height = 0;
+__DEVICE__ float time = 0;
+
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{
+time = TIME * 3;
+float X = (float)p_X;
+float Y = (float)p_Y;
+width = (float)p_Width;
+height = (float)p_Height;
+Y = height - Y;
+float2 XY = make_float2(X, Y);
+float2 resolution = make_float2(width, height);
+float2 mouse = make_float2(msX, msY);
+
+float2 p = (XY * 2.0f - resolution) / _fminf(resolution.x, resolution.y);
+p = (p - mouse) / (SCALE);
+float3 destColor = make_float3(1.0f, 0.4f, 1.4f);
+float f = 0.01f;
+for(float i = 0.0f; i < 24.0f; i++){
+float s = _sinf(time + i * 4.04719f);
+float c = _cosf(time + i * 4.04719f);
+f += 0.025f / _fabs(length(p + make_float2(c, s)) -1.5f * _fabs(_sinf(time) ));
+}
+
+float3 RGB= destColor * f;
+return RGB;
+}
