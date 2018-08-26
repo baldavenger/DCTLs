@@ -1,0 +1,41 @@
+// Random 23 OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Animate, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+
+#include "DCTL_Functions.h"
+
+__DEVICE__ float time = 0;
+
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{
+time = TIME * 10;
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+float2 XY = make_float2(X, Y);
+float2 resolution = make_float2(width, height);
+
+float3 rColor = make_float3(0.9f, 0.0f, 0.3f);
+float3 gColor = make_float3(0.0f, 0.9f, 0.3f);
+float3 bColor = make_float3(0.0f, 0.3f, 0.9f);
+float3 yColor = make_float3(0.5f, 0.5f, 0.0f);
+
+float2 p = (XY * 2.0f - resolution) / _fminf(resolution.x, resolution.y);
+
+float a = _sinf(p.x * 5.0f + time * 5.0f) / 2.0f;
+float b = _sinf(p.x * 5.0f + time * 7.0f) / 2.0f;
+float c = _sinf(p.x * 5.0f + time * 9.0f) / 2.0f;
+float d = _sinf(p.x * 5.0f + time * 11.0f) / 2.0f;
+
+float f = 0.01f / _fabs(p.y + a);
+float g = 0.01f / _fabs(p.y + b);
+float h = 0.01f / _fabs(p.y + c);
+float i = 0.01f / _fabs(p.y + d);
+
+float3 destColor = rColor * f + gColor * g + bColor * h + yColor * i;
+
+return destColor;
+}
