@@ -82,6 +82,16 @@ B.z = A.z - _floor(A.z);
 return B;
 }
 
+__DEVICE__ inline float4 fract( float4 A)
+{
+float4 B;
+B.x = A.x - _floor(A.x);
+B.y = A.y - _floor(A.y);
+B.z = A.z - _floor(A.z);
+B.w = A.w - _floor(A.w);
+return B;
+}
+
 __DEVICE__ inline mat2 make_mat2( float A1, float A2, float B1, float B2)
 {
 mat2 C;
@@ -185,6 +195,11 @@ __DEVICE__ inline float3 mix( float3 A, float3 B, float C)
 return A * (1.0f - C) + B * C;
 }
 
+__DEVICE__ inline float4 mix( float4 A, float4 B, float C)
+{
+return A * (1.0f - C) + B * C;
+}
+
 __DEVICE__ inline float2 multi( float2 A, mat2 B)
 {
 float2 C;
@@ -248,6 +263,11 @@ __DEVICE__ inline float3 POW( float3 A, float3 B)
 return make_float3(_powf(A.x, B.x), _powf(A.y, B.y), _powf(A.z, B.z));
 }
 
+__DEVICE__ inline float sign( float A)
+{
+return (A < 0.0f ? -1.0f : A > 0.0f ? 1.0f : 0.0f);
+}
+
 __DEVICE__ inline float2 SIN( float2 A)
 {
 return make_float2(_sinf(A.x), _sinf(A.y));
@@ -256,6 +276,11 @@ return make_float2(_sinf(A.x), _sinf(A.y));
 __DEVICE__ inline float3 SIN( float3 A)
 {
 return make_float3(_sinf(A.x), _sinf(A.y), _sinf(A.z));
+}
+
+__DEVICE__ inline float4 SIN( float4 A)
+{
+return make_float4(_sinf(A.x), _sinf(A.y), _sinf(A.z), _sinf(A.w));
 }
 
 __DEVICE__ inline float2 SQRT( float2 A)

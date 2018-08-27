@@ -1,0 +1,420 @@
+// Random 24 OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Animate, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(SCALE, Zoom, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(PAN, Pan, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(TILT, Tilt, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(BKG1, Enable Background, DCTLUI_CHECK_BOX, 1)
+
+#include "DCTL_Functions.h"
+
+__DEVICE__ float time = 0;
+__DEVICE__ float2 XY = {0, 0};
+__DEVICE__ float2 resolution = {0, 0};
+
+#define FAR 20.0f
+#define EPS 0.001f
+
+#define T 4.0f + time
+#define AT _fmod(T, 30.0f)
+#define SKIN 1.0f
+#define LEYE 2.0f
+#define REYE 3.0f
+#define TEYE 4.0f
+#define PIN 5.0f
+#define LE make_float4(-0.5f, -0.1f, -0.27f, 0.61f)
+#define RE make_float4(0.5f, -0.1f, -0.27f, 0.61f)
+#define TE make_float4(0.0f, 1.2f, -0.9f, 0.42f)  
+
+__DEVICE__ mat2 rot( float x)
+{
+return make_mat2( _cosf(x), _sinf(x), -_sinf(x),  _cosf(x));
+}
+
+__DEVICE__ float3 rotOrigin( float3 origin, float3 pos, float a)
+{
+pos = pos - origin;
+float2 posXZ = multi(make_float2(pos.x, pos.z), rot(a));
+return make_float3(posXZ.x, pos.y, posXZ.y) + origin;
+}
+
+__DEVICE__ float3 faceRotation( float3 p)
+{
+float a = _clampf((AT - 8.0f) * 0.1f, 0.0f, 0.26f) 
+- _clampf((AT - 14.0f) * 0.05f, 0.0f, 0.2f) 
+- _clampf((AT - 25.0f) * 0.05f, 0.0f, 0.06f);    
+float ab = _clampf((AT - 12.0f) * 0.5f, 0.0f, PI * 2.0f);
+float2 pYZ = multi(make_float2(p.y, p.z), rot(-0.1f + a));
+p = make_float3(p.x, pYZ.x, pYZ.y);
+p = rotOrigin(make_float3(0.0f, 0.0f, 1.6f), p, _sinf(ab) * 0.34f);
+return p;
+}
+
+__DEVICE__ float sdEqTriangle( float2 p)
+{
+const float k = _sqrtf(3.0f);
+p.x = _fabs(p.x) - 1.0f;
+p.y = p.y + 1.0f / k;
+if (p.x + k * p.y > 0.0f) p = make_float2(p.x - k * p.y, - k * p.x - p.y) / 2.0f;
+p.x -= _clampf(p.x, -2.0f, 0.0f);
+return -length(p) * sign(p.y);
+}
+
+__DEVICE__ float sdSphere( float3 p, float r)
+{
+return length(p) - r;
+}
+
+__DEVICE__ float sdBox( float3 p, float3 b)
+{
+float3 d = ABS(p) - b;
+return _fminf(_fmaxf(d.x, _fmaxf(d.y, d.z)), 0.0f) + length(MAX(d, 0.0f));
+}
+
+__DEVICE__ float sdCapsule( float3 p, float3 a, float3 b, float r)
+{
+float3 pa = p - a, ba = b - a;
+float h = _clampf( dot(pa, ba) / dot(ba, ba), 0.0f, 1.0f);
+return length(pa - ba * h) - r;
+}
+
+__DEVICE__ float sdEllipsoid( float3 p, float3 r)
+{
+return (length(p / r) - 1.0f) * _fminf(_fminf(r.x, r.y), r.z);
+}
+
+__DEVICE__ float smin( float a, float b, float k)
+{
+float h = _clampf(0.5f + 0.5f * (b - a) / k, 0.0f, 1.0f);
+return mix(b, a, h) - k * h * (1.0f - h);
+}
+
+__DEVICE__ float smax( float a, float b, float k)
+{
+float h = _clampf( 0.5f + 0.5f * (b - a) / k, 0.0f, 1.0f );
+return mix(a, b, h) + k * h * (1.0f - h);
+}
+
+__DEVICE__ float2 nearest( float2 a, float2 b)
+{ 
+float s = step(a.x, b.x);
+return s * a + (1.0f - s) * b;
+}
+
+__DEVICE__ float dfThirdEyeLid( float3 p)
+{
+float a = _clampf((AT - 11.0f) * 0.2f, 0.0f, 0.2f) - _clampf((AT - 23.0f) * 0.1f, 0.0f, 0.2f);
+float t = _fmaxf(sdSphere(p, 0.45f), -sdSphere(p, 0.43f));
+p.x = _fabs(p.x);
+float2 pXY = multi(make_float2(p.x, p.y), rot(-PI / 3.0f));
+p = make_float3(pXY.x, pXY.y, p.z);
+return smax(t, -sdBox(p - make_float3(0.48f - a, 0.0f, 0.0f), make_float3(0.5f)), 0.01f);
+}
+
+__DEVICE__ float dfThirdEyeLids( float3 p)
+{
+float t = dfThirdEyeLid(p);
+float2 pXY = multi(make_float2(p.x, p.y), rot(PI / 1.5f));
+p = make_float3(pXY.x, pXY.y, p.z);
+t = _fminf(t, dfThirdEyeLid(p));
+pXY = multi(make_float2(p.x, p.y), rot(PI / 1.5f));
+p = make_float3(pXY.x, pXY.y, p.z);
+return _fminf(t, dfThirdEyeLid(p));
+}
+
+__DEVICE__ float dfEyeLid( float3 p)
+{
+float t = sdSphere(p, 0.65f);
+float a = _clampf((AT - 10.0f) * 0.5f, 0.0f, 0.4f) - _clampf((AT - 25.0f) * 0.3f, 0.0f, 0.4f);
+float2 pYZ = multi(make_float2(p.y, p.z), rot(-0.4f + a));
+p = make_float3(p.x, pYZ.x, pYZ.y);
+return smax(t, -sdEllipsoid(p - make_float3(0.1f, 0.0f, -0.63f), make_float3(0.5f, 0.04f + a * 0.3f, 0.6f)), 0.02f);
+}
+
+__DEVICE__ float dfFace( float3 p)
+{
+float3 q = p;
+float a = _clampf((AT - 11.0f) * 0.05f, 0.0f, 0.1f) - _clampf((AT - 15.0f) * 0.02f, 0.0f, 0.1f);
+
+float f = sdEllipsoid(p, make_float3(1.4f, 2.6f, 1.3f)); 
+f = smin(f, sdEllipsoid(p - make_float3(0.0f, 0.0f, 0.5f), make_float3(1.8f, 2.0f, 1.3f)), 0.4f);
+f = smin(f, sdSphere(p - make_float3(0.0f, 1.2f, 0.6f), 1.6f), 0.1f);
+f = smin(f, sdSphere(p - make_float3(0.0f, 0.9f, 1.1f), 2.14f), 0.1f);
+q.x = _fabs(q.x);
+f = smax(f, -sdBox(p - make_float3(0.0f, -1.0f, -2.0f), make_float3(1.0f, 1.0f, 1.0f)), 0.8f); 
+f = smax(f, -sdEllipsoid(q - make_float3(0.8f, -0.2f, -0.9f), make_float3(0.6f, 0.4f, 0.2f)), 0.3f); 
+float eyeLid = sdSphere(q - make_float3(0.5f, -0.1f, -0.27f), 0.65f);
+eyeLid = smax(eyeLid, -sdEllipsoid(q - make_float3(0.6f, -0.1f, -1.0f), make_float3(0.5f, 0.04f, 0.6f)), 0.02f);
+float eyeLids = dfEyeLid(q - make_float3(0.5f, -0.1f, -0.27f));
+f = smin(f, eyeLids, 0.1f);
+f = smax(f, -sdEllipsoid(p - make_float3(0.0f, -2.7f, -0.84f), make_float3(1.2f, 2.0f, 0.16f)), 0.04f);
+f = _fmaxf(f, -sdBox(p - make_float3(0.0f, -1.5f, -0.6f), make_float3(0.4f, 0.12f, 0.3f)));
+float topLip = sdEllipsoid(p - make_float3(0.0f, -1.3f, -0.7f), make_float3(0.6f, 0.4f, 0.3f));
+topLip = smax(topLip, -sdCapsule(p, make_float3(0.0f, -1.0f, -1.0f), make_float3(0.0f, -1.6f, -1.1f), 0.06f), 0.08f);
+topLip = smax(topLip, -sdEllipsoid(q - make_float3(0.0f, -1.8f + a, -0.7f), make_float3(0.8f, 0.3f, 1.0f)), 0.01f);
+f = smin(f, topLip, 0.08f);
+float bottomLip = sdEllipsoid(p - make_float3(0.0f, -1.4f, -0.65f), make_float3(0.6f, 0.5f, 0.2f));
+bottomLip = smax(bottomLip, -sdEllipsoid(q - make_float3(0.0f, -1.1f - a, -0.7f), make_float3(0.7f, 0.4f, 1.0f)), 0.01f);
+f = smin(f, bottomLip, 0.06f);
+float nostrilHole = sdCapsule(q, make_float3(0.2f, -1.2f, -1.1f), make_float3(0.1f, -0.9f, -1.0f), 0.08f);
+float2 qYZ = multi(make_float2(q.y, q.z), rot(-0.2f));
+q = make_float3(p.x, qYZ.x, qYZ.y);
+f = smin(f, sdEllipsoid(q - make_float3(0.0f, -0.7f, -1.1f), make_float3(0.26f, 0.18f, 0.4f)), 0.06f);
+f = smin(f, sdCapsule(p, make_float3(0.0f, -0.8f, -1.1f), make_float3(0.0f, 0.4f, -0.9f), 0.11f), 0.14f); 
+f = smax(f, -nostrilHole, 0.08f);
+q = p;
+q.x = _fabs(q.x); 
+f = smax(f, -sdSphere(q - make_float3(2.3f, -1.5f, -1.2f), 1.4f), 0.3f); 
+f = smin(f, dfThirdEyeLids(p - make_float3(0.0f, 1.2f, -0.9f)), 0.2f);    
+
+return f;
+}
+
+__DEVICE__ float3 map( float3 p)
+{
+float3 q = p;
+
+float body = sdCapsule(p, make_float3(0.0f, 1.0f, 0.8f), make_float3(0.0f, -7.0f, 3.0f), 1.0f);
+body = smin(body, sdEllipsoid(p - make_float3(0.0f, -3.0f, 1.1f), make_float3(0.2f, 0.3f, 0.3f)) , 0.3f);
+q.x = _fabs(q.x);
+body = smin(body, sdCapsule(q, make_float3(0.6f, 1.0f, 0.4f), make_float3(1.0f, -7.0f, 2.6f), 0.2f), 0.2f);
+body = smin(body, sdEllipsoid(p - make_float3(0.0f, -5.0f, 2.4f), make_float3(4.0f, 1.8f, 1.6f)), 0.4f);
+body = smin(body, sdSphere(q - make_float3(3.4f, -5.0f, 2.4f), 1.2f), 0.4f);
+body = smin(body, sdEllipsoid(p - make_float3(0.0f, -3.0f, 1.4f), make_float3(1.16f, 0.2f, 0.2f)), 0.06f);
+body = smin(body, sdEllipsoid(p - make_float3(0.0f, -2.6f, 1.3f), make_float3(1.16f, 0.2f, 0.2f)), 0.06f);
+body = smin(body, sdEllipsoid(p - make_float3(0.0f, -2.2f, 1.2f), make_float3(1.16f, 0.2f, 0.2f)), 0.06f);
+
+float pins = sdEllipsoid(p - make_float3(0.0f, -3.0f, 1.4f), make_float3(2.4f, 0.06f, 0.06f));
+pins = _fminf(pins, sdEllipsoid(p - make_float3(0.0f, -2.6f, 1.3f), make_float3(2.0f, 0.06f, 0.06f)));
+pins = _fminf(pins, sdEllipsoid(p - make_float3(0.0f, -2.2f, 1.2f), make_float3(1.6f, 0.06f, 0.06f)));
+
+q = faceRotation(p);    
+float f = dfFace(q);
+
+float leftEye = sdSphere(q - make_float3(LE.x, LE.y, LE.z), LE.w);
+float rightEye = sdSphere(q - make_float3(RE.x, RE.y, RE.z), RE.w);
+float thirdEye = sdSphere(q - make_float3(TE.x, TE.y, TE.z), TE.w);    
+
+float2 near = nearest(make_float2(smin(f, body, 0.3f), SKIN), make_float2(leftEye, LEYE));
+near = nearest(near, make_float2(rightEye, REYE));
+near = nearest(near, make_float2(thirdEye, TEYE));
+near = nearest(near, make_float2(pins, PIN));
+
+return make_float3(near, f);
+}
+
+__DEVICE__ float3 normal( float3 p)
+{  
+float2 e = make_float2(-1.0f, 1.0f) * EPS;   
+return normalize(make_float3(e.y, e.x, e.x) * map(p + make_float3(e.y, e.x, e.x)).x + make_float3(e.x, e.x, e.y) * map(p + make_float3(e.x, e.x, e.y)).x + 
+make_float3(e.x, e.y, e.x) * map(p + make_float3(e.x, e.y, e.x)).x + make_float3(e.y) * map(p + make_float3(e.y)).x);   
+}
+
+__DEVICE__ float tattoo( float2 uv)
+{
+float t = 1.0f - sign(sdEqTriangle(uv * 0.5f)) * sign(sdEqTriangle(uv * 0.6f));
+return uv.x > 0.0f ? 1.0f - _clampf(t, 0.0f, 0.5f) : 0.2f + (t * 0.2f);    
+}
+
+
+__DEVICE__ float n3D( float3 p)
+{    
+const float3 s = make_float3(7.0f, 157.0f, 113.0f);
+float3 ip = floor(p); 
+p = p - ip; 
+float4 h = make_float4(0.0f, s.y, s.z, s.y + s.z) + dot(ip, s);
+p = p * p * (3.0f - 2.0f * p);
+h = mix(fract(SIN(h) * 43758.5453f), fract(SIN(h + s.x) * 43758.5453f), p.x);
+float2 hXY = mix(make_float2(h.x, h.z), make_float2(h.y, h.w), p.y);
+return mix(hXY.x, hXY.y, p.z);
+}
+
+__DEVICE__ float3 envMap( float3 p)
+{
+p = p * 2.0f;
+p.x += T * 0.5f;
+p.z += T * 0.5f;
+float n3D2 = n3D(p * 2.0f);
+float c = n3D(p) * 0.57f + n3D2 * 0.28f + n3D(p * 4.0f) * 0.15f;
+c = smoothstep(0.5f, 1.0f, c);    
+p = make_float3(c * 0.8f, c * 0.9f, c);
+return mix(make_float3(p.z, p.x, p.y), p, n3D2 * 0.34f + 0.665f);
+}
+
+__DEVICE__ float AO( float3 rp, float3 n)
+{
+float r = 0.0f, w = 1.0f, d = 0.0f;
+
+for (float i = 1.0f; i < 5.0f; i += 1.0f){
+d = i / 5.0f;
+r += w * (d - map(rp + n * d).x);
+w *= 0.5f;
+}
+
+return 1.0f - _clampf(r, 0.0f, 1.0f);
+}
+
+__DEVICE__ float softShadow( float3 ro, float3 rd, float mint, float tmax)
+{
+float res = 1.0f, t = mint, ph = 1e10;
+
+for (int i = 0; i < 32; i++) {
+float h = map(ro + rd * t).x;
+float y = h * h / (2.0f * ph);
+float d = _sqrtf(h * h - y * y);
+res = _fminf(res, 10.0f * d / _fmaxf(0.0f, t - y));
+ph = h;        
+t += h;
+if (res < 0.0001f || t > tmax) break;
+}
+
+return _clampf(res, 0.0f, 1.0f);
+}
+
+__DEVICE__ float3 vMarch( float3 ro, float3 rd, float4 eye)
+{
+float3 pc = make_float3(0.0f);
+float t = 0.0f;
+float a = _clampf((AT - 14.0f) * 0.3f, 0.0f, 0.3f) - _clampf((AT - 22.0f) * 0.3f, 0.0f, 0.3f);
+ro = faceRotation(ro);
+
+for (int i = 0; i < 64; i++) {
+float3 rp = ro + t * rd;
+float c = length(rp - make_float3(eye.x, eye.y, eye.z));
+if (c > eye.w + EPS) break;
+t += 0.05f;
+pc = pc + make_float3(1.0f, 0.0f, 0.0f) / (1.0f + c * c * 1000.1f);
+pc = pc + (0.06f + a) * make_float3(1.0f, 0.8f, 0.0f) / (1.0f + c * c * c * 1000.1f);
+} 
+
+return pc;
+}
+
+__DEVICE__ float3 march( float3 ro, float3 rd)
+{
+float t = 0.0f, id = 0.0f, f = 0.0f;
+
+for (int i = 0; i < 98; i++) {
+float3 ns = map(ro + rd * t);
+if (ns.x < EPS || t > FAR) {
+id = ns.y;
+f = ns.z;
+break;
+}
+t += ns.x * 0.8f;
+}
+
+return make_float3(t, id, f);
+}
+
+__DEVICE__ void setupCamera( float2 Coord, float3 *ro, float3 *rd)
+{
+float2 uv = (Coord - resolution * 0.5f) / resolution.y;
+float3 lookAt = make_float3(0.0f, -0.5f, 0.0f);
+float3 RO = lookAt + make_float3(0.0f, -2.0f - _sinf(T * 0.3f), -6.6f + _sinf(T * 0.06f) * 0.3f);
+float2 roXZ = multi(make_float2(RO.x, RO.z), rot(_sinf(T * 0.14) * 0.6));
+RO = make_float3(roXZ.x, RO.y, roXZ.y);
+float FOV = PI / 3.0f;
+float3 forward = normalize(lookAt - RO);
+float3 right = normalize(make_float3(forward.z, 0.0f, -forward.x)); 
+float3 up = cross(forward, right);
+
+*rd = normalize(forward + FOV * uv.x * right + FOV * uv.y * up);
+*ro = RO;
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+time = TIME * 100;
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+XY = make_float2(X, Y);
+resolution = make_float2(width, height);
+
+float3 Input = make_float3(p_R, p_G, p_B);
+
+float3 ro = make_float3(0.0f), rd = make_float3(0.0f);
+float3 lp = make_float3(8.0f, 15.0f, -12.0f);
+float mint = FAR;
+
+setupCamera(XY, &ro, &rd);
+
+ro.x -= PAN * 5;
+rd.y += TILT;
+ro.z /= (SCALE + 0.1f);
+
+float3 pc = make_float3(0.0f, 0.3f, 0.1f) * n3D(8.0f * rd + T * 0.1f) * _fmaxf(0.0f, rd.y) * 0.6f;
+float3 t = march(ro, rd);
+
+if (t.x > 0.0f && t.x < mint) {
+mint = t.x;
+float3 rp = ro + rd * t.x;
+float3 n = normal(rp);
+float3 ld = normalize(lp - rp);
+float lt = length(lp - rp);
+float atten = 1.0f / (1.0f + lt * lt * 0.003f);
+float diff = _fmaxf(dot(ld, n), 0.05f);
+float spec = _powf(_fmaxf(dot(reflect(-ld, n), -rd), 0.0f), 64.0f); 
+float sspec = _powf(_fmaxf(dot(reflect(-ld, n), -rd), 0.0), 2.0f); 
+float fre = _powf(_clampf(dot(n, rd) + 1.0f, 0.0f, 1.0f), 4.0f) * 0.5f;
+float3 env = envMap(reflect(rd, n)) * 2.0f;
+float ao = AO(rp, n);
+float sh = softShadow(rp, ld, 0.01f, 3.0f);
+float3 sc = make_float3(1.0f);
+
+if (t.y == LEYE) {
+
+sc = make_float3(1.0f, 0.0f, 0.0f) * 0.3f;
+sc = sc * diff;
+sc = sc + vMarch(rp, rd, LE);
+sc = sc + make_float3(1.0f) * spec;
+sc = sc + make_float3(1.0f) * fre;
+
+} else if (t.y == REYE) {
+
+sc = make_float3(1.0f, 0.0f, 0.0f) * 0.3f;    
+sc = sc * diff;
+sc = sc + vMarch(rp, rd, RE);
+sc = sc + make_float3(1.0f) * spec;
+sc = sc + make_float3(1.0f) * fre;
+
+} else if (t.y == TEYE) {
+
+sc = make_float3(1.0f, 0.0f, 0.0f) * 0.3f;    
+sc = sc * diff;
+sc = sc + vMarch(rp, rd, TE);
+sc = sc + make_float3(1.0f) * spec;
+sc = sc + make_float3(1.0f) * fre;
+
+} else if (t.y == PIN) {  
+
+sc = make_float3(0.1f);
+sc = sc * diff;
+sc = sc + env;
+sc = sc + make_float3(1.0f) * spec;
+
+} else {
+
+if (t.z < EPS) rp = faceRotation(rp);
+float tat = tattoo(make_float2(rp.x, rp.y));
+sc = make_float3(1.0f) * tat;
+sc = sc * diff;
+sc = sc + make_float3(0.4f) * sspec;
+sc = sc * atten;
+
+}
+
+sc = sc + (0.1f * make_float3(0.0f, 0.3f, 0.1f) * _clampf(n.x * -1.0f, 0.0f, 1.0f));
+sc = sc * (0.4f + sh * 0.6f);
+
+pc = sc * ao;
+}
+
+float3 RGB = pc;
+if(BKG1) RGB = RGB + (mint / FAR * 0.3f);
+
+return RGB;
+}
