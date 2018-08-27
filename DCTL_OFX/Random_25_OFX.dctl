@@ -1,0 +1,32 @@
+// Random 25 OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Animate, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+
+#include "DCTL_Functions.h"
+
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float time = TIME * 10;
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+float2 XY = make_float2(X, Y);
+float2 resolution = make_float2(width, height);
+
+float2 p = XY / resolution;
+float2 q = p - make_float2(0.3f, 0.7f);
+float3 col = mix(make_float3(1.0f, 0.4f, 0.1f), make_float3(1.0f, 0.8f, 0.3f), _sqrtf(p.y));
+float windx = _sinf(time * 0.66f) * 0.1f + 1.0f, windy = _cosf(time * 1.14f) * 0.1f + 1.0f;
+float windz = (_sinf(time * 0.77f) * 0.5f + 0.5f) * 0.01f;
+float r = 0.18f + (0.1f + windz) * _cosf(_atan2f(q.y * windy, q.x) * 10.0f + 18.0f * q.x+ _sinf(time * 0.31f) * 2.0f * q.x + 1.0f);
+col = col * smoothstep (r, r + 0.02f, length( q ));
+r = 0.015f;
+r += 0.002f * _cosf(time + 120.0f * q.y);
+r += _expf(-40.0f * p.y);
+col = col * (1.0f - (1.0f - smoothstep (r, r + 0.002f, _fabs(q.x - 0.2f * _sinf(2.0f * q.y) ))) * (1.0f - smoothstep(0.0f, 0.1f, q.y)));
+
+return col;
+}
