@@ -280,6 +280,11 @@ __DEVICE__ inline float3 POW( float3 A, float3 B)
 return make_float3(_powf(A.x, B.x), _powf(A.y, B.y), _powf(A.z, B.z));
 }
 
+__DEVICE__ inline float radians( float degrees)
+{
+return (degrees * PI) / 180;
+}
+
 __DEVICE__ inline float sign( float A)
 {
 return (A < 0.0f ? -1.0f : A > 0.0f ? 1.0f : 0.0f);

@@ -1,0 +1,470 @@
+// Random 30 OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Animate, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(msX, Horizontal, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(msY, Vertical, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(msZ, Zoom, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+
+__DEVICE__ float3 iMouse = {0, 0, 0};
+
+#include "DCTL_Functions.h"
+
+__DEVICE__ float time = 0;
+
+// GLOBALS
+
+// position & direction
+__DEVICE__ float3 pos_finn;
+__DEVICE__ float3 pos_eyes;
+__DEVICE__ float3 dir_eye;
+__DEVICE__ mat3 dir_mouth;
+__DEVICE__ float3 dir_light;
+
+// coloring and animation
+__DEVICE__ float heye;
+__DEVICE__ float weye;
+__DEVICE__ float beye;
+__DEVICE__ float hmouth;
+__DEVICE__ float cmouth;
+__DEVICE__ float hfinns;
+__DEVICE__ float htail;
+__DEVICE__ float puff;
+
+__DEVICE__ float tim_tail;
+__DEVICE__ float ani_tail;
+__DEVICE__ float ani_mouth;
+
+// colors
+#define col_water		make_float3(0.3f, 0.7f, 1)
+#define col_fish_1		make_float3(1, 0.4f, 0.2f)
+#define col_fish_2		make_float3(1, 0.8f, 0.5f)
+#define col_eyes		make_float3(0.7f, 0.75f, 1)
+__DEVICE__ float t = 20;
+
+// marching
+__DEVICE__ float maxdist = 5.0f;
+__DEVICE__ float det = 0.001f;
+
+// 2D rotation
+__DEVICE__ mat2 rot2D( float a)
+{
+a = radians(a);
+float s = _sinf(a);
+float c = _cosf(a);
+return make_mat2(c, s, -s, c);
+}
+
+// Align vector
+__DEVICE__ mat3 lookat( float3 fw, float3 up)
+{
+fw = normalize(fw);
+float3 rt = normalize(cross(fw, normalize(up)));
+return make_mat3(rt, cross(rt, fw), fw);
+}
+
+// Tile fold 
+__DEVICE__ float Fmod(float p, float c)
+{
+return _fabs(c - _fmod(p, c * 2)) / c;
+}
+
+// Smooth min
+__DEVICE__ float smin( float a, float b, float k)
+{
+float h = _clampf(0.5f + 0.5f * (b - a) / k, 0, 1);
+return mix(b, a, h) - k * h * (1 - h);
+}
+
+// Smooth max
+__DEVICE__ float smax( float a, float b, float k)
+{
+float h = _clampf(0.5f + 0.5f * (a - b) / k, 0, 1);
+return mix(b, a, h) - k * h * (1 - h);
+}
+
+// Torus
+__DEVICE__ float sdTorus( float3 p, float2 t, float3 s)
+{
+p = make_float3(p.y, p.x, p.z) * s;
+float2 q = make_float2(length(make_float2(p.x, p.z)) - t.x, p.y);
+return length(q) - t.y;
+}
+
+// PUFFY'S SURFACE DISPLACEMENT FUNCTIONS
+
+__DEVICE__ float thorns( float3 p)
+{
+float2 pXZ = multi(make_float2(p.x, p.z), rot2D(-25.0f));
+p = make_float3(pXZ.x, p.y, pXZ.y);
+float s1 = smoothstep(0, 0.7f, -p.x + p.z + 0.6f);
+float s2 = smoothstep(0.15f, 0.3f, length(make_float2(p.x, p.y))) * smoothstep(0, 0.3f, length(make_float2(p.y, p.z)));
+float s3 = smoothstep(0, 0.25f, _fabs(p.y));
+p.x = Fmod(_atan2f(p.x, p.y), 0.31459f / 2);
+p.y = Fmod(_atan2f(p.y, p.z), 0.31459f / 2);
+pXZ = multi(make_float2(p.x, p.z), rot2D(25.0f));
+p = make_float3(pXZ.x, p.y, pXZ.y);
+return _fminf(1, _expf((-3 - puff * 3) * length(make_float2(p.x, p.y)))) * s1 * s2 * s3;
+}
+
+__DEVICE__ float spiral( float3 p, float3 c)
+{
+p.y = _fabs(p.y);
+float3 pos = p;
+p = multi(lookat(c, make_float3(0, 1, 0)), p);
+float a = length(make_float2(p.x, p.y)) * 35;
+float2 pYX = multi(make_float2(p.y, p.x), make_mat2(_sinf(a), _cosf(a), -_cosf(a), _sinf(a)));
+p = make_float3(pYX.y, pYX.x, p.z);
+float s = _powf(_fabs(p.x), 2) * smoothstep(0.7f, 1, _fmaxf(0, 1 - length(make_float2(p.x, p.y))));
+return s * smoothstep(0, 0.05f, pos.z + 0.1f);
+}
+
+__DEVICE__ float skin( float3 pos)
+{
+pos = pos * 2;
+float3 p = pos;
+float m = 1000;
+for (int i = 0; i < 7; i++) {
+p = ABS(p) / dot(p, p) - 0.5f;
+m = _fminf(m, length(p));
+}
+return _fmaxf(0, 1 - m) * (0.1f + smoothstep(-pos.x + 1, 0, 0.4f)) * 0.003f;
+}
+
+// PUFFY'S DE FUNCTIONS
+
+// Body parts
+
+__DEVICE__ float finn( float3 p)
+{
+p.z += 0.27f;
+p.x += 0.1f;
+p.x *= 1 - _powf(smoothstep(0, 0.2f, -p.z), 1.5f) * 0.3f;
+mat2 ro = rot2D(_cosf(tim_tail * 4 + (p.x + p.z) * 5) * (3 - p.x * 20));   
+float2 pXY = multi(make_float2(p.x, p.y), ro);
+p = make_float3(pXY.x, pXY.y, p.z);
+float2 pZY = multi(make_float2(p.z, p.y), ro);
+p = make_float3(p.x, pZY.y, pZY.x);
+float e = _atan2f(p.x, p.z);
+float o = _sinf(e * 20) * 0.003f;
+float a = 0.19f - p.z * 0.15f;
+float d = _fmaxf(_fabs(p.y + o) - 0.005f, length(make_float2(p.x, p.z)) - a + _cosf(o * 500) * 0.02f);
+d = _fmaxf(p.x - p.z * 0.6f, d);
+d = _fmaxf(p.z - p.x * 0.3f, d);
+return d * 0.75f;
+}
+
+__DEVICE__ float tail( float3 p)
+{
+p.z += 0.18f;
+p.x += puff * 0.1f;
+p.x += 0.45f + _powf(smoothstep(0, 0.4f, _fabs(p.z)), 5) * 0.1f;
+float2 pXY = multi(make_float2(p.x, p.y), rot2D(_cosf(tim_tail + p.x * 5 + p.z * 3) * 25));
+p = make_float3(pXY.x, pXY.y, p.z);
+float e = _atan2f(p.x, p.z);
+float o = _sinf(e * 20) * 0.003f;
+float a = 0.27f - p.z * 0.15f;
+float d = _fmaxf(_fabs(p.y + o) - 0.003f, length(make_float2(p.x, p.z)) - a + _cosf(o * 500) * 0.02f);
+float d1 = smax(p.x - p.z * 0.2f, d, 0.02f);
+d1 = smax(-p.x * 0.4f + p.z, d1, 0.02f);
+float d2 = smax(p.x + p.z * 0.3f, d, 0.02f);
+d2 = smax(-p.x * 0.3f - p.z, d2, 0.02f);
+d = smin(d1, d2, 0.03f);
+return d * 0.7f;
+}
+
+__DEVICE__ float finns( float3 p)
+{
+float amp = (1 - puff * 0.3f) * 0.15f;
+float t = time * 5 + sign(p.y) * 0.2f;
+float l = length(p) * 2;
+p.y = _fabs(p.y);
+p = p + normalize(pos_finn) * (0.28f + puff * 0.05f);
+p = p * 1.3f;
+p = multi(lookat(normalize(make_float3(-1, 0, -5)), make_float3(0, 1, 0)), p);
+amp *= (1 + length(p) * 5);
+float a = 0.2f + _cosf(t + _atan2f(p.y, p.z) * 2) * amp * 0.5f;
+float b = 1.2f + puff * 1.5f + _sinf(t - amp) * amp;
+float2 pZX = multi(make_float2(p.z, p.x), make_mat2(_sinf(a), _cosf(a), -_cosf(a), _sinf(a)));
+p = make_float3(pZX.y, p.y, pZX.x);
+float2 pYX = multi(make_float2(p.y, p.x), make_mat2(_sinf(b), _cosf(b), -_cosf(b), _sinf(b)));
+p = make_float3(pYX.y, pYX.x, p.z);
+float e = _atan2f(p.y, p.z);
+float o = _sinf(e * 20) * 0.003f;
+float r = 0.45f - smoothstep(1, 3, _fabs(e)) * 0.25f;
+float d =
+_fmaxf(_fabs(p.x + o) - 0.005f, length(make_float2(p.y, p.z)) - r + _cosf(p.z * 100) * 0.01f) * 0.9f;
+d = _fmaxf(-p.y - p.z * 0.5f, d);
+d = _fmaxf(p.z + p.y * 0.2f, d);
+d = smin(d, length(p) - 0.04f, 0.04f);
+return d * 0.8f;
+}
+
+__DEVICE__ float mouth( float3 p)
+{
+p = multi(p, dir_mouth);
+float mo = length(make_float2(p.y, p.z) * make_float2(0.35f + ani_mouth * 0.1f - p.z * 2, 1)) - 0.02f * (1 + ani_mouth * 0.4f);
+return _fmaxf(-p.x, mo);
+}
+
+__DEVICE__ float body( float3 p)
+{
+float m = smoothstep(0, 1.5f, -p.x + 1.3f) * 0.2f;
+float s = smoothstep(0, 1.7f, -p.x);
+p.z -= puff * 0.1f;
+p.z -= smoothstep(0, p.z * 0.3f + p.x - 0.6f + ani_mouth * 0.1f, -0.1f) * 0.05f;
+p.y *= 1 + _powf(_fabs(p.z - 0.2f), 2) * 1.5f;
+p.z *= 1 - (p.x + 0.1f) * 0.1f;
+p.z *= 1 + smoothstep(0, 0.5f, -p.x) * 0.3f;
+p.y *= 1 + smoothstep(0, 0.5f, -p.x) * 0.3f;
+float d = length(p * make_float3(1 + smoothstep(0, 0.5f, -p.x + p.z) * 0.5f, 1 , 1.4f)) - 0.47f - s - puff * 0.12f;
+p = p + make_float3(0.14f + puff * 0, 0, 0.2f);
+p.x -= p.z * 0.5f;
+p.z += puff * 0.1f;
+d = smin(d, length(p * make_float3(0.6f, 1.2f, 1.7f)) - 0.55f + m, 0.2f) + 0.1f;
+d += smoothstep(0, 0.7f, -p.x) * 0.05f;
+return (d + 0.05f) * 0.7f;
+}
+
+__DEVICE__ float eye( float3 p)
+{
+float d = length(p) - 0.13f;
+return d;
+}
+
+// Main DE function
+__DEVICE__ float de( float3 p)
+{
+beye = 0;
+heye = 0;
+weye = step(0, p.y);
+hmouth = 0;
+hfinns = 0;
+htail = 0;
+p.y *= 1.15f;
+float3 rp = p;
+p.y = _fabs(p.y);
+mat2 rotbod = rot2D(smoothstep(0, 1.3f, -p.x + 0.2f) * ani_tail * 25);
+float2 rpXY = multi(make_float2(rp.x, rp.y), rotbod);
+rp = make_float3(rpXY.x, rpXY.y, rp.z);
+float2 rpZY = multi(make_float2(rp.z, rp.y), rotbod);
+rp = make_float3(rp.x, rpZY.y, rpZY.x);
+float t = time * 10;
+p = p + SIN(p * 20 + t) * 0.002f;
+float fi = finn(rp);
+float fis = finns(rp);
+float ta = tail(rp);
+float mo = mouth(p);
+float sk = skin(rp);
+float res = (body(rp) - thorns(rp) * (0.01f + puff * 0.1f)) * 0.8f - sk;
+res += spiral(rp, (pos_eyes * -1) + make_float3(0.1f, 1, -0.3f)) * 0.4f;
+rp.y = _fabs(rp.y);
+float eyeh = eye(rp + pos_eyes * 0.9f);
+float eyes = eye(rp + pos_eyes);
+res = smax(res, -mo, 0.013f);
+res = smin(res, eyes, 0.02f);
+res = smin(res, eyeh, 0.035f);
+res = smin(res, fis, 0.02f);
+res = smin(res, fi, 0.02f);
+res = smin(res, ta, 0.03f);
+beye = abs(res - eyes);
+heye = 1 - step(0.005f, beye);
+hfinns = 1 - step(0.005f, _fabs(res - fi));
+hfinns = _fmaxf(hfinns, 1 - step(0.005f, _fabs(res - fis)));
+htail = 1 - step(0.02f, _fabs(res - ta));
+hmouth = 1 - step(0.01f, _fabs(res - mo));
+return res;
+}
+
+// PUFFY'S COLORING FUNCTIONS
+
+__DEVICE__ float3 color_eyes( float3 p, float3 n)
+{
+float3 p1 = p + pos_eyes;
+float3 p2 = p + make_float3(pos_eyes.x, -pos_eyes.y, pos_eyes.z);
+//float3 l = p1;
+float3 c = make_float3(1);
+p1 = multi(lookat(dir_eye, make_float3(0, 1, 0.5f)), p1);
+p2 = multi(lookat(dir_eye, make_float3(0, 1, -0.5f)), p2);
+p1.y -= 0.01f;
+p2.y += 0.01f;
+c = c - (smoothstep(0.07f, 0.085f, length(make_float2(p1.x, p1.y)) + 1 - weye) * (0.4f + col_eyes * 1.5f));
+c = c - (smoothstep(0.07f, 0.085f, length(make_float2(p2.x, p2.y)) + weye) * (0.4f + col_eyes * 1.5f));
+c = c * (smoothstep(0.03f + _sinf(_atan2f(p1.x, p1.y) * 25) * 0.02f, 0.07f, length(make_float2(p1.x, p1.y)) + 1 - weye));
+c = c * (smoothstep(0.03f + _sinf(_atan2f(p2.x, p2.y) * 25) * 0.02f, 0.07f, length(make_float2(p2.x, p2.y)) + weye));
+return mix(c, (col_fish_1 * -1) - 0.2f, smoothstep(0, 0.0055f, beye));
+}
+
+__DEVICE__ float3 color( float3 p, float3 n)
+{
+float c = 0.1f + _fmaxf(0, p.x * 3);
+float th = _powf(_fmaxf(0, 0.2f - _fabs(thorns(p))) / 0.2f, 3);
+float3 col = mix(col_fish_1, col_fish_2, c);
+col = mix(col_fish_1, col, 0.3f + th * 0.7f);
+if (heye > 0)
+col = color_eyes(p, n);
+if (hmouth > 0)
+col = col_fish_2 - 0.03f;
+if (hfinns > 0)
+col = mix(col_fish_1, col_fish_2 + 0.15f, smoothstep(0.37f, 0.5f, length(p + make_float3(0, 0, 0.05f)) - puff * 0.05f));
+if (htail > 0)
+col = mix(col_fish_1, col_fish_2 + 0.2f, smoothstep(0.6f, 0.75f, length(p) - puff * 0.1f));
+return ABS(col);
+}
+
+// BACKGROUND AND FOREGROUND FRACTAL
+
+__DEVICE__ float fractal( float3 p)
+{
+p = p + _cosf(p.z * 3 + time * 4) * 0.02f;
+float depth = smoothstep(0, 6, -p.z + 5);
+p = p * 0.3f;
+p = ABS(2 - MOD(p + make_float3(0.4f, 0.7f, time * 0.07f), 4));
+float ls = 0;
+float c = 0;
+for (int i = 0; i < 6; i++) {
+p = ABS(p) / _fminf(dot(p, p), 1) - 0.9f;
+float l = length(p);
+c += _fabs(l - ls);
+ls = l;
+}
+return 0.15f + smoothstep(0, 50, c) * depth * 4;
+}
+
+// NORMALS AND LIGHTING
+
+__DEVICE__ float3 normal( float3 p)
+{
+float3 e = make_float3(0, det * 2, 0);
+
+return normalize(make_float3(de(p + make_float3(e.y, e.x, e.x)) - de(p - make_float3(e.y, e.x, e.x)),
+							 de(p + make_float3(e.x, e.y, e.x)) - de(p - make_float3(e.x, e.y, e.x)),
+							 de(p + make_float3(e.x, e.x, e.y)) - de(p - make_float3(e.x, e.x, e.y))));
+}
+
+__DEVICE__ float shadow( float3 pos)
+{
+float sh = 1;
+float totdist = det * 30;
+float d = 10;
+for (int i = 0; i < 8; i++) {
+if (d > det) {
+float3 p = pos - totdist * dir_light;
+d = de(p);
+sh = _fminf(sh, 20 * d / totdist);
+totdist += d;
+}
+}
+return _clampf(sh, 0, 1);
+}
+
+__DEVICE__ float light( float3 p, float3 dir, float3 n, float shw)
+{
+float dif = _powf(_fmaxf(0, dot(dir_light, (n * -1))), 3);
+float amb = _powf(_fmaxf(0, dot(dir, (n * -1))), 3);
+return dif * 0.7f * shw + amb * 0.2f + 0.15f;
+}
+
+// RAY MARCHING AND SHADING
+
+__DEVICE__ float3 march( float3 from, float3 dir)
+{
+//float3 odir = dir;
+float3 p = from + dir * 2;
+float fg = fractal(p + dir) * 0.55f;
+float3 col = make_float3(0);
+float totdist = 0;
+float d;
+float v = 0;
+cmouth = 1;
+for (int i = 0; i < 80; i++) {
+p = from + totdist * dir;
+d = de(p);
+if (d < det || totdist > maxdist)
+break;
+totdist += d;
+v += _fmaxf(0, 0.1f - d) / 0.1f;
+}
+float fade = smoothstep(maxdist * 0.2f, maxdist * 0.9f, maxdist - totdist);
+float ref = 1;
+float eyes_ref = heye;
+float shw = 1;
+if (d < det * 2) {
+p = p - (det - d) * dir;
+float3 n = normal(p);
+col = color(p, n) * (0.1f + 0.9f * cmouth);
+shw = shadow(p);
+col = col * light(p, dir, n, shw);
+from = p - det * dir * 3;
+dir = reflect(dir, n);
+ref = fade * (0.3f * cmouth + eyes_ref * 0.2f);
+col = mix(col_water * 0.15f, col, fade);
+}
+col = col * normalize(col_water + 1.5f) * 1.7f;
+p = maxdist * dir;
+float3 bk = fractal(p) * ref * col_water;
+float glow = _powf(_fmaxf(0, dot(dir, dir_light * -1)), 1.5f + eyes_ref * 1.5f);
+float3 glow_water = normalize(col_water + 1);
+bk = bk + glow_water * (glow * (1 - eyes_ref * 0.7f) + _powf(glow, 8) * 1.5f) * shw * cmouth * ref;
+col = col + v * 0.06f * glow * ref * glow_water;
+col = col + bk + fg * col_water;
+return col;
+}
+
+// MAIN
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+//float time = TIME * 10;
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+float2 XY = make_float2(X, Y);
+float2 resolution = make_float2(width, height);
+
+// Set globals
+time = _fmod(TIME * 50 + 10, 600);
+ani_mouth = _sinf(time * 6);
+puff = -0.03f + 0.5f * smoothstep(0.945f, 0.95f, _fabs(_sinf(time * 0.1f))) + ani_mouth * 0.04f;
+pos_finn = normalize(make_float3(0.35f, -1, 0));
+pos_eyes = make_float3(-1, -1.1f, 1) * 0.12f;
+//pos_eyes*=1.+make_float3(-1.,1.,0.)*puff*.05;
+dir_light = normalize(make_float3(-0.3f, 0.2f, 1));
+dir_mouth = lookat(normalize(make_float3(-0.4f - puff * 0.1f + ani_mouth * 0.03f, 0, -1)), make_float3(0, 1, 0));
+tim_tail = time * 2;
+ani_tail = _cosf(tim_tail);
+
+// Pixel coordinates
+float2 uv = XY / resolution - 0.5f;
+float2 uv2 = uv;
+float ar = resolution.x / resolution.y; 
+uv.x *= ar;
+
+// Camera
+iMouse = make_float3(msX, msY, msZ * -0.25f);
+float2 mouse = make_float2(2, 0);
+float tcam = (time + 67) * 0.05f;
+float zcam = smoothstep(0.7f, 1, _cosf(tcam)) * 1.8f - 0.3f;
+zcam -= smoothstep(0.7f, 1, -_cosf(tcam)) * 1.6f;
+//if (iMouse.z < 0.1f) mouse = make_float2(_sinf(time * 0.15f)* ar, zcam);
+float3 dir = normalize(make_float3(uv, 0.9f)) - iMouse;
+float3 from = make_float3(1, 0, -0.5f + mouse.y) * 1.25f;
+
+float2 fromXY = multi(make_float2(from.x, from.y), rot2D(-mouse.x * 40));
+from = make_float3(fromXY.x, fromXY.y, from.z);
+dir = multi(lookat(normalize( (from * -1) + make_float3(_sinf(time * 0.5f) * 0.3f, _cosf(time * 0.25f) * 0.1f, 0)), make_float3(0, 0, -1)), dir);
+
+// Eyes direction
+dir_eye = normalize(from);
+dir_eye.x = _fmaxf(dir_eye.x, pos_eyes.x - .5);
+dir_eye.y = _fminf(_fabs(dir_eye.y), pos_eyes.y * sign(dir_eye.y) + 0.5f * sign(dir_eye.y));
+dir_eye.z = _fminf(dir_eye.z, pos_eyes.z - 0.5f);
+
+// March and color
+float3 col = march(from, dir);
+col = col * make_float3(1.1f, 0.9f, 0.8f);
+col = col + dot(uv2, uv2) * make_float3(0, 0.6f, 1) * 0.8f;
+
+return col;
+}
