@@ -1,0 +1,115 @@
+// Random 26 OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Animate, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+
+#include "DCTL_Functions.h"
+
+#define NUM_OCTAVES 11
+
+
+__DEVICE__ float random ( float2 _st)
+{
+return fract(_sinf(dot(_st, make_float2(12.9898f, 78.233f))) * 43758.5453123);
+}
+
+__DEVICE__ float noise ( float2 _st)
+{
+float2 i = floor(_st);
+float2 f = fract(_st);
+
+float a = random(i);
+float b = random(i + make_float2(1, 0));
+float c = random(i + make_float2(0, 1));
+float d = random(i + make_float2(1, 1));
+
+float2 u = f * f * (3 - 2 * f);
+
+return mix(a, b, u.x) + (c - a) * u.y * (1 - u.x) + (d - b) * u.x * u.y;
+}
+
+__DEVICE__ float fbm ( float2 _st)
+{
+float v = 0;
+float a = 0.5f;
+float2 shift = make_float2(100);
+mat2 rot = make_mat2(_cosf(0.5f), _sinf(0.5f), -_sinf(0.5f), _cosf(0.5f));
+for (int i = 0; i < NUM_OCTAVES; ++i) {
+v += a * noise(_st);
+_st = multi(rot, _st * 2.0 + shift);
+a *= 0.5f;
+}
+return v;
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float time = TIME * 30;
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+float2 XY = make_float2(X, Y);
+float2 resolution = make_float2(width, height);
+
+float2 st = XY / resolution * 3;
+
+float3 color = make_float3(1, 0, 0);
+
+float2 q = make_float2(0);
+q.x = fbm( st + 0.1f * time);
+q.y = fbm( st + make_float2(1));
+
+float2 r = make_float2(0);
+r.x = fbm( st + 1 * q + make_float2(1.7f, 9.2f) + 0.15f* time );
+r.y = fbm( st + 1 * q + make_float2(8.3f, 2.8f) + 0.126f * time);
+
+float f = fbm(st + r);
+
+color = mix(make_float3(0.101961f, 0.619608f, 0.666667f), make_float3(0, 0, 0.1f), _clampf((f * f) * 4, 0, 1));
+
+color = mix(color, make_float3(0, 0, 0.4f), _clampf(length(q), 0, 1));
+
+color = mix(color, make_float3(0.666667f, 1, 1), _clampf(length(make_float2(r.x, r.x)), 0, 1));
+q = XY / resolution;
+float2 p = make_float2(-1, -1) + 2 * q;
+
+p.x *= resolution.x / resolution.y;
+float r2 = _sqrtf(dot(p, p));
+float a = _atan2f(p.y, p.x);
+
+float3 bg_color = color;
+if (r2 < 0.8f) {
+
+color = make_float3(0, 0.3f, 0.4f);
+float f = fbm(9 * p);
+color = mix(color, make_float3(0.2f, 0.5f, 0.4f), f);
+
+f = 1 - smoothstep(0.2f, 0.5f, r2);
+color = mix(color, make_float3(0.9f, 0.6f, 0.2f), f);
+
+a += 0.05f * fbm(20 * p);
+
+f = smoothstep(0.3f, 1, fbm(make_float2(6 * r2, 20 * a)));
+color = mix(color, make_float3(1), f);
+
+f = smoothstep(0.4f, 0.9f, fbm(make_float2(8 * r2, 10 * a)));
+color = color * (1 - 0.5f * f);
+
+f = smoothstep(0.6f, 0.8f, r2);
+color = color * (1 - 0.5f * f);
+
+f = smoothstep(0.2f, 0.25f, r2);
+color = color * f;
+
+f = smoothstep(0, 0.15f , r2);
+color = mix(color, make_float3(0.8f, 0, 0), 1 - f);
+
+f = smoothstep(0.75f, 0.8f, r2);
+color = mix(color, bg_color, f);
+}
+
+color = (f * f * f + 0.6f * f * f + 0.5f * f) * color;
+
+return color;
+}

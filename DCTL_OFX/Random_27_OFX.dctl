@@ -1,0 +1,87 @@
+// Random 27 OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Animate, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(DISTORT, Distort, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(SCALE, Scale, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+
+#include "DCTL_Functions.h"
+
+__DEVICE__ float time = 0;
+__DEVICE__ float distort = 0;
+
+__DEVICE__ mat2 rotate( float a)
+{
+float c = _cosf(a);
+float s = _sinf(a);
+return make_mat2(c, -s, s, c);
+}
+
+__DEVICE__ float disp( float3 p)
+{
+float f = 16 * distort;
+float t = time;
+return 0.08f * _cosf(p.x * f + t) * _cosf(p.z * f + t) * _cosf(p.y * f + t);
+}
+
+__DEVICE__ float map( float3 p)
+{
+float d = 0;
+float k = disp(p);
+d = length(p) - 0.5f;
+return d + k;
+}
+
+__DEVICE__ float3 normal( float3 p)
+{
+float3 n;
+float3 E = make_float3(0.005f, 0, 0);
+n.x = map(p + make_float3(E.x, E.y, E.y)) - map(p - make_float3(E.x, E.y, E.y));
+n.y = map(p + make_float3(E.y, E.x, E.y)) - map(p - make_float3(E.y, E.x, E.y));
+n.z = map(p + make_float3(E.y, E.y, E.x)) - map(p - make_float3(E.y, E.y, E.x));
+return normalize(n);
+}
+
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+time = TIME * 10;
+distort = DISTORT;
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+float2 XY = make_float2(X, Y);
+float2 resolution = make_float2(width, height);
+
+float3 kS = make_float3(0.7f, 0.5f, 0.9f);
+float T = time;
+float2 uv = (XY - 0.5f * resolution) / resolution.y;
+uv = uv * 1/((SCALE + 0.5f) * 0.5f);
+float3 kA = make_float3(0);
+float3 kD = make_float3(0.4f, 0.15f + _cosf(time * 4 + uv.y * 25 + _cosf(time * 0.4f + uv.x * 10 - uv.y * 15)) * 0.45f, 0.9f);
+float ppy = _sinf(T * 0.3f + _cosf(T * 0.3f) * 3.14f) * 0.1f;
+float ppx = _cosf(T * 0.4f + _sinf(T * 0.5f) * 3.14f) * 0.1f;
+float3 ro = make_float3(ppx, ppy, -1); 
+float3 rd = make_float3(uv + make_float2(ppx,ppy), 1);
+float t = 0;
+for (int i = 0; i < 32; i++) {
+float3 p = ro + rd * t;
+t += 0.9f * map(p);
+}
+float3 p = ro + rd * t;
+float3 n = normal(p);
+float TT = T * 0.2f + _sinf(T * 0.4f) * 3.14f;
+float3 lp = normalize(make_float3( -_cosf(TT) * 1.7f + 3.14f / 4, 1, 3.14f * -0.5f + 0.2f * _cosf(TT) * 1.4f) - p);
+float diff = 1.75f * _clampf(dot(lp, n), 0, 1);
+float spec = 9.5f * _powf(_fmaxf(dot(reflect(-lp, n), ro), 0), 120);
+
+float3 RGB;
+
+if (t < 1.05f)
+RGB = CLAMP(kA + kD * diff + kS * spec, 0, 1);
+else
+RGB = make_float3(0);
+
+return RGB;
+}

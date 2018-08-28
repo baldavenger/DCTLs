@@ -208,7 +208,24 @@ C.y = A.x * B.r1.x + A.y * B.r1.y;
 return C;
 }
 
+__DEVICE__ inline float2 multi( mat2 B, float2 A)
+{
+float2 C;
+C.x = A.x * B.r0.x + A.y * B.r0.y;
+C.y = A.x * B.r1.x + A.y * B.r1.y;
+return C;
+}
+
 __DEVICE__ inline float3 multi( float3 A, mat3 B)
+{
+float3 C;
+C.x = A.x * B.r0.x + A.y * B.r0.y + A.z * B.r0.z;
+C.y = A.x * B.r1.x + A.y * B.r1.y + A.z * B.r1.z;
+C.z = A.x * B.r2.x + A.y * B.r2.y + A.z * B.r2.z;
+return C;
+}
+
+__DEVICE__ inline float3 multi( mat3 B, float3 A)
 {
 float3 C;
 C.x = A.x * B.r0.x + A.y * B.r0.y + A.z * B.r0.z;
