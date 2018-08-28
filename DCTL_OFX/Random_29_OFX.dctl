@@ -1,0 +1,86 @@
+// Random 29 OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Animate, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+
+#include "DCTL_Functions.h"
+
+
+__DEVICE__ float3 hash3( float2 p)
+{
+float3 q = make_float3( dot(p, make_float2(127.1f, 311.7f)), dot(p, make_float2(269.5f, 183.3f)), dot(p, make_float2(419.2f, 371.9f)) );
+return fract(SIN(q) * 43758.5453f);
+}
+
+__DEVICE__ float iqnoise( float2 x, float u, float v)
+{
+float2 p = floor(x);
+float2 f = fract(x);
+
+float k = 1 + 63 * _powf(_fabs(1 - v), 4);
+
+float va = 0;
+float wt = 0;
+for( int j = -2; j <= 2; j++ ){
+for( int i = -2; i <= 2; i++ )
+{
+float2 g = make_float2((float)i, (float)j);
+float3 o = hash3(p + g) * make_float3(u, u, 1);
+float2 r = g - f + make_float2(o.x, o.y);
+float d = dot(r, r);
+float ww = _powf(1 - smoothstep(0, 1.414f, _sqrtf(d)), k );
+va += o.z * ww;
+wt += ww;
+}}
+
+return va / wt;
+}
+
+__DEVICE__ float3 Palette( float t)
+{
+float3 a = make_float3(0.5f, 0.5f, 0.5f);  
+float3 b = make_float3(0.5f, 0.5f, 0.5f);
+float3 c = make_float3(1.0f, 1.0f, 1.0f);
+float3 d = make_float3(0.3f, 0.15f, 0.87f);
+float3 C = COS((c * t + d) * 6.28318f);
+return a + b * C;
+}
+
+__DEVICE__ float SIN_t( float t)
+{
+return (_sinf(t) + 1) * 0.5f;
+}
+
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float time = (TIME + 2) * 40;
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+float2 XY = make_float2(X, Y);
+float2 resolution = make_float2(width, height);
+
+float2 point = XY / resolution;
+float2 center = make_float2(0.5f - (_sinf(time * 0.5f) * 0.05f), 0.5f - (_sinf(time * 0.25f) * 0.1f));
+float aspect = resolution.x / resolution.y;
+point.x *= aspect;
+center.x *= aspect;
+
+float rInv = 1 / length(point - center);
+point = point * rInv - make_float2(rInv, 0);
+float circle = _powf(length((point - center) * 0.06f), 0.3f);
+
+float2 uv = make_float2(point.x, point.y + time * 0.5f) * 1.7f;
+float noise = iqnoise(uv, 0.5f, 1.2f);
+float stepNoise = _floor(noise * 10) / 11;
+
+float outline = 1 - step(smoothstep(stepNoise - 0.03f, stepNoise, noise) - (smoothstep(stepNoise, stepNoise + 0.03f, noise)), 0.03f);
+float3 outlineCol = outline * Palette(SIN_t(time * 0.2f));
+float3 palette = Palette((stepNoise * 0.5f) + SIN_t(time * 0.4f) * 0.2f);
+
+float3 RGB = palette + circle + outlineCol;
+
+return RGB;
+}
