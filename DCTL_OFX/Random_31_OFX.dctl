@@ -1,0 +1,55 @@
+// Random 31 OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Time, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+
+__DEVICE__ float time = 0;
+
+__DEVICE__ float3 mix( float3 A, float3 B, float C)
+{
+return A * (1.0f - C) + B * C;
+}
+
+__DEVICE__ float3 SIN( float3 A)
+{
+return make_float3(_sinf(A.x), _sinf(A.y), _sinf(A.z));
+}
+
+__DEVICE__ float heart2D( float2 uv)
+{
+  uv = uv * 0.4f;
+  uv.x = _fabs(uv.x);
+  uv.y = -uv.y * 1.2f + uv.x * (1 - uv.x);
+  float c = length(uv) - 0.5f;
+  return c;
+}
+
+__DEVICE__ float2 animate( float2 uv, float speed)
+{
+  float tt = _fmod(time, 1.5f) / 1.5f;
+  float ss = _powf(tt, 0.2f) * 0.5f + 0.5f;
+  ss = 1 + ss * speed * _sinf(tt * 6.2831f * 3 + uv.y * 0.5f) * _expf(-tt * 4);
+  uv = uv * (make_float2(0.5f, 1.5f) + ss * make_float2(0.5f, -0.5f));
+  return uv;
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+float2 resolution = make_float2(width, height);
+float2 XY = make_float2(X, Y);
+time = TIME * 24 + 1;
+
+float2 P = 5 * (XY - resolution / 2) / _fminf(resolution.x, resolution.y);
+float s = 1.5f; // speed of the animated heart
+float2 uv = animate(P, s);
+float d = heart2D(uv);
+float3 col = 0.9f + SIN(time + make_float3(P.x, P.y, P.x) + make_float3(0, 2, 4));
+col = mix(col, make_float3(1), _clampf(d / 0.04f, 0.4f, 1));
+
+return col;
+}
+

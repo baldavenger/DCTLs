@@ -1,0 +1,111 @@
+// Random 32 OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Animate, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(msX, Illuminant Horizontal, DCTLUI_SLIDER_FLOAT, 0.5, 0, 1, 0.001)
+DEFINE_UI_PARAMS(msY, Illuminant Vertical, DCTLUI_SLIDER_FLOAT, 0.5, 0, 1, 0.001)
+
+#include "DCTL_Functions.h"
+
+__DEVICE__ float time = 0;
+
+__CONSTANT__ float3 sphereColor = {0.3f, 1, 0.88f};
+__CONSTANT__ float3 cubeColor   = {0.8f, -0.8f, 0.99f};
+
+__DEVICE__ float sphere_sdf( float3 p, float radius) 
+{
+return length(p) - radius;
+}
+
+__DEVICE__ float roundedCube_sdf( float3 p, float3 dim) 
+{
+return length(MAX(ABS(p) - dim, -0.12f));
+}
+
+__DEVICE__ float torus_sdf( float3 p) 
+{
+float2 q = make_float2(length(make_float2(p.x, p.z)) - 0.9f, p.y);
+return length(q) - 0.1f;
+}
+
+__DEVICE__ mat3 rotateX( float a) 
+{
+return make_mat3(
+make_float3(1, 0, 0),
+make_float3(0, _cosf(a), _sinf(a)),
+make_float3(0, -_sinf(a), _cosf(a)));
+}
+
+__DEVICE__ mat3 rotateY( float a) 
+{
+return make_mat3(
+make_float3(_cosf(a), 0, _sinf(a)),
+make_float3(0, 1, 0),
+make_float3(-_sinf(a), 0, _cosf(a)));
+}
+
+__DEVICE__ mat3 rotateZ( float a) 
+{
+return make_mat3(
+make_float3(_cosf(a), _sinf(a), 0),
+make_float3(-_sinf(a), _cosf(a), 0),
+make_float3(0, 0, 1));
+}
+
+__DEVICE__ float trace( float3 o, float3 r, mat3 tf, float3* color) 
+{
+float t = 0, d1, d2, d;
+float3 cubeDim = make_float3(0.25f, 0.75f, 2);
+for (int i = 0; i < 32; i++) 
+{
+float3 p = o + r * t;
+d1 = roundedCube_sdf(multi(tf, p), cubeDim) - 0.12f;
+d2 = 1.8f * sphere_sdf(p, 1.2f);
+d = 0.9f * _fminf(d1, d2);
+t += d * 0.95f;
+}
+if (d1 < d2) *color = cubeColor; else *color = sphereColor;
+return t;
+}
+
+#define res resolution
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+float2 resolution = make_float2(width, height);
+float2 XY = make_float2(X, Y);
+time = TIME * 24 + 1;
+
+float2 mouse = make_float2(msX, msY);
+
+float atime = 0.2f * time;
+
+float2 ratio = make_float2(res.x / res.y, 1);
+float2 uv = ratio * (2 * XY / res - 1);
+float2 mp = ratio * (2 * mouse - 1);
+
+float3 p = make_float3(uv, 0) + make_float3(0, 0, 1.5f);
+
+float3 l = make_float3(uv, 0) + make_float3(mp, 3);
+float3 n = normalize(p);
+
+float3 lp = normalize(l - p);
+float3 lc = make_float3(dot(lp, n));
+float3 color = make_float3(1, 0, 0);
+
+float3 r = normalize(p);
+float3 o = make_float3(0, 0, -4);
+
+float t = trace(o, r, multi(rotateZ(atime), rotateY(time)), &color);
+
+float fog = 2 / (1 + t * t * 0.2f);
+
+color.z *= fog;
+float3 fc = fog * lc * color;
+
+return fc;
+}
