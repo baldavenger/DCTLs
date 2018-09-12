@@ -1,0 +1,40 @@
+// Random 34 OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Time, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(SCALE, Zoom, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(msX, Horizontal, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(msY, Vertical, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+
+#define PI 	3.14159265359f
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+float2 resolution = make_float2(width, height);
+float2 XY = make_float2(X, Y);
+float time = TIME * 50;
+
+float2 uv = XY / resolution - 0.5f;
+uv.x -= msX;
+uv.y -= msY;
+uv = uv / (SCALE + 0.01f);
+
+float t = time * 0.25f;
+float2 p = make_float2(_fabs(uv.x), _fabs(uv.y)) * 11;
+
+float2 v1 = make_float2(_sinf(time * 0.261f), _cosf(time * 0.841f)) * 0.3f;
+float2 v2 = make_float2(_sinf(time * 0.774f), _cosf(time * 0.274f)) * 0.5f;
+
+p = p + v2;
+float a = _atan2f(p.x, p.y) * 0.5f;
+float r = length(p) * 0.2f;
+
+r = (_sinf(_fabs(2 * _sinf(1.0f * r - t) - (_sinf(t * 2.4f))))) - 0.8f * _fabs(_sinf(a * 4 - t * 1.7f) * _sinf(r));
+float3 RGB = make_float3(r, _fabs(r * r * _cosf(a * 5 + t * 1.13f)), r * _cosf(a * 3 - t * 2.77f + r + 0.5f * PI));
+
+return RGB;
+}
