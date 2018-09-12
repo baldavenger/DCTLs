@@ -308,6 +308,17 @@ __DEVICE__ inline float radians( float degrees)
 return (degrees * PI) / 180;
 }
 
+/*
+__DEVICE__ inline float3 reflect(float3 A, float3 B)
+{
+float3 C;
+C.x = A.x - 2.0f * dot(B, A) * B.x;
+C.y = A.y - 2.0f * dot(B, A) * B.y;
+C.z = A.z - 2.0f * dot(B, A) * B.z;
+return C;
+}
+*/
+
 __DEVICE__ inline float sign( float A)
 {
 return (A < 0.0f ? -1.0f : A > 0.0f ? 1.0f : 0.0f);

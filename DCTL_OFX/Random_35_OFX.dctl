@@ -1,0 +1,175 @@
+// Random 35 OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Animate, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(SCALE, Zoom, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(msX, Horizontal, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(msY, Vertical, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(ROTATEyz, RotateXY, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+DEFINE_UI_PARAMS(ROTATExz, RotateXZ, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+DEFINE_UI_PARAMS(ROTATExy, RotateYZ, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+DEFINE_UI_PARAMS(HUE, Cube Hue, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+
+#include "DCTL_Functions.h"
+
+__DEVICE__ float time = 0;
+__DEVICE__ float hue = 0;
+
+__DEVICE__ float3 hsv( float H, float S, float V)
+{
+float3 rgb;
+if (S == 0.0f){ rgb = make_float3(V); return;}
+H = H > 1 ? H - 1 : H < 0 ? H + 1 : H;
+H *= 6;
+int i = _floor(H);
+float f = H - i;
+i = (i >= 0) ? (i % 6) : (i % 6) + 6;
+float p = V * (1 - S);
+float q = V * (1 - S * f);
+float t = V * (1 - S * (1 - f));
+rgb.x = i == 0 ? V : i == 1 ? q : i == 2 ? p : i == 3 ? p : i == 4 ? t : V;
+rgb.y = i == 0 ? t : i == 1 ? V : i == 2 ? V : i == 3 ? q : i == 4 ? p : p;
+rgb.z = i == 0 ? p : i == 1 ? p : i == 2 ? t : i == 3 ? V : i == 4 ? V : q;
+return rgb;
+}
+
+__DEVICE__ void rotate( float* ax, float* ay, float b)
+{
+float AX = *ax;
+float AY = *ay;
+float c = _cosf(b);
+float s = _sinf(b);
+*ax = AX * c - AY * s;
+*ay = AX * s + AY * c;
+}
+
+__DEVICE__ float3 spin( float3 a)
+{
+float t = time * 0.5f;
+rotate(&a.y, &a.z, t);
+rotate(&a.x, &a.y, t);
+return a;
+}
+
+__DEVICE__ float sdBox( float3 p, float3 b )
+{
+float3 d = ABS(p) - b;
+return _fminf(_fmaxf(d.x, _fmaxf(d.y, d.z)), 0) + length(MAX(d, 0));
+}
+
+__DEVICE__ float scene(float3 p)
+{
+float3 sp = spin(p);
+
+sp = p + make_float3(1, 3, 2);
+
+return _fminf(_fmaxf(_fmaxf(
+sdBox(p, make_float3(1)),
+-sdBox(p,make_float3(0.9f))),
+_fabs(_fmod(length(sp) - time * 0.2f, 0.2f) - 0.1f) - 0.01f),
+length(p) - 0.8f);
+}
+
+__DEVICE__ float sceneWithFloor( float3 p)
+{
+return _fminf(scene(p), 1 + p.y);
+}
+
+__DEVICE__ float3 trace( float3 cam, float3 dir)
+{
+float3 accum = make_float3(1);
+for (int bounce = 0; bounce < 20; bounce++)
+{
+float tfloor = (cam.y + 1) / -dir.y;
+float t = 0;
+float k = 0;
+for(int i = 0; i < 100; i++)
+{
+k = scene(cam + t * dir);
+t += k;
+if (k < 0.001f || (tfloor > 0 && t > tfloor))
+break;
+}
+if (tfloor > 0)
+t = _fminf(t, tfloor);
+
+float3 h = cam + t * dir;
+
+float2 o = make_float2(0.005f, 0);
+float3 n = normalize(make_float3(
+sceneWithFloor(h + make_float3(o.x, o.y, o.y)) - sceneWithFloor(h - make_float3(o.x, o.y, o.y)),
+sceneWithFloor(h + make_float3(o.y, o.x, o.y)) - sceneWithFloor(h - make_float3(o.y, o.x, o.y)),
+sceneWithFloor(h + make_float3(o.y, o.y, o.x)) - sceneWithFloor(h - make_float3(o.y, o.y, o.x))
+));
+
+if (h.y < - 0.99f)
+{
+// floor
+float A = 0.5f;
+float B = _fmaxf(0, sceneWithFloor(h + n * A));
+float w = _clampf(1 - length(make_float2(h.x, h.z)) * 0.01f, 0, 1);
+w = w * 0.2f + 0.8f;
+return accum * make_float3(_powf(B/A, 0.7f) * 0.6f + 0.4f) * w;
+}
+else if (length(h) < 0.85f)
+{
+// ball
+float fresnel = mix(0.001f, 1, _powf(1 - dot(dir * -1, n), 5));
+accum = accum * fresnel;
+cam = h + n * 0.01f;
+dir = reflect(dir, n);
+}
+else if (length(h) < 2)
+{
+// cube
+accum = accum * hsv(hue, 0.8f, 0.6f);
+cam = h + n * 0.01f;
+dir = reflect(dir, n);
+}
+else
+{
+// sky
+return accum * make_float3(0.8f);
+}
+}
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+float2 resolution = make_float2(width, height);
+float2 XY = make_float2(X, Y);
+time = TIME * 100 - 100;
+hue = HUE + 0.09f;
+
+float2 uv = XY / resolution - 0.5f;
+uv = uv / (resolution.y / resolution.x);
+uv.x -= msX;
+uv.y -= msY;
+uv = uv / (SCALE + 0.2f);
+
+float3 cam = make_float3(0, 0, -4);
+float3 dir = normalize(make_float3(uv, 1));
+
+rotate(&cam.y, &cam.z, _sinf(time * 0.1f) * 0.25f + 0.25f);
+rotate(&dir.y, &dir.z, _sinf(time * 0.1f) * 0.25f + 0.25f);
+
+rotate(&cam.x, &cam.z, time * 0.3f);
+rotate(&dir.x, &dir.z, time * 0.3f);
+
+rotate(&cam.y, &cam.x, ROTATExy);
+rotate(&dir.y, &dir.x, ROTATExy);
+
+rotate(&cam.z, &cam.y, ROTATEyz);
+rotate(&dir.z, &dir.y, ROTATEyz);
+
+rotate(&cam.z, &cam.x, ROTATExz);
+rotate(&dir.z, &dir.x, ROTATExz);
+
+float3 RGB = POW(trace(cam, dir), make_float3(0.45f));
+
+return RGB;
+}
