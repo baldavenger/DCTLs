@@ -1,0 +1,155 @@
+// Random 33 OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Engage, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(ZOOM, Zoom, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+
+#include "DCTL_Functions.h"
+
+__DEVICE__ float time = 0;
+
+#define iterations 4
+#define formuparam2 0.89f
+#define volsteps 10
+#define stepsize 0.19f
+#define zoom 3.9f
+#define tile 0.45f
+#define speed2 0.01f
+#define brightness 0.2f
+#define darkmatter 0.4f
+#define distfading 0.56f
+#define saturation 0.4f
+#define transverseSpeed 1.1f
+#define cloud 0.2f
+
+__DEVICE__ float field( float3 p)
+{
+float strength = 7 + 0.03f * _logf(1e-6 + fract(_sinf(time) * 4373.11f));
+float accum = 0;
+float prev = 0;
+float tw = 0;
+
+for (int i = 0; i < 6; ++i) {
+float mag = dot(p, p);
+p = ABS(p) / mag + make_float3(-0.5f, -0.8f + 0.1f * _sinf(time * 0.2f + 2), -1.1f + 0.3f * _cosf(time * 0.15f));
+float w = _expf(i / -7);
+accum += w * _expf(-strength * _powf(_fabs(mag - prev), 2.3f));
+tw += w;
+prev = mag;
+}
+return _fmaxf(0, 5 * accum / tw - 0.7f);
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+float2 resolution = make_float2(width, height);
+float2 XY = make_float2(X, Y);
+time = TIME * 10 + 40;
+float zoom1 = 1.5f - ZOOM/2;
+
+float2 uv2 = 2 * XY / resolution - 1;
+float2 uvs = (uv2 * resolution) / _fmaxf(resolution.x, resolution.y);
+float speed = 0.005f * _cosf(time * 0.02f + PI / 4.0f);
+float formuparam = formuparam2;
+float2 uv = uvs;
+
+float aXZ = 0.9f;
+float aYZ = -0.6f;
+float aXY = 0.9f + time * 0.04f;
+
+mat2 rotXZ = make_mat2(_cosf(aXZ), _sinf(aXZ), -_sinf(aXZ), _cosf(aXZ));
+mat2 rotYZ = make_mat2(_cosf(aYZ), _sinf(aYZ), -_sinf(aYZ), _cosf(aYZ));
+mat2 rotXY = make_mat2(_cosf(aXY), _sinf(aXY), -_sinf(aXY), _cosf(aXY));
+
+float v2 = 1;
+float3 dir = make_float3(uv * zoom * zoom1, 1);
+float3 from = make_float3(0);
+
+from.x -= 0.5f * (-0.5f);
+from.y -= 0.5f * (-0.5f);
+
+float3 forward = make_float3(0, 0, 1);
+
+from.x += transverseSpeed * _cosf(0.01f * time) + 0.001f * time;
+from.y += transverseSpeed * _sinf(0.01f * time) + 0.001f * time;
+from.z += 0.003f * time;
+
+multi(&dir.x, &dir.y, rotXY);
+multi(&forward.x, &forward.y, rotXY);
+
+multi(&dir.x, &dir.z, rotXZ);
+multi(&forward.x, &forward.z, rotXZ);
+
+multi(&dir.y, &dir.z, rotYZ);
+multi(&forward.y, &forward.z, rotYZ);
+
+multi(&from.x, &from.y, multi(rotXY, -1.0f));
+multi(&from.x, &from.z, rotXZ);
+multi(&from.y, &from.z, rotYZ);
+
+float zooom = (time - 3311) * speed;
+from = from + forward * zooom;
+float sampleShift = _fmod(zooom, stepsize);
+
+float zoffset = -sampleShift;
+sampleShift /= stepsize;
+
+float s = 0.24f;
+float s3 = s + stepsize / 2;
+float3 v = make_float3(0);
+float t3 = 0;
+
+float3 backCol2 = make_float3(0);
+for (int r = 0; r < volsteps; r++) {
+float3 p2 = from + (s + zoffset) * dir;
+float3 p3 = (from + (s3 + zoffset) * dir) * (1.9f / zoom);
+
+p2 = ABS(make_float3(tile) - MOD(p2, make_float3(tile * 2)));
+p3 = ABS(make_float3(tile) - MOD(p3, make_float3(tile * 2)));
+
+#ifdef cloud
+t3 = field(p3);
+#endif
+
+float pa = 0;
+float a = 0;
+for (int i = 0; i < iterations; i++) {
+p2 = ABS(p2) / dot(p2, p2) - formuparam;
+float D = _fabs(length(p2) - pa);
+
+if (i > 2) {
+a += i > 7 ? _fminf(12, D) : D;
+}
+pa = length(p2);
+}
+
+a = a * a * a;
+float s1 = s + zoffset;
+float fade = _powf(distfading, _fmaxf(0, r - sampleShift));
+v = v + fade;
+
+if (r == 0)
+fade *= 1 - sampleShift;
+
+if (r == volsteps - 1)
+fade *= sampleShift;
+v = v + make_float3(s1, s1 * s1, s1 * s1 * s1 * s1) * a * brightness * fade;
+backCol2 = backCol2 + mix(0.4f, 1, v2) * make_float3(0.2f * t3 * t3 * t3, 0.4f * t3 * t3, t3 * 0.7f) * fade;
+s += stepsize;
+s3 += stepsize;
+}
+
+v = mix(make_float3(length(v)), v, saturation);
+float3 forCol2 = v * 0.01f;
+
+#ifdef cloud
+backCol2 = backCol2 * cloud;
+#endif
+
+float3 RGB = forCol2 + backCol2;
+return RGB;
+}

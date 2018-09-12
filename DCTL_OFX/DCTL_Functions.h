@@ -180,6 +180,15 @@ C.z = _fmod(A.z, B);
 return C;
 }
 
+__DEVICE__ inline float3 MOD( float3 A, float3 B)
+{
+float3 C;
+C.x = _fmod(A.x, B.x);
+C.y = _fmod(A.y, B.y);
+C.z = _fmod(A.z, B.z);
+return C;
+}
+
 __DEVICE__ inline float mix( float A, float B, float C)
 {
 return A * (1.0f - C) + B * C;
@@ -214,6 +223,11 @@ float2 C;
 C.x = A.x * B.r0.x + A.y * B.r0.y;
 C.y = A.x * B.r1.x + A.y * B.r1.y;
 return C;
+}
+
+__DEVICE__ inline mat2 multi( mat2 A, float B)
+{
+return make_mat2(A.r0.x * B, A.r0.y * B, A.r1.x * B, A.r1.y * B);
 }
 
 __DEVICE__ inline float3 multi( float3 A, mat3 B)
@@ -258,6 +272,15 @@ r[i][j] = r[i][j] + a[i][k] * b[k][j];
 mat3 R = make_mat3(make_float3(r[0][0], r[0][1], r[0][2]), 
 make_float3(r[1][0], r[1][1], r[1][2]), make_float3(r[2][0], r[2][1], r[2][2]));
 return R;
+}
+
+__DEVICE__ inline void multi( float* A, float* B, mat2 C)
+{
+float a = *A;
+float b = *B;
+float2 AB = multi(make_float2(a, b), C);
+*A = AB.x;
+*B = AB.y;
 }
 
 __DEVICE__ inline float2 POW( float2 A, float B)
