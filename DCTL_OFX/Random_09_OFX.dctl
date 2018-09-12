@@ -282,7 +282,7 @@ __DEVICE__ float3 shade(float3 ro, float3 rd, float d, float3 lp, float li)
 float3 p = ro + rd * d;
 float3 n = nor(p, 0.001f); 													// precise normale at surf point
 float sb = _clampf(map(p - n * 0.2f) / 0.004f, 0.0f, 1.0f);	
-float3 bb = mix(make_float3(0.0f, 0.4f, 0.1f), make_float3(0.1f, 0.7f, 0.1f), make_float3(1.0f - sb));
+float3 bb = mix(make_float3(0.0f, 0.4f, 0.1f), make_float3(0.1f, 0.7f, 0.1f), make_float3(1.0f - sb));	// colour
 float3 ld = normalize(lp - p); 												// light dir
 
 float3 refl = reflect(rd,n);												// reflected ray dir at surf point 
@@ -357,9 +357,11 @@ RGB = shade(ro, rd, d, lightDir, 0.6f);
 RGB = RGB * make_float3(0.5f + 0.5 *_powf( 16.0f * uv.x * uv.y * (1.0f - uv.x) * (1.0f - uv.y), 0.55f ));
 RGB = SQRT(RGB * RGB * 1.5f);
 
+if (HUE != 0){
 float H, S, V;
 rgb_to_hsv(RGB.x, RGB.y, RGB.z, &H, &S, &V);
 hsv_to_rgb(H + HUE, S, V, &RGB.x, &RGB.y, &RGB.z);
+}
 
 return RGB;
 }
