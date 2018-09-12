@@ -204,6 +204,11 @@ __DEVICE__ inline float3 mix( float3 A, float3 B, float C)
 return A * (1.0f - C) + B * C;
 }
 
+__DEVICE__ inline float3 mix(float3 A, float3 B, float3 C)
+{
+return A * (1.0f - C) + B * C;
+}
+
 __DEVICE__ inline float4 mix( float4 A, float4 B, float C)
 {
 return A * (1.0f - C) + B * C;
@@ -324,6 +329,14 @@ __DEVICE__ inline float sign( float A)
 return (A < 0.0f ? -1.0f : A > 0.0f ? 1.0f : 0.0f);
 }
 
+__DEVICE__ inline float2 sign( float2 A)
+{
+float2 sn;
+sn.x = A.x == 0.0f ? 0.0f : A.x < 0.0f ? -1.0f : 1.0f;
+sn.y = A.y == 0.0f ? 0.0f : A.y < 0.0f ? -1.0f : 1.0f;
+return sn;
+}
+
 __DEVICE__ inline float2 SIN( float2 A)
 {
 return make_float2(_sinf(A.x), _sinf(A.y));
@@ -366,3 +379,57 @@ B.r2 = make_float3(A.r0.z, A.r1.z, A.r2.z);
 return B;
 }
 
+__DEVICE__ inline void rgb_to_hsv( float r, float g, float b, float *h, float *s, float *v)
+{
+float min = _fminf(_fminf(r, g), b);
+float max = _fmaxf(_fmaxf(r, g), b);
+*v = max;
+float delta = max - min;
+if (max != 0) {
+*s = delta / max;
+} else {
+*s = 0;
+*h = 0;
+return;
+}
+if (delta == 0) {
+*h = 0;
+} else if (r == max) {
+*h = (g - b) / delta;
+} else if (g == max) {
+*h = 2 + (b - r) / delta;
+} else {
+*h = 4 + (r - g) / delta;
+}
+*h *= 1.0f / 6;
+if (*h < 0) {
+*h += 1;
+}
+}
+
+__DEVICE__ inline void hsv_to_rgb(float H, float S, float V, float *r, float *g, float *b)
+{
+if (S == 0.0f) {
+*r = *g = *b = V; return;
+}
+H *= 6;
+int i = _floor(H);
+float f = H - i;
+i = (i >= 0) ? (i % 6) : (i % 6) + 6;
+float p = V * (1 - S);
+float q = V * (1 - S * f);
+float t = V * (1 - S * (1 - f));
+*r = i == 0 ? V : i == 1 ? q : i == 2 ? p : i == 3 ? p : i == 4 ? t : V;
+*g = i == 0 ? t : i == 1 ? V : i == 2 ? V : i == 3 ? q : i == 4 ? p : p;
+*b = i == 0 ? p : i == 1 ? p : i == 2 ? t : i == 3 ? V : i == 4 ? V : q;
+}
+
+__DEVICE__ inline void rotate( float* ax, float* ay, float b)
+{
+float AX = *ax;
+float AY = *ay;
+float c = _cosf(b);
+float s = _sinf(b);
+*ax = AX * c - AY * s;
+*ay = AX * s + AY * c;
+}

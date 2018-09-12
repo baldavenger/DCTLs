@@ -1,172 +1,18 @@
 // Random 09 OFX DCTL
 
-DEFINE_UI_PARAMS(time, Rotate, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(msX, Horizontal, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(msY, Vertical, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(SCALE, Zoom, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(ROTATExz, RotateXZ, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(ROTATExy, RotateXY, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(ROTATEyz, RotateYZ, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(HUE, Hue, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
 
-typedef struct
-{
-float3 r0, r1, r2;
-} mat3;
-
-typedef struct
-{
-float4 r0, r1, r2, r3;
-} mat4;
-
-typedef struct
-{
-float2 r0, r1;
-} mat2;
-
-__DEVICE__ mat2 make_mat2(float2 A, float2 B)
-{
-mat2 C;
-C.r0 = A;
-C.r1 = B;
-return C;
-}
-
-__DEVICE__ float2 multi(float2 A, mat2 B)
-{
-float2 C;
-C.x = A.x * B.r0.x + A.y * B.r0.y;
-C.y = A.x * B.r1.x + A.y * B.r1.y;
-return C;
-}
-
-__DEVICE__ float3 multi(float3 A, mat3 B)
-{
-float3 C;
-C.x = A.x * B.r0.x + A.y * B.r0.y + A.z * B.r0.z;
-C.y = A.x * B.r1.x + A.y * B.r1.y + A.z * B.r1.z;
-C.z = A.x * B.r2.x + A.y * B.r2.y + A.z * B.r2.z;
-return C;
-}
-
-__DEVICE__ mat3 make_mat3(float3 A, float3 B, float3 C)
-{
-mat3 D;
-D.r0 = A;
-D.r1 = B;
-D.r2 = C;
-return D;
-}
-
-__DEVICE__ mat3 MAT3( mat4 A)
-{
-mat3 B;
-B.r0 = make_float3(A.r0.x, A.r0.y, A.r0.z);
-B.r1 = make_float3(A.r1.x, A.r1.y, A.r1.z);
-B.r2 = make_float3(A.r2.x, A.r2.y, A.r2.z);
-return B;
-}
-
-__DEVICE__ mat4 make_mat4(float m00, float m01, float m02, float m03, float m10, float m11, float m12, float m13, 
-float m20, float m21, float m22, float m23, float m30, float m31, float m32, float m33)
-{
-mat4 M;
-M.r0 = make_float4(m00, m01, m02, m03);
-M.r1 = make_float4(m10, m11, m12, m13);
-M.r2 = make_float4(m20, m21, m22, m23);
-M.r3 = make_float4(m30, m31, m32, m33);
-return M;
-}
-
-__DEVICE__ mat3 multi(mat3 A, mat3 B)
-{
-float r[3][3];
-float a[3][3] =	{{A.r0.x, A.r0.y, A.r0.z},
-{A.r1.x, A.r1.y, A.r1.z},
-{A.r2.x, A.r2.y, A.r2.z}};
-float b[3][3] =	{{B.r0.x, B.r0.y, B.r0.z},
-{B.r1.x, B.r1.y, B.r1.z},
-{B.r2.x, B.r2.y, B.r2.z}};
-
-for( int i = 0; i < 3; ++i)
-{
-for( int j = 0; j < 3; ++j)
-{
-r[i][j] = 0.0f;
-for( int k = 0; k < 3; ++k)
-{
-r[i][j] = r[i][j] + a[i][k] * b[k][j];
-}
-}
-}
-mat3 R = make_mat3(make_float3(r[0][0], r[0][1], r[0][2]), 
-make_float3(r[1][0], r[1][1], r[1][2]), make_float3(r[2][0], r[2][1], r[2][2]));
-return R;
-}
-
-__DEVICE__ float2 SN( float2 A)
-{
-float2 sn;
-sn.x = A.x == 0.0f ? 0.0f : A.x < 0.0f ? -1.0f : 1.0f;
-sn.y = A.y == 0.0f ? 0.0f : A.y < 0.0f ? -1.0f : 1.0f;
-return sn;
-}
-
-__DEVICE__ float fract(float A)
-{
-float B;
-B = A - _floor(A);
-return B;
-}
-
-__DEVICE__ float2 fract(float2 A)
-{
-float2 B;
-B.x = A.x - _floor(A.x);
-B.y = A.y - _floor(A.y);
-return B;
-}
-
-__DEVICE__ float mix(float A, float B, float C)
-{
-return A * (1.0f - C) + B * C;
-}
-
-__DEVICE__ float3 mix(float3 A, float3 B, float C)
-{
-return A * (1.0f - C) + B * C;
-}
-
-__DEVICE__ float3 mix(float3 A, float3 B, float3 C)
-{
-return A * (1.0f - C) + B * C;
-}
-
-__DEVICE__ float2 ABS( float2 A)
-{
-return make_float2(_fabs(A.x), _fabs(A.y));
-}
-
-__DEVICE__ float2 MAX( float2 A, float B)
-{
-return make_float2(_fmaxf(A.x, B), _fmaxf(A.y, B));
-}
-
-__DEVICE__ float2 POW( float2 A, float2 B)
-{
-return make_float2(_powf(A.x, B.x), _powf(A.y, B.y));
-}
-
-__DEVICE__ float3 SQRT( float3 A)
-{
-return make_float3(_sqrtf(A.x), _sqrtf(A.y), _sqrtf(A.z));
-}
+#include "DCTL_Functions.h"
 
 __DEVICE__ float sdSphere(float3 p, float s)
 {
 return length(p) - s;
-}
-
-__DEVICE__ float3 CLAMP( float3 in, float clampMin, float clampMax)
-{
-float3 out;
-out.x = _clampf( in.x, clampMin, clampMax);
-out.y = _clampf( in.y, clampMin, clampMax);
-out.z = _clampf( in.z, clampMin, clampMax);   
-return out;
 }
 
 __DEVICE__ float2 sdCapsule(float3 p, float3 a, float3 b)
@@ -233,7 +79,7 @@ if(h >= 0.0f)
 h = _sqrtf(h);
 float2 x = (make_float2(h, -h) - q) / 2.0f;
 float2 uv = POW(ABS(x), make_float2(1.0f / 3.0f));
-uv = uv * SN(x);
+uv = uv * sign(x);
 float t = uv.x + uv.y - kx;
 t = _clampf( t, 0.0f, 1.0f );
 
@@ -462,12 +308,15 @@ float2 XY = make_float2(X, Y);
 float3 RGB = make_float3(0.8f, 0.8f, 0.8f);
 
 float2 si = make_float2(width, height);
-float2 uvc = (2.0f * XY- si) / _fminf(si.x, si.y);
+float2 uvc = (2.0f * XY - si) / _fminf(si.x, si.y);
 float2 uv = XY / si;
+uvc.x -= msX * 2;
+uvc.y -= msY * 2;
+uvc = uvc / (SCALE + 0.2f);
 
 float maxd = 2.0f;
-
-float t = (time * 10.0f) * 0.3f;
+float start = 0.5f;
+float t = (start * 10.0f) * 0.3f;
 
 float3 ro = make_float3(_cosf(t), 0.4f, _sinf(t));
 ro.x *= 0.6f;
@@ -477,6 +326,15 @@ float3 x = normalize(cross(make_float3(0.0f, 1.0f, 0.0f), z));
 float3 y = normalize(cross(z, x));
 uvc = uvc * 0.5f; // fov
 float3 rd = normalize(z + uvc.x * x + uvc.y * y);
+
+rotate(&ro.y, &ro.x, ROTATExy * 10);
+rotate(&rd.y, &rd.x, ROTATExy * 10);
+
+rotate(&ro.z, &ro.y, ROTATEyz * 10);
+rotate(&rd.z, &rd.y, ROTATEyz * 10);
+
+rotate(&ro.z, &ro.x, ROTATExz * 10);
+rotate(&rd.z, &rd.x, ROTATExz * 10);
 
 float s = 1.0f;
 float d = 0.0f;
@@ -489,10 +347,19 @@ d += s * 0.5f;
 
 if (d < maxd)
 {
-RGB = shade(ro, rd, d, ro, 0.6f);
+float3 lightDir = ro;
+lightDir.x += msX/2;
+lightDir.y -= msY/2;
+//lightDir.z *= SCALE;
+RGB = shade(ro, rd, d, lightDir, 0.6f);
 }
 
 RGB = RGB * make_float3(0.5f + 0.5 *_powf( 16.0f * uv.x * uv.y * (1.0f - uv.x) * (1.0f - uv.y), 0.55f ));
 RGB = SQRT(RGB * RGB * 1.5f);
+
+float H, S, V;
+rgb_to_hsv(RGB.x, RGB.y, RGB.z, &H, &S, &V);
+hsv_to_rgb(H + HUE, S, V, &RGB.x, &RGB.y, &RGB.z);
+
 return RGB;
 }
