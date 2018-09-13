@@ -424,6 +424,24 @@ float t = V * (1 - S * (1 - f));
 *b = i == 0 ? p : i == 1 ? p : i == 2 ? t : i == 3 ? V : i == 4 ? V : q;
 }
 
+__DEVICE__ inline float3 hsv( float H, float S, float V)
+{
+float3 rgb;
+if (S == 0){ rgb = make_float3(V); return;}
+H = H > 1 ? H - 1 : H < 0 ? H + 1 : H;
+H *= 6;
+int i = _floor(H);
+float f = H - i;
+i = (i >= 0) ? (i % 6) : (i % 6) + 6;
+float p = V * (1 - S);
+float q = V * (1 - S * f);
+float t = V * (1 - S * (1 - f));
+rgb.x = i == 0 ? V : i == 1 ? q : i == 2 ? p : i == 3 ? p : i == 4 ? t : V;
+rgb.y = i == 0 ? t : i == 1 ? V : i == 2 ? V : i == 3 ? q : i == 4 ? p : p;
+rgb.z = i == 0 ? p : i == 1 ? p : i == 2 ? t : i == 3 ? V : i == 4 ? V : q;
+return rgb;
+}
+
 __DEVICE__ inline void rotate( float* ax, float* ay, float b)
 {
 float AX = *ax;

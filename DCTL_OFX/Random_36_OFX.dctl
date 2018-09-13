@@ -1,0 +1,60 @@
+// Random 36 OFX DCTL
+
+DEFINE_UI_PARAMS(DENSITY, Density, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(SCALE, Zoom, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(msX, Horizontal, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(msY, Vertical, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(ROTATExz, RotateY, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+DEFINE_UI_PARAMS(ROTATExy, RotateZ, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+DEFINE_UI_PARAMS(ROTATEyz, RotateX, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+DEFINE_UI_PARAMS(HUE, Hue, DCTLUI_SLIDER_INT, 0, 0, 7, 1)
+DEFINE_UI_PARAMS(OVERLAY, Overlay, DCTLUI_CHECK_BOX, 0)
+
+#include "DCTL_Functions.h"
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+float2 resolution = make_float2(width, height);
+float2 XY = make_float2(X, Y);
+
+float2 uv = (2 * XY - resolution) / resolution.y * 2;
+uv.x -= msX * 4;
+uv.y -= msY * 2;
+uv = uv / (SCALE + 0.2f);
+
+float3 RGB = make_float3(p_R, p_G, p_B);
+float3 color = make_float3(0);
+float theta = 0;
+float phi = 0;
+float r = 1;
+float den = DENSITY * 32;
+for (float i = 0; i < den; i++) {
+theta = PI / den * i;
+for (float j = 0; j < den; j++) {
+phi = 2 * PI / den * j;
+float3 p = make_float3( r * _sinf(theta) * _cosf(phi), r * _sinf(theta) * _sinf(phi), r * _cosf(theta));
+rotate(&p.x, &p.z, ROTATExz);
+rotate(&p.x, &p.y, ROTATExy);
+rotate(&p.y, &p.z, ROTATEyz);
+float scl = 100 / (100 + p.z);
+float2 k = uv - make_float2(p.x, p.y);
+k *= 1 / scl;
+color = color + smoothstep(0.01f, 0.005f, length(k));
+}	
+}
+
+float alpha = color.x;
+
+if (HUE != 0)
+color = HUE < 7 ? color * hsv(HUE/6.0f, 1, 1) : color.x > 0.5f ? 1 - color : color;
+
+if (OVERLAY)
+color = color * alpha + RGB * (1 - alpha);
+
+return color;
+}
