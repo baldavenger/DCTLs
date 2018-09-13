@@ -1,6 +1,7 @@
 // Random 36 OFX DCTL
 
 DEFINE_UI_PARAMS(DENSITY, Density, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(GAIN, Boost, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
 DEFINE_UI_PARAMS(SCALE, Zoom, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
 DEFINE_UI_PARAMS(msX, Horizontal, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
 DEFINE_UI_PARAMS(msY, Vertical, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
@@ -33,6 +34,7 @@ float theta = 0;
 float phi = 0;
 float r = 1;
 float den = DENSITY * 32;
+float glow = GAIN + 0.5f;
 for (float i = 0; i < den; i++) {
 theta = PI / den * i;
 for (float j = 0; j < den; j++) {
@@ -44,7 +46,7 @@ rotate(&p.y, &p.z, ROTATEyz);
 float scl = 100 / (100 + p.z);
 float2 k = uv - make_float2(p.x, p.y);
 k *= 1 / scl;
-color = color + smoothstep(0.01f, 0.005f, length(k));
+color = color + smoothstep(0.01f * glow, 0.005f * glow, length(k));
 }	
 }
 
