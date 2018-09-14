@@ -1,0 +1,95 @@
+// Random 38 OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Noise, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(SCALE, Zoom, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(msX, Horizontal, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(msY, Vertical, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(SAMPLES, Samples, DCTLUI_SLIDER_INT, 32, 1, 64, 1)
+
+#include "DCTL_Functions.h"
+
+__DEVICE__ float2 mouse = {0, 0};
+
+__DEVICE__ float sphereSDF( float2 p, float size)
+{
+return length(p) - size;
+}
+
+__DEVICE__ float boxSDF( float2 p, float2 size)
+{
+float2 r = ABS(p) - size;
+return _fminf(_fmaxf(r.x, r.y), 0) + length(MAX(r, 0));
+}
+
+__DEVICE__ float3 colormap( float x)
+{
+float s = _sinf(x * TWO_PI);
+if (x > 0) {
+return make_float3(1, 1, 1 + s) / 2;
+} else {
+return make_float3(1, 1 + s, 1) / 2;
+}
+}
+
+__DEVICE__ void AddObj( float* dist, float3* color, float d, float3 c)
+{
+if (*dist > d) {
+*dist = d;
+*color = c;
+}
+}
+
+__DEVICE__ void scene( float2 pos, float3* color, float* dist)
+{
+*dist = 1e9;
+*color = make_float3(0);
+AddObj(dist, color, boxSDF(pos - make_float2(-3, 1), make_float2(1, 1)), make_float3(0.6f, 0.8f, 1));
+AddObj(dist, color, sphereSDF(pos - make_float2(3, 1), 1), make_float3(1, 0.9f, 0.8f));
+AddObj(dist, color, sphereSDF(pos - (mouse * 2 - 1) * 4, 0.5f), make_float3(0, 0.1f, 0));
+AddObj(dist, color, boxSDF(pos - make_float2(0,1), make_float2(1.5f, 0.1f)), make_float3(0.3f, 0.1f, 0.1f));
+}
+
+__DEVICE__ void trace( float2 p, float2 dir, float3* c)
+{
+for (int i = 0; i < 100; i++) {
+float d;
+scene(p, c, &d);
+if (d < 1e-3) return;
+if (d > 1e1) break;
+p = p + dir * d;
+}
+*c = make_float3(0);
+}
+
+__DEVICE__ float random( float2 _st)
+{
+return fract(_sinf(dot(_st, make_float2(12.9898f,78.233f))) * 43758.5453123f);
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+float2 resolution = make_float2(width, height);
+float2 XY = make_float2(X, Y);
+float time = TIME * 10;
+mouse = make_float2(msX, msY)/2 + 0.5f;
+
+float2 uv = (XY - (resolution/2)) / resolution.y * 10;
+uv = uv / (SCALE + 1);
+float3 col = make_float3(0);
+float I, Samples = SAMPLES;
+for (int i = 0; i < SAMPLES; i++) {
+I = i;
+float t = (I + random(uv + I + time)) / Samples * 2 * PI;
+float3 c;
+trace(uv, make_float2(_cosf(t), _sinf(t)), &c);
+col = col + c;
+}
+col = col / Samples * 2;
+
+return col;
+}
