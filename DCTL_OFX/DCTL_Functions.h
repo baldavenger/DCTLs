@@ -40,6 +40,16 @@ out.z = _clampf( in.z, clampMin, clampMax);
 return out;
 }
 
+__DEVICE__ inline float4 CLAMP( float4 in, float clampMin, float clampMax)
+{
+float4 out;
+out.x = _clampf( in.x, clampMin, clampMax);
+out.y = _clampf( in.y, clampMin, clampMax);
+out.z = _clampf( in.z, clampMin, clampMax);
+out.w = _clampf( in.w, clampMin, clampMax);
+return out;
+}
+
 __DEVICE__ inline float2 COS( float2 A)
 {
 return make_float2(_cosf(A.x), _cosf(A.y));
@@ -427,7 +437,7 @@ float t = V * (1 - S * (1 - f));
 __DEVICE__ inline float3 hsv( float H, float S, float V)
 {
 float3 rgb;
-if (S == 0){ rgb = make_float3(V); return;}
+if (S == 0) return make_float3(V);
 H = H > 1 ? H - 1 : H < 0 ? H + 1 : H;
 H *= 6;
 int i = _floor(H);
