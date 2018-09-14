@@ -9,9 +9,9 @@ DEFINE_UI_PARAMS(msY, Vertical, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
 
 __DEVICE__ float Cell( float2 c)
 {
-	float2 uv = fract(c);
-	c = c - uv;
-	return (1 - length(uv * 2 - 1)) * step(fract(_sinf(c.x + c.y * 1e2) * 1e3), 0.04f);
+float2 uv = fract(c);
+c = c - uv;
+return (1 - length(uv * 2 - 1)) * step(fract(_sinf(c.x + c.y * 1e2) * 1e3), 0.04f);
 }
 
 __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
@@ -25,25 +25,25 @@ float2 resolution = make_float2(width, height);
 float2 XY = make_float2(X, Y);
 float time = TIME * 10;
 
-	float2 p = XY / resolution - 0.5f;
-	p.x -= msX;
-	p.y -= msY;
-	p = p / (SCALE + 0.2f);
-	
-	float a = fract(_atan2f(p.x, p.y) / TWO_PI);
-	float d = length(p);
-	float z = time / 1.5f;
-    float col[3];
-    
-    for(int i = 0; i < 3 ; i++)
-	{
-    	z += 0.02f;
-		float2 coord = make_float2(_powf(d, 0.04f), a) * 256;
-		float2 delta = make_float2(1 + z * 20, 1);
-		float c = Cell(coord - delta);
-		c += Cell(coord - delta);
-        col[i]=c*d*3.;
-    }    
-	
-	return make_float3(col[0], col[1], col[2]);
+float2 p = XY / resolution - 0.5f;
+p.x -= msX;
+p.y -= msY;
+p = p / (SCALE + 0.2f);
+
+float a = fract(_atan2f(p.x, p.y) / TWO_PI);
+float d = length(p);
+float z = time / 1.5f;
+float col[3];
+
+for(int i = 0; i < 3 ; i++)
+{
+z += 0.02f;
+float2 coord = make_float2(_powf(d, 0.04f), a) * 256;
+float2 delta = make_float2(1 + z * 20, 1);
+float c = Cell(coord - delta);
+c += Cell(coord - delta);
+col[i]=c*d*3.;
+}    
+
+return make_float3(col[0], col[1], col[2]);
 }

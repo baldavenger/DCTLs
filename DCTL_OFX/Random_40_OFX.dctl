@@ -1,0 +1,34 @@
+// Random 40 OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Swoosh, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(SCALE, Zoom, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(msX, Horizontal, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(msY, Vertical, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+
+#include "DCTL_Functions.h"
+
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+float2 resolution = make_float2(width, height);
+float2 XY = make_float2(X, Y);
+float time = TIME * 10;
+
+float2 p = ( XY * 2 - resolution) / _fminf(resolution.x, resolution.y);
+p.x -= msX * 4;
+p.y -= msY * 2;
+p = p / (SCALE + 0.2f);
+float f = 0;
+for ( float i = 0; i < 300; i++){
+float s = _sinf(time * 3 + i * 0.0031415926) * 0.8f;
+float c = _cosf(time * 2 + i * 0.0031415926) * 0.8f;
+f += 0.00000125f / _fabs(length(p + make_float2(c, s)) - i / 10000) * (_powf(i, 2) / 500);
+}
+
+return make_float3(f) * make_float3(1, 1.4f, 1);
+}
