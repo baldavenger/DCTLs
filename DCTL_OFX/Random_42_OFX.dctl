@@ -1,0 +1,65 @@
+// Random 42 OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Animate, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+
+#include "DCTL_Functions.h"
+
+__DEVICE__ float sdSphere( float3 p, float s)
+{
+return length(p) - s;
+}
+
+__DEVICE__ float sdTorus( float3 p, float2 t)
+{
+float2 q = make_float2(length(make_float2(p.x, p.y)) - t.x, p.z);
+return length(q) - t.y;
+}
+
+__DEVICE__ float udRoundBox( float3 p, float3 b, float r )
+{
+return length(MAX(ABS(p) - b, 0)) - r;
+}
+
+__DEVICE__ float sdHexPrism( float3 p, float2 h )
+{
+float3 q = ABS(p);
+return _fmaxf(q.z - h.y, _fmaxf((q.x * 0.866025f + q.y * 0.5f), q.y) - h.x);
+}
+
+__DEVICE__ float sdTriPrism( float3 p, float2 h )
+{
+float3 q = ABS(p);
+return _fmaxf(q.z - h.y, _fmaxf(q.x * 0.866025f + p.y * 0.5f, -p.y) - h.x * 0.5f);
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+float2 resolution = make_float2(width, height);
+float2 XY = make_float2(X, Y);
+float t = TIME * 10;
+
+float3 ro = make_float3(0, 0, -9);
+float3 rd = normalize(make_float3((XY * 2 - resolution) / _fminf(resolution.x, resolution.y), 1));
+
+float s = _sinf(t), c = _cosf(t);
+mat3 r = multi(make_mat3(1, 0, 0, 0, c, -s, 0, s, c), make_mat3(c, 0, s, 0, 1, 0, -s, 0, c));
+float s2 = _sinf(t * 0.7f), c2 = _cosf(t * 0.7f);
+mat3 r2 = multi(make_mat3(1, 0, 0, 0, c, -s, 0, s, c), make_mat3(c2, 0, s2, 0, 1, 0, -s2, 0, c2));
+
+float3 a = make_float3(0.001f, 0.001f, 4), b = make_float3(1.5f);
+
+for (int i = 0; i < 20; i++) {
+float3 as = multi((ABS(multi((ro + a), r)) - b), r2);    
+ro = ro + _fminf(udRoundBox(as, make_float3(0.7f, 0.7f, 0.5f), 0.3f), 0.5f) * rd;
+}
+
+float v = -ro.z * 0.1f;
+float3 RGB = make_float3(v, v * v, 1 - v);
+
+return RGB;
+}
