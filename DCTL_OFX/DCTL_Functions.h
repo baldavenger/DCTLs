@@ -5,6 +5,7 @@
 #define INV_PI 		0.31830988618f
 #define INV2_PI 	0.15915494309f
 #define INV4_PI 	0.07957747155f
+#define PHI			1.61803398875f
 
 typedef struct
 {
@@ -119,6 +120,16 @@ D.r2 = C;
 return D;
 }
 
+__DEVICE__ inline mat3 make_mat3( float m00, float m01, float m02, 
+float m10, float m11, float m12, float m20, float m21, float m22)
+{
+mat3 M;
+M.r0 = make_float3(m00, m01, m02);
+M.r1 = make_float3(m10, m11, m12);
+M.r2 = make_float3(m20, m21, m22);
+return M;
+}
+
 __DEVICE__ inline mat4 make_mat4( float m00, float m01, float m02, float m03, float m10, float m11, float m12, float m13, 
 float m20, float m21, float m22, float m23, float m30, float m31, float m32, float m33)
 {
@@ -170,6 +181,40 @@ float3 out;
 out.x = _fmaxf(in.x, Min.x);
 out.y = _fmaxf(in.y, Min.y);
 out.z = _fmaxf(in.z, Min.z);
+return out;
+}
+
+__DEVICE__ inline float2 MIN( float2 in, float Max)
+{
+float2 out;
+out.x = _fminf(in.x, Max);
+out.y = _fminf(in.y, Max);
+return out;
+}
+
+__DEVICE__ inline float2 MIN( float2 in, float2 Max)
+{
+float2 out;
+out.x = _fminf(in.x, Max.x);
+out.y = _fminf(in.y, Max.y);
+return out;
+}
+
+__DEVICE__ inline float3 MIN( float3 in, float Max)
+{
+float3 out;
+out.x = _fminf(in.x, Max);
+out.y = _fminf(in.y, Max);
+out.z = _fminf(in.z, Max);
+return out;
+}
+
+__DEVICE__ inline float3 MIN( float3 in, float3 Max)
+{
+float3 out;
+out.x = _fminf(in.x, Max.x);
+out.y = _fminf(in.y, Max.y);
+out.z = _fminf(in.z, Max.z);
 return out;
 }
 
@@ -243,6 +288,16 @@ return C;
 __DEVICE__ inline mat2 multi( mat2 A, float B)
 {
 return make_mat2(A.r0.x * B, A.r0.y * B, A.r1.x * B, A.r1.y * B);
+}
+
+__DEVICE__ inline mat3 multi( mat3 A, float B)
+{
+return make_mat3(A.r0 * B, A.r1 * B, A.r2 * B);
+}
+
+__DEVICE__ inline mat3 multi( float B, mat3 A)
+{
+return make_mat3(A.r0 * B, A.r1 * B, A.r2 * B);
 }
 
 __DEVICE__ inline float3 multi( float3 A, mat3 B)
@@ -387,6 +442,40 @@ B.r0 = make_float3(A.r0.x, A.r1.x, A.r2.x);
 B.r1 = make_float3(A.r0.y, A.r1.y, A.r2.y);
 B.r2 = make_float3(A.r0.z, A.r1.z, A.r2.z);
 return B;
+}
+
+__DEVICE__ inline mat3 inverse( mat3 A)
+{
+  mat3 R;
+  float result[3][3];
+  float a[3][3] =	{{A.r0.x, A.r0.y, A.r0.z},
+  		 {A.r1.x, A.r1.y, A.r1.z},
+  		 {A.r2.x, A.r2.y, A.r2.z}};
+  		 
+  float det =   a[0][0] * a[1][1] * a[2][2]
+              + a[0][1] * a[1][2] * a[2][0]
+              + a[0][2] * a[1][0] * a[2][1]
+              - a[2][0] * a[1][1] * a[0][2]
+              - a[2][1] * a[1][2] * a[0][0]
+              - a[2][2] * a[1][0] * a[0][1];
+  if( det != 0.0 )
+  {
+    result[0][0] = a[1][1] * a[2][2] - a[1][2] * a[2][1];
+    result[0][1] = a[2][1] * a[0][2] - a[2][2] * a[0][1];
+    result[0][2] = a[0][1] * a[1][2] - a[0][2] * a[1][1];
+    result[1][0] = a[2][0] * a[1][2] - a[1][0] * a[2][2];
+    result[1][1] = a[0][0] * a[2][2] - a[2][0] * a[0][2];
+    result[1][2] = a[1][0] * a[0][2] - a[0][0] * a[1][2];
+    result[2][0] = a[1][0] * a[2][1] - a[2][0] * a[1][1];
+    result[2][1] = a[2][0] * a[0][1] - a[0][0] * a[2][1];
+    result[2][2] = a[0][0] * a[1][1] - a[1][0] * a[0][1];
+    
+    R = make_mat3(make_float3(result[0][0], result[0][1], result[0][2]), 
+    make_float3(result[1][0], result[1][1], result[1][2]), make_float3(result[2][0], result[2][1], result[2][2]));
+    return multi( 1.0f / det, R);
+  }
+  R = make_mat3(make_float3(1.0f, 0.0f, 0.0f), make_float3(0.0f, 1.0f, 0.0f), make_float3(0.0f, 0.0f, 1.0f));
+  return R;
 }
 
 __DEVICE__ inline void rgb_to_hsv( float r, float g, float b, float *h, float *s, float *v)

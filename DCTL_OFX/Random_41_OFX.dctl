@@ -1,0 +1,434 @@
+// Random 41 OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Animate, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(SCALE, Zoom, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(msX, Horizontal, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(msY, Vertical, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(ROTATEy, RotateY, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+DEFINE_UI_PARAMS(ROTATEz, RotateZ, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+DEFINE_UI_PARAMS(ROTATEx, RotateX, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+DEFINE_UI_PARAMS(CYCLE, Colour Cycle, DCTLUI_CHECK_BOX, 0)
+
+#include "DCTL_Functions.h"
+
+__DEVICE__ float time = 0;
+__DEVICE__ float t = 0;
+__DEVICE__ bool Cycle = false;
+
+__DEVICE__ mat3 rotationMatrix( float3 axis, float angle)
+{
+axis = normalize(axis);
+float s = _sinf(angle);
+float c = _cosf(angle);
+float oc = 1 - c;
+
+return make_mat3(
+make_float3(oc * axis.x * axis.x + c,           oc * axis.x * axis.y - axis.z * s,  oc * axis.z * axis.x + axis.y * s),
+make_float3(oc * axis.x * axis.y + axis.z * s,  oc * axis.y * axis.y + c,           oc * axis.y * axis.z - axis.x * s),
+make_float3(oc * axis.z * axis.x - axis.y * s,  oc * axis.y * axis.z + axis.x * s,  oc * axis.z * axis.z + c)
+);
+}
+
+#define GDFVector13 normalize(make_float3(0, PHI, 1))
+#define GDFVector13b normalize(make_float3(0, PHI, -1))
+#define GDFVector14 normalize(make_float3(0, -PHI, 1))
+#define GDFVector14b normalize(make_float3(0, -PHI, -1))
+#define GDFVector15 normalize(make_float3(1, 0, PHI))
+#define GDFVector15b normalize(make_float3(1, 0, -PHI))
+#define GDFVector16 normalize(make_float3(-1, 0, PHI))
+#define GDFVector16b normalize(make_float3(-1, 0, -PHI))
+#define GDFVector17 normalize(make_float3(PHI, 1, 0))
+#define GDFVector17b normalize(make_float3(PHI, -1, 0))
+#define GDFVector18 normalize(make_float3(-PHI, 1, 0))
+#define GDFVector18b normalize(make_float3(-PHI, -1, 0))
+
+__DEVICE__ float vmax( float3 v)
+{
+return _fmaxf(_fmaxf(v.x, v.y), v.z);
+}
+
+__DEVICE__ float sgn( float x)
+{
+return (x < 0) ? -1 : 1;
+}
+
+__DEVICE__ float fPlane( float3 p, float3 n, float distanceFromOrigin)
+{
+return dot(p, n) + distanceFromOrigin;
+}
+
+__DEVICE__ float fBox( float3 p, float3 b)
+{
+float3 d = ABS(p) - b;
+return length(MAX(d, 0)) + vmax(MIN(d, 0));
+}
+
+__DEVICE__ float fLineSegment( float3 p, float3 a, float3 b)
+{
+float3 ab = b - a;
+float t = _saturatef(dot(p - a, ab) / dot(ab, ab));
+return length((ab * t + a) - p);
+}
+
+__DEVICE__ float fCapsule( float3 p, float3 a, float3 b, float r)
+{
+return fLineSegment(p, a, b) - r;
+}
+
+__DEVICE__ void pR( float* Px, float* Py, float a)
+{
+float2 p;
+p.x = *Px;
+p.y = *Py;
+p = _cosf(a) * p + _sinf(a) * make_float2(p.y, -p.x);
+*Px = p.x;
+*Py = p.y;
+}
+
+__DEVICE__ float pReflect( float3* P, float3 planeNormal, float offset)
+{
+float3 p = *P;
+float t = dot(p, planeNormal) + offset;
+if (t < 0) {
+p = p - (2 * t) * planeNormal;
+}
+*P = p;
+return sign(t);
+}
+
+__DEVICE__ int Type = 5;
+__DEVICE__ float3 nc;
+__DEVICE__ float3 pbc;
+__DEVICE__ float3 pca;
+
+__DEVICE__ void initIcosahedron()
+{
+float cospin = _cosf(PI / Type);
+float scospin = _sqrtf(0.75f - cospin * cospin);
+nc = make_float3(-0.5f, -cospin, scospin);
+pbc = make_float3(scospin, 0, 0.5f);
+pca = make_float3(0, scospin, cospin);
+pbc = normalize(pbc);
+pca = normalize(pca);
+}
+
+__DEVICE__ void pModIcosahedron( float3* P)
+{
+float3 p = *P;
+p = ABS(p);
+pReflect(&p, nc, 0);
+p.x = _fabs(p.x);
+p.y = _fabs(p.y);
+pReflect(&p, nc, 0);
+p.x = _fabs(p.x);
+p.y = _fabs(p.y);
+pReflect(&p, nc, 0);
+*P = p;
+}
+
+__DEVICE__ float indexSgn( float s)
+{
+return s / 2 + 0.5f;
+}
+
+__DEVICE__ bool boolSgn( float s)
+{
+return (bool)(s / 2 + 0.5f);
+}
+
+__DEVICE__ float pModIcosahedronIndexed( float3* P, int subdivisions)
+{
+float3 p = *P;
+float x = indexSgn(sgn(p.x));
+float y = indexSgn(sgn(p.y));
+float z = indexSgn(sgn(p.z));
+p = ABS(p);
+pReflect(&p, nc, 0);
+
+float xai = sgn(p.x);
+float yai = sgn(p.y);
+p.x = _fabs(p.x);
+p.y = _fabs(p.y);
+float sideBB = pReflect(&p, nc, 0);
+
+float ybi = sgn(p.y);
+float xbi = sgn(p.x);
+p.x = _fabs(p.x);
+p.y = _fabs(p.y);
+pReflect(&p, nc, 0);
+*P = p;
+
+float idx = 0;
+
+float faceGroupAi = indexSgn(ybi * yai * -1);
+float faceGroupBi = indexSgn(yai);
+float faceGroupCi = _clampf((xai - ybi - 1), 0, 1);
+float faceGroupDi = _clampf(1 - faceGroupAi - faceGroupBi - faceGroupCi, 0, 1);
+
+idx += faceGroupAi * (x + (2 * y) + (4 * z));
+idx += faceGroupBi * (8 + y + (2 * z));
+idx += faceGroupDi * (12 + x + (2 * y));
+
+return idx;
+}
+
+__DEVICE__ float3 pal( float t, float3 a, float3 b, float3 c, float3 d )
+{
+return a + b * COS( TWO_PI * (c * t + d) );
+}
+
+__DEVICE__ float3 spectrum( float n)
+{
+return pal( n, make_float3(0.5f, 0.5f, 0.5f), make_float3(0.5f, 0.5f, 0.5f), make_float3(1, 1, 1), make_float3(0, 0.33f, 0.67f) );
+}
+
+__DEVICE__ float3 vMin( float3 p, float3 a, float3 b, float3 c)
+{
+float la = length(p - a);
+float lb = length(p - b);
+float lc = length(p - c);
+if (la < lb) {
+if (la < lc) {
+return a;
+} else {
+return c;
+}
+} else {
+if (lb < lc) {
+return b;
+} else {
+return c;
+}
+}
+}
+
+__DEVICE__ float3 icosahedronVertex( float3 p)
+{
+if (p.z > 0) {
+if (p.x > 0) {
+if (p.y > 0) {
+return vMin(p, GDFVector13, GDFVector15, GDFVector17);
+} else {
+return vMin(p, GDFVector14, GDFVector15, GDFVector17b);
+}
+} else {
+if (p.y > 0) {
+return vMin(p, GDFVector13, GDFVector16, GDFVector18);
+} else {
+return vMin(p, GDFVector14, GDFVector16, GDFVector18b);
+}
+}
+} else {
+if (p.x > 0) {
+if (p.y > 0) {
+return vMin(p, GDFVector13b, GDFVector15b, GDFVector17);
+} else {
+return vMin(p, GDFVector14b, GDFVector15b, GDFVector17b);
+}
+} else {
+if (p.y > 0) {
+return vMin(p, GDFVector13b, GDFVector16b, GDFVector18);
+} else {
+return vMin(p, GDFVector14b, GDFVector16b, GDFVector18b);
+}
+}
+}
+}
+
+__DEVICE__ float4 icosahedronAxisDistance( float3 p)
+{
+float3 iv = icosahedronVertex(p);
+float3 originalIv = iv;
+
+float3 pn = normalize(p);
+pModIcosahedron(&pn);
+pModIcosahedron(&iv);
+
+float boundryDist = dot(pn, make_float3(1, 0, 0));
+float boundryMax = dot(iv, make_float3(1, 0, 0));
+boundryDist /= boundryMax;
+
+float roundDist = length(iv - pn);
+float roundMax = length(iv - make_float3(0, 0, 1));
+roundDist /= roundMax;
+roundDist = -roundDist + 1;
+
+float blend = 1 - boundryDist;
+blend = _powf(blend, 6);
+
+float dist = mix(roundDist, boundryDist, blend);
+
+return make_float4(originalIv.x, originalIv.y, originalIv.z, dist);
+}
+
+__DEVICE__ void pTwistIcosahedron( float3* P, float amount)
+{
+float3 p = *P;
+float4 a = icosahedronAxisDistance(p);
+float3 axis = make_float3(a.x, a.y, a.z);
+float dist = a.w;
+mat3 m = rotationMatrix(axis, dist * amount);
+p = multi(p, m);
+*P = p;
+}
+
+typedef struct
+{
+float dist;
+float3 colour;
+float id;
+} Model;
+
+__DEVICE__ Model fInflatedIcosahedron( float3 p, float3 axis)
+{
+float d = 1000;
+float idx = pModIcosahedronIndexed(&p, 0);
+d = _fminf(d, dot(p, pca) - 0.9f);
+d = mix(d, length(p) - 0.9f, 0.5f);
+
+idx /= 20;
+
+if (Cycle) idx = _fmod(idx + t * 1.75f, 1);
+
+float3 colour = spectrum(idx);
+
+d *= 0.6f;
+Model M;
+M.dist = d;
+M.colour = colour;
+M.id = 1.0f;
+return M;
+}
+
+__DEVICE__ void pTwistIcosahedron( float3* P, float3 center, float amount)
+{
+float3 p = *P;
+p = p + center;
+pTwistIcosahedron(&p, 5.5f);
+p = p - center;
+*P = p;
+}
+
+__DEVICE__ Model model( float3 p)
+{
+float rate = PI/6;
+float3 axis = pca;
+
+float3 twistCenter = make_float3(0);
+twistCenter.x = _cosf(t * rate * -3) * 0.3f;
+twistCenter.y = _sinf(t * rate * -3) * 0.3f;
+
+mat3 m = rotationMatrix(
+reflect(axis, make_float3(0,1,0)), t * -rate);
+p = multi(p, m);
+twistCenter = multi(twistCenter, m);
+
+pTwistIcosahedron(&p, twistCenter, 5.5f);
+
+return fInflatedIcosahedron(p, axis);
+}
+
+#define	MAX_TRACE_DISTANCE				6
+#define INTERSECTION_PRECISION			0.001f
+
+__DEVICE__ Model map( float3 p)
+{
+Model M;
+M = model(p);
+return M;
+}
+
+__DEVICE__ mat3 calcLookAtMatrix( float3 ro, float3 ta, float roll)
+{
+float3 ww = normalize( ta - ro );
+float3 uu = normalize( cross(ww, make_float3(_sinf(roll), _cosf(roll), 0) ) );
+float3 vv = normalize( cross(uu, ww));
+return make_mat3( uu, vv, ww );
+}
+
+__DEVICE__ void doCamera( float3* CamPos, float3* CamTar, float* CamRoll, float time, float2 mouse)
+{
+
+float3 camPos = *CamPos;
+float3 camTar = *CamTar;
+float camRoll = *CamRoll;
+
+float x = mouse.x;
+float y = mouse.y;
+
+float dist = 3.3f;
+float height = 0;
+camPos = make_float3(0, 0, -dist);
+float3 axisY = make_float3(0, 1, 0);
+float3 axisX = make_float3(1, 0, 0);
+mat3 m = rotationMatrix(axisY, -x * PI * 2);
+axisX = multi(axisX, m);
+camPos = multi(camPos, m);
+m = rotationMatrix(axisX, -(y - 0.5f) * PI * 2);
+camPos = multi(camPos, m);
+camPos.y += height;
+camTar = camPos * -1 + make_float3(0.0001f);
+camTar.y += height;
+camRoll = 0;
+*CamPos = camPos;
+*CamTar = camTar;
+*CamRoll = camRoll;
+}
+
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+float2 resolution = make_float2(width, height);
+float2 XY = make_float2(X, Y);
+time = TIME * 20;
+Cycle = CYCLE;
+
+initIcosahedron();
+t = time - 0.25f;
+
+float2 p = (-resolution + 2 * XY) / resolution.y;
+p.x -= msX;
+p.y -= msY;
+p = p / (SCALE + 0.1f);
+float2 m = make_float2(0);
+
+float3 camPos = make_float3(0, 0, 2);
+float3 camTar = make_float3(0);
+float camRoll = 0;
+
+doCamera(&camPos, &camTar, &camRoll, time, m);
+
+mat3 camMat = calcLookAtMatrix( camPos, camTar, camRoll );
+
+float3 rd = normalize( multi(camMat, make_float3(p.x, p.y, 2)) );
+
+float3 color = make_float3(0);
+
+float3 ro = camPos;
+rotate(&ro.x, &ro.z, ROTATEy);
+rotate(&rd.x, &rd.z, ROTATEy);
+rotate(&ro.x, &ro.y, ROTATEz);
+rotate(&rd.x, &rd.y, ROTATEz);
+rotate(&ro.y, &ro.z, ROTATEx);
+rotate(&rd.y, &rd.z, ROTATEx);
+
+float t = 0;
+float h = INTERSECTION_PRECISION * 2.0f;
+
+for( int i=0; i< 500 ; i++ ){
+if( t > MAX_TRACE_DISTANCE ) break;
+Model m = map( ro + rd * t );
+h = _fabs(m.dist);
+t += _fmaxf(INTERSECTION_PRECISION, h * 0.7f);
+color = color + (m.colour * _powf(_fmaxf(0, (0.01f - h)) * 42, 10) * 150);
+}
+
+color = POW(color, make_float3(1/1.8f)) * 1.5f;
+
+return color;
+}
