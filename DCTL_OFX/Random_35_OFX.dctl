@@ -4,43 +4,15 @@ DEFINE_UI_PARAMS(TIME, Animate, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
 DEFINE_UI_PARAMS(SCALE, Zoom, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
 DEFINE_UI_PARAMS(msX, Horizontal, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
 DEFINE_UI_PARAMS(msY, Vertical, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
-DEFINE_UI_PARAMS(ROTATEyz, RotateXY, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
-DEFINE_UI_PARAMS(ROTATExz, RotateXZ, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
-DEFINE_UI_PARAMS(ROTATExy, RotateYZ, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+DEFINE_UI_PARAMS(ROTATEy, RotateY, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+DEFINE_UI_PARAMS(ROTATEz, RotateZ, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+DEFINE_UI_PARAMS(ROTATEx, RotateX, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
 DEFINE_UI_PARAMS(HUE, Cube Hue, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
 
 #include "DCTL_Functions.h"
 
 __DEVICE__ float time = 0;
 __DEVICE__ float hue = 0;
-
-__DEVICE__ float3 hsv( float H, float S, float V)
-{
-float3 rgb;
-if (S == 0.0f){ rgb = make_float3(V); return;}
-H = H > 1 ? H - 1 : H < 0 ? H + 1 : H;
-H *= 6;
-int i = _floor(H);
-float f = H - i;
-i = (i >= 0) ? (i % 6) : (i % 6) + 6;
-float p = V * (1 - S);
-float q = V * (1 - S * f);
-float t = V * (1 - S * (1 - f));
-rgb.x = i == 0 ? V : i == 1 ? q : i == 2 ? p : i == 3 ? p : i == 4 ? t : V;
-rgb.y = i == 0 ? t : i == 1 ? V : i == 2 ? V : i == 3 ? q : i == 4 ? p : p;
-rgb.z = i == 0 ? p : i == 1 ? p : i == 2 ? t : i == 3 ? V : i == 4 ? V : q;
-return rgb;
-}
-
-__DEVICE__ void rotate( float* ax, float* ay, float b)
-{
-float AX = *ax;
-float AY = *ay;
-float c = _cosf(b);
-float s = _sinf(b);
-*ax = AX * c - AY * s;
-*ay = AX * s + AY * c;
-}
 
 __DEVICE__ float3 spin( float3 a)
 {
@@ -160,14 +132,14 @@ rotate(&dir.y, &dir.z, _sinf(time * 0.1f) * 0.25f + 0.25f);
 rotate(&cam.x, &cam.z, time * 0.3f);
 rotate(&dir.x, &dir.z, time * 0.3f);
 
-rotate(&cam.y, &cam.x, ROTATExy);
-rotate(&dir.y, &dir.x, ROTATExy);
+rotate(&cam.z, &cam.x, ROTATEy);
+rotate(&dir.z, &dir.x, ROTATEy);
 
-rotate(&cam.z, &cam.y, ROTATEyz);
-rotate(&dir.z, &dir.y, ROTATEyz);
+rotate(&cam.z, &cam.y, ROTATEz);
+rotate(&dir.z, &dir.y, ROTATEz);
 
-rotate(&cam.z, &cam.x, ROTATExz);
-rotate(&dir.z, &dir.x, ROTATExz);
+rotate(&cam.y, &cam.x, ROTATEx);
+rotate(&dir.y, &dir.x, ROTATEx);
 
 float3 RGB = POW(trace(cam, dir), make_float3(0.45f));
 
