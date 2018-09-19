@@ -103,6 +103,11 @@ B.w = A.w - _floor(A.w);
 return B;
 }
 
+__DEVICE__ inline float3 LOG( float3 A)
+{
+return make_float3(_logf(A.x), _logf(A.y), _logf(A.z));
+}
+
 __DEVICE__ inline mat2 make_mat2( float A1, float A2, float B1, float B2)
 {
 mat2 C;
