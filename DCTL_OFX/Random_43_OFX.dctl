@@ -1,0 +1,227 @@
+// Random 43 OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Animate, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(SCALE, Zoom, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(msX, Horizontal, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(msY, Vertical, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(LOOKx, Look Sideways, DCTLUI_SLIDER_FLOAT, 0.5, 0, 1, 0.001)
+DEFINE_UI_PARAMS(LOOKy, Look Up'n'Down, DCTLUI_SLIDER_FLOAT, 0.5, 0, 1, 0.001)
+
+#include "DCTL_Functions.h"
+
+__DEVICE__ float time = 0;
+
+#define S(a, b, t) smoothstep(a, b, t)
+#define sat(x) _clampf(x, 0, 1)
+
+__DEVICE__ float remap01( float a, float b, float t)
+{
+return sat((t - a) / (b - a)); 
+}
+
+__DEVICE__ float remap( float a, float b, float c, float d, float t)
+{
+return sat(((t - a) / (b - a)) * (d - c) + c); 
+}
+
+__DEVICE__ float2 within( float2 uv, float4 rect)
+{
+return (uv - make_float2(rect.x, rect.y)) / (make_float2(rect.z, rect.w) - make_float2(rect.x, rect.y));     
+}
+
+__DEVICE__ float4 Brow( float2 uv, float smile)
+{
+float offs = mix(0.2f, 0, smile);
+uv.y += offs;
+
+float y = uv.y;
+uv.y += uv.x * mix(0.5f, 0.8f, smile) - mix(0.3f, 0.5f, smile);
+uv.x -= mix(0, 0.1f, smile);
+uv -= 0.5f;
+
+float4 col = make_float4(0);
+float blur = 0.1f;
+
+float d1 = length(uv);
+float s1 = S(0.45f, 0.45f - blur, d1);
+float d2 = length(uv - make_float2(0.1f, -0.2f) * 0.7f);
+float s2 = S(0.5f, 0.5f - blur, d2);
+
+float browMask = sat(s1 - s2);
+
+float colMask = remap01(0.7f, 0.8f, y) * 0.75f;
+colMask *= S(0.6f, 0.9f, browMask);
+colMask *= smile;
+
+float4 browCol = mix(make_float4(0.4f, 0.2f, 0.2f, 1), make_float4(0.4f, 0.1f, 0.03f, 1), S(0.2f, 0.4f, colMask));
+
+uv.y += 0.1f - offs * 0.5f;
+blur += mix(0, 0.15f, smile);
+d1 = length(uv);
+s1 = S(0.45f, 0.45f - blur, d1);
+d2 = length(uv - make_float2(0.1f, -0.2f) * 0.7f);
+s2 = S(0.5f, 0.5f - blur, d2);
+float shadowMask = sat(s1 - s2);
+
+col = mix(col, make_float4(0, 0, 0, 1), S(0, 1, shadowMask));
+col = mix(col, browCol, S(0.2f, 0.4f, browMask));
+return col;
+}
+
+__DEVICE__ float4 Eye( float2 uv, float side, float2 m, float smile)
+{
+uv -= 0.5f;
+uv.x *= side;
+
+float d = length(uv);
+float3 irisCol = make_float3(0.3f, 0.5f, 1);
+float4 col = mix(make_float4(1), make_float4(irisCol, 1), S(0.1f, 0.7f, d) * 0.5f);
+col.w = S(0.5f, 0.48f, d);
+float3 COL = make_float3(col.x, col.y, col.z);   
+COL = COL * (1 - S(0.45f, 0.5f, d) * 0.5f * sat(-uv.y - uv.x * side));
+
+d = length(uv - m * 0.3f);
+COL = mix(COL, make_float3(0), S(0.3f, 0.28f, d));
+
+irisCol = irisCol * (1 + S(0.3f, 0.05f, d)); 
+float irisMask = S(0.28f, 0.25f, d);
+COL = mix(COL, irisCol, irisMask);
+d = length(uv - m * 0.4f);
+
+float pupilSize = mix(0.38f, 0.16f, smile);
+float pupilMask = S(pupilSize, pupilSize * 0.85f, d);
+pupilMask *= irisMask;
+
+COL = mix(COL, make_float3(0), pupilMask);
+
+float t = time * 3;
+float2 offs = make_float2(
+_sinf(t + uv.y * 25) * 0.01f,
+_sinf(t + uv.x * 25) * 0.01f
+);
+
+offs *= (1 - smile);
+
+uv += offs;
+
+float highlight = S(0.1f, 0.09f, length(uv - make_float2(-0.15f, 0.15f)));
+highlight += S(0.07f, 0.05f, length(uv + make_float2(-0.08f, 0.08f)));
+COL = mix(COL, make_float3(1), highlight);
+col = make_float4(COL, col.w);
+
+return col;
+}
+
+__DEVICE__ float4 Mouth( float2 uv, float smile)
+{
+uv = uv - 0.5f;
+float4 col = make_float4(0.5f, 0.18f, 0.05f, 1);
+uv.y *= 1.5f;
+uv.y -= uv.x * uv.x * 2 * smile;
+uv.x *= mix(2, 1, smile);
+
+float d = length(uv);
+col.w = S(0.5f, 0.48f, d);
+float2 tUv = uv;
+tUv.y += (_fabs(uv.x) * 0.5f + 0.1f) * (1 - smile);
+float td = length(tUv - make_float2(0, 0.6f));
+
+float3 toothCol = make_float3(1) * S(0.6f, 0.35f, d);
+float3 COL = make_float3(col.x, col.y, col.z);  
+COL = mix(COL, toothCol, S(0.4f, 0.37f, td));
+
+td = length(uv + make_float2(0, 0.5f));
+COL = mix(COL, make_float3(1, 0.5f, 0.5f), S(0.5f, 0.2f, td));
+col = make_float4(COL, col.w);
+return col;
+}
+
+__DEVICE__ float4 Head( float2 uv)
+{
+float4 col = make_float4(0.9f, 0.65f, 0.1f, 1);
+float d = length(uv);
+col.w = S(0.5f, 0.49f, d);
+
+float edgeShade = remap01(0.35f, 0.43f, d);
+edgeShade *= edgeShade;
+float3 COL = make_float3(col.x, col.y, col.z); 
+COL = COL * (1 - edgeShade * 0.4f);
+
+// stroke
+COL = mix(COL, make_float3(0.6f, 0.3f, 0.1f), S(0.47f, 0.48f, d));
+
+float highlight = S(0.41f, 0.405f, d) * 0.9f;
+highlight *= remap(0.41f, -0.1f, 0.75f, 0, uv.y);
+highlight *= S(0.18f, 0.19f, length(uv - make_float2(0.2f, 0.08f)));
+
+COL = mix(COL, make_float3(1), highlight);
+
+d = length(uv - make_float2(0.25f, -0.2f));
+float cheek = S(0.2f, 0.01f, d) * 0.4f;
+cheek *= S(0.18f, 0.16f, d);
+COL = mix(COL, make_float3(1, 0.1f, 0.1f), cheek);
+
+col = make_float4(COL, col.w);
+return col;
+}
+
+__DEVICE__ float4 Smiley( float2 uv, float2 m, float smile)
+{
+float4 col = make_float4(0);
+
+float side = sign(uv.x);
+
+// Mirror x-axis
+uv.x = _fabs(uv.x);
+uv.x += -sign(uv.x) * 0.06f * _cosf(time + uv.y * 3);
+
+float4 head = Head(uv);
+
+float4 eye = Eye(
+within(uv, make_float4(0.03f, -0.1f, 0.37f, 0.25f)), 
+side, m, smile);
+
+float4 mouth = Mouth(
+within(uv, make_float4(-0.3f, -0.4f, 0.3f, -0.1f)), smile);
+
+float4 brow = Brow(
+within(uv, make_float4(0.03f, 0.2f, 0.35f, 0.4f)), smile);
+
+col = mix(col, head, head.w);
+col = mix(col, eye, eye.w);
+col = mix(col, mouth, mouth.w);
+col = mix(col, brow, brow.w);
+
+return col;
+}
+
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+float2 resolution = make_float2(width, height);
+float2 XY = make_float2(X, Y);
+time = TIME * 30;
+float2 mouse = make_float2(LOOKx, LOOKy);    
+float2 uv = -0.5f + (XY / resolution);
+uv.x *= resolution.x / resolution.y;
+
+uv.x -= msX;
+uv.y -= msY;
+uv = uv / (SCALE + 0.01f);
+
+float2 m = mouse; 
+m = m - 0.5f;
+
+float smile = _cosf(time) * 0.5f + 0.5f;
+
+uv = uv - m * (0.25f - dot(uv, uv)); 
+float4 col = Smiley(uv, m, smile);
+float3 RGB = make_float3(col.x, col.y, col.z);
+
+return RGB;
+}
