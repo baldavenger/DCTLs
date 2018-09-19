@@ -1,11 +1,12 @@
 // Random 30 OFX DCTL
 
-DEFINE_UI_PARAMS(TIME, Animate, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
-DEFINE_UI_PARAMS(msX, Horizontal, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
-DEFINE_UI_PARAMS(msY, Vertical, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
-DEFINE_UI_PARAMS(msZ, Zoom, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
-
-__DEVICE__ float3 iMouse = {0, 0, 0};
+DEFINE_UI_PARAMS(TIME, Animate, DCTLUI_SLIDER_FLOAT, 0, 0, 2, 0.001)
+DEFINE_UI_PARAMS(msX, Horizontal, DCTLUI_SLIDER_FLOAT, 0, -2, 2, 0.001)
+DEFINE_UI_PARAMS(msY, Vertical, DCTLUI_SLIDER_FLOAT, 0, -2, 2, 0.001)
+DEFINE_UI_PARAMS(SCALE, Zoom, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(ROTATEy, RotateY, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+DEFINE_UI_PARAMS(ROTATEz, RotateZ, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+DEFINE_UI_PARAMS(ROTATEx, RotateX, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
 
 #include "DCTL_Functions.h"
 
@@ -39,7 +40,6 @@ __DEVICE__ float ani_mouth;
 #define col_fish_1		make_float3(1, 0.4f, 0.2f)
 #define col_fish_2		make_float3(1, 0.8f, 0.5f)
 #define col_eyes		make_float3(0.7f, 0.75f, 1)
-__DEVICE__ float t = 20;
 
 // marching
 __DEVICE__ float maxdist = 5.0f;
@@ -48,7 +48,7 @@ __DEVICE__ float det = 0.001f;
 // 2D rotation
 __DEVICE__ mat2 rot2D( float a)
 {
-a = radians(a);
+a = a * 3.14f / 180.0f;
 float s = _sinf(a);
 float c = _cosf(a);
 return make_mat2(c, s, -s, c);
@@ -65,7 +65,7 @@ return make_mat3(rt, cross(rt, fw), fw);
 // Tile fold 
 __DEVICE__ float Fmod(float p, float c)
 {
-return _fabs(c - _fmod(p, c * 2)) / c;
+return _fabs(c - _fmod(p, c * 2.0f)) / c;
 }
 
 // Smooth min
@@ -129,8 +129,6 @@ m = _fminf(m, length(p));
 }
 return _fmaxf(0, 1 - m) * (0.1f + smoothstep(-pos.x + 1, 0, 0.4f)) * 0.003f;
 }
-
-// PUFFY'S DE FUNCTIONS
 
 // Body parts
 
@@ -217,7 +215,7 @@ p.z *= 1 - (p.x + 0.1f) * 0.1f;
 p.z *= 1 + smoothstep(0, 0.5f, -p.x) * 0.3f;
 p.y *= 1 + smoothstep(0, 0.5f, -p.x) * 0.3f;
 float d = length(p * make_float3(1 + smoothstep(0, 0.5f, -p.x + p.z) * 0.5f, 1 , 1.4f)) - 0.47f - s - puff * 0.12f;
-p = p + make_float3(0.14f + puff * 0, 0, 0.2f);
+p = p + make_float3(0.14f + puff * 0.1f, 0, 0.2f);
 p.x -= p.z * 0.5f;
 p.z += puff * 0.1f;
 d = smin(d, length(p * make_float3(0.6f, 1.2f, 1.7f)) - 0.55f + m, 0.2f) + 0.1f;
@@ -410,7 +408,6 @@ col = col + bk + fg * col_water;
 return col;
 }
 
-// MAIN
 
 __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
 {
@@ -424,42 +421,52 @@ float2 XY = make_float2(X, Y);
 float2 resolution = make_float2(width, height);
 
 // Set globals
-time = _fmod(TIME * 50 + 10, 600);
+time = TIME * 100;
 ani_mouth = _sinf(time * 6);
 puff = -0.03f + 0.5f * smoothstep(0.945f, 0.95f, _fabs(_sinf(time * 0.1f))) + ani_mouth * 0.04f;
 pos_finn = normalize(make_float3(0.35f, -1, 0));
 pos_eyes = make_float3(-1, -1.1f, 1) * 0.12f;
-//pos_eyes*=1.+make_float3(-1.,1.,0.)*puff*.05;
+//pos_eyes = pos_eyes * (1 + make_float3(-1, 1, 0) * puff * 0.05f);
 dir_light = normalize(make_float3(-0.3f, 0.2f, 1));
 dir_mouth = lookat(normalize(make_float3(-0.4f - puff * 0.1f + ani_mouth * 0.03f, 0, -1)), make_float3(0, 1, 0));
-tim_tail = time * 2;
+tim_tail = time * 20;
 ani_tail = _cosf(tim_tail);
 
 // Pixel coordinates
-float2 uv = XY / resolution - 0.5f;
+float2 uv = ((XY / resolution) - 0.5f) / (SCALE + 0.5f);
 float2 uv2 = uv;
 float ar = resolution.x / resolution.y; 
 uv.x *= ar;
 
 // Camera
-iMouse = make_float3(msX, msY, msZ * -0.25f);
-float2 mouse = make_float2(2, 0);
-float tcam = (time + 67) * 0.05f;
-float zcam = smoothstep(0.7f, 1, _cosf(tcam)) * 1.8f - 0.3f;
+float2 mouse = (make_float2(0.5f, 0.5f) - 0.5f) * 4;
+mouse = mouse + make_float2(-1 * msX - 2, msY);
+float tcam = (time + 67.0f) * 0.05f;
+float zcam = smoothstep(0.7f, 1.0f, _cosf(tcam)) * 1.8f - 0.3f;
 zcam -= smoothstep(0.7f, 1, -_cosf(tcam)) * 1.6f;
-//if (iMouse.z < 0.1f) mouse = make_float2(_sinf(time * 0.15f)* ar, zcam);
-float3 dir = normalize(make_float3(uv, 0.9f)) - iMouse;
+
+//if (mouse.x < 0.1f && mouse.y < 0.1f) mouse = make_float2(_sinf(time * 0.15f) * ar, zcam);
+//mouse = make_float2(_sinf(time * 0.15f) * ar, zcam) + mouse;
+
+float3 dir = normalize(make_float3(uv.x, uv.y, 0.9f));
 float3 from = make_float3(1, 0, -0.5f + mouse.y) * 1.25f;
 
-float2 fromXY = multi(make_float2(from.x, from.y), rot2D(-mouse.x * 40));
-from = make_float3(fromXY.x, fromXY.y, from.z);
-dir = multi(lookat(normalize( (from * -1) + make_float3(_sinf(time * 0.5f) * 0.3f, _cosf(time * 0.25f) * 0.1f, 0)), make_float3(0, 0, -1)), dir);
+float2 fromXY = multi(make_float2(from.y, from.x), rot2D(-mouse.x * 40.0f));
+from = make_float3(fromXY.y, fromXY.x, from.z);
+dir = multi(lookat(normalize( make_float3(_sinf(time * 0.5f) * 0.3f, _cosf(time * 0.25f) * 0.1f, 0) - from), make_float3(0, 0, -1)), dir);
 
 // Eyes direction
 dir_eye = normalize(from);
-dir_eye.x = _fmaxf(dir_eye.x, pos_eyes.x - .5);
+dir_eye.x = _fmaxf(dir_eye.x, pos_eyes.x - 0.5f);
 dir_eye.y = _fminf(_fabs(dir_eye.y), pos_eyes.y * sign(dir_eye.y) + 0.5f * sign(dir_eye.y));
 dir_eye.z = _fminf(dir_eye.z, pos_eyes.z - 0.5f);
+
+rotate(&from.x, &from.z, ROTATEz);
+rotate(&dir.x, &dir.z, ROTATEz);
+rotate(&from.x, &from.y, ROTATEy);
+rotate(&dir.x, &dir.y, ROTATEy);
+rotate(&from.y, &from.z, ROTATEx);
+rotate(&dir.y, &dir.z, ROTATEx);
 
 // March and color
 float3 col = march(from, dir);
