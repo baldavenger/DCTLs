@@ -1,112 +1,14 @@
 // SpongeBob OFX DCTL
 
 DEFINE_UI_PARAMS(time, Loop, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
-DEFINE_UI_PARAMS(adjust1, Pan, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
-DEFINE_UI_PARAMS(adjust2, Tilt, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
-DEFINE_UI_PARAMS(adjust3, Zoom, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(msX, Horizontal, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(msY, Vertical, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(SCALE, Zoom, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(RotateY, RotateY, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(RotateZ, RotateZ, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(RotateX, RotateX, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
 
-
-__DEVICE__ float fract(float A)
-{
-float B;
-B = A - _floor(A);
-return B;
-}
-
-__DEVICE__ float3 fract(float3 A)
-{
-float3 B;
-B.x = A.x - _floor(A.x);
-B.y = A.y - _floor(A.y);
-B.z = A.z - _floor(A.z);
-return B;
-}
-
-__DEVICE__ float3 floor(float3 A)
-{
-float3 B;
-B.x = _floor(A.x);
-B.y = _floor(A.y);
-B.z = _floor(A.z);
-return B;
-}
-
-__DEVICE__ float mix(float A, float B, float C)
-{
-return A * (1.0f - C) + B * C;
-}
-
-__DEVICE__ float3 mix(float3 A, float3 B, float C)
-{
-return A * (1.0f - C) + B * C;
-}
-
-__DEVICE__ float3 MAX( float3 A, float B)
-{
-return make_float3(_fmaxf(A.x, B), _fmaxf(A.y, B), _fmaxf(A.z, B));
-}
-
-typedef struct
-{
-float3 r0, r1, r2;
-} mat3;
-
-typedef struct
-{
-float2 r0, r1;
-} mat2;
-
-__DEVICE__ mat2 make_mat2(float2 A, float2 B)
-{
-mat2 C;
-C.r0 = A;
-C.r1 = B;
-return C;
-}
-
-__DEVICE__ float2 multi(float2 A, mat2 B)
-{
-float2 C;
-C.x = A.x * B.r0.x + A.y * B.r0.y;
-C.y = A.x * B.r1.x + A.y * B.r1.y;
-return C;
-}
-
-__DEVICE__ float3 multi(float3 A, mat3 B)
-{
-float3 C;
-C.x = A.x * B.r0.x + A.y * B.r0.y + A.z * B.r0.z;
-C.y = A.x * B.r1.x + A.y * B.r1.y + A.z * B.r1.z;
-C.z = A.x * B.r2.x + A.y * B.r2.y + A.z * B.r2.z;
-return C;
-}
-
-__DEVICE__ mat3 make_mat3(float3 A, float3 B, float3 C)
-{
-mat3 D;
-D.r0 = A;
-D.r1 = B;
-D.r2 = C;
-return D;
-}
-
-__DEVICE__ float3 POW(float3 A, float3 B)
-{
-float3 C;
-C.x = _powf(A.x, B.x);
-C.y = _powf(A.y, B.y);
-C.z = _powf(A.z, B.z);
-return C;
-}
-
-__DEVICE__ float3 ABS(float3 A)
-{
-float3 B;
-B.x = _fabs(A.x);
-B.y = _fabs(A.y);
-B.z = _fabs(A.z);
-return B;
-}
+#include "DCTL_Functions.h"
 
 __DEVICE__ float hash(float n)
 {
@@ -131,16 +33,6 @@ mix(hash(n + 113.0f), hash(n + 114.0f), f.x),
 mix(hash(n + 170.0f), hash(n + 171.0f), f.x),
 f.y),
 f.z);
-}
-
-__DEVICE__ void rotate(float* px, float* py, float a)
-{
-float2 P = make_float2(*px, *py);
-float c = _cosf(a);
-float s = _sinf(a);
-float2 p = multi(P, make_mat2(make_float2(c, s), make_float2(-s, c)));
-*px = p.x;
-*py = p.y;
 }
 
 __DEVICE__ float len(float3 p, float l)
@@ -186,12 +78,12 @@ __DEVICE__ float2 dSpongeBob(float3 p)
 float res = 0;
 // body
 float b = dBox(p - make_float3(0, 0.5f, 0), make_float3(1, 1.5f, 0.5f) / 2) - 0.02f;
-b += 0.02f * smoothstep(0.4f, 1, noise(p * 10.0f)) * smoothstep(0.1f, 0.11f, p.y);
+b += 0.02f * smoothstep(0.4f, 1, noise(p * 10)) * smoothstep(0.1f, 0.11f, p.y);
 b -= 0.75f * smoothstep(0.2f, 1, p.y) * smoothstep(-0.13f, -0.12f, -p.y);
 
 // belt
 float3 q = p;
-q.y *= 18.0f;
+q.y *= 18;
 q.z *= 1.9f;
 float e = len(q + make_float3(0, 2.3f, 0), 15) - 0.54f;
 b = _fminf(b, e);
@@ -210,7 +102,7 @@ q = p;
 s = dSegment15(q + make_float3(0, -0.09f, -0.25f), make_float3(0), make_float3(-0.15f, 0, 0));
 r = 0.01f + 0.045f * s.y * smoothstep(-0.2f, -0.0f, -q.y);
 if(s.x - r < b) res = 0;
-b = smin(b, s.x - r, 70.0f);
+b = smin(b, s.x - r, 70);
 
 // arms
 q = p;
@@ -227,13 +119,13 @@ q = q + make_float3(0.61f, 0.26f, 0);
 q.x *= 2.7f;
 e = length(q) - 0.08f;
 if(e < b) res = 0;
-b = smin(b, e, 100.0f);
+b = smin(b, e, 100);
 
 // fingers
 q = p;
 q = q + make_float3(0.61f, 0.26f, 0);
 q = make_float3(q.z, q.y, q.x);
-float f = 100.0f;
+float f = 100;
 s = dSegment(q, make_float3(0, -0.01f, 0.04f), make_float3(0, -0.08f, 0.07f));
 r = 0.01f;
 rotate(&q.x, &q.y, 0.3f * smoothstep(0.12f, 0.17f, -q.y));
@@ -245,7 +137,7 @@ f = _fminf(f, s.x - r);
 s = dSegment(q, make_float3(0, -0.07f, 0.02f), make_float3(0, -0.16f, 0.04f));
 f = _fminf(f, s.x - r);
 
-b = smin(f, b, 60.0f);
+b = smin(f, b, 60);
 
 // legs
 s = dSegment(p + make_float3(0.25f, 0.3f, 0), make_float3(0), make_float3(0, -0.65f, 0));
@@ -257,11 +149,11 @@ b = _fminf(b, s.x - r);
 
 // shoes
 q = p;
-q.y *= 1.0f + 0.05f * smoothstep(0.05f, 0.2f, p.z);
+q.y *= 1 + 0.05f * smoothstep(0.05f, 0.2f, p.z);
 q.z *= 0.6f;
 e = length(q + make_float3(0.25f, 0.98f, -0.05f)) - 0.08f;
 if(s.x - r < b) res = 0;
-b = smin(b, e, 60.0f);
+b = smin(b, e, 60);
 
 // nose
 q = p;
@@ -275,10 +167,10 @@ q.y *= 0.75f;
 q.z *= 1.5f;
 q = q + make_float3(0.15f, -0.6f, -0.3f);
 e = length(q) - 0.2f - 0.02f * smoothstep(0.56f, 0.58f, p.y - 0.39f);
-if(e < b) res = 2.0f;
+if(e < b) res = 2;
 b = _fminf(b, e);
 e = length(q + make_float3(0, 0, -0.14f)) - 0.07f;
-if(e < b) res = 3.0f;
+if(e < b) res = 3;
 b = _fminf(b, e);
 
 // mouth
@@ -291,7 +183,7 @@ b = _fminf(b, s.x - r);
 
 // teeth
 e = dBox(p + make_float3(0.042f, -0.36f, -0.27f), make_float3(0.03f, 0.05f, 0.01f));
-if(e < b) res = 2.0f;
+if(e < b) res = 2;
 b = _fminf(b, e);
 
 return make_float2(b, res); 
@@ -299,7 +191,7 @@ return make_float2(b, res);
 
 __DEVICE__ float2 map(float3 p)
 {
-float2 g = make_float2(p.y + 1.0f, -2.0f);
+float2 g = make_float2(p.y + 1, -2);
 float2 sb = dSpongeBob(p);
 return g.x < sb.x ? g : sb;
 }
@@ -307,11 +199,11 @@ return g.x < sb.x ? g : sb;
 __DEVICE__ float2 march(float3 ro, float3 rd)
 {
 float t = 0;
-float m = -4.0f;
+float m = -4;
 
 for(int i = 0; i < 150; i++) {
 float2 h = map(ro + rd * t);
-if(_fabs(h.x) < 0.0001f || t >= 10.0f) break;
+if(_fabs(h.x) < 0.0001f || t >= 10) break;
 t += h.x * 0.5f;
 m = h.y;
 }
@@ -332,16 +224,15 @@ return normalize(n);
 
 __DEVICE__ float shadow(float3 p, float3 l)
 {
-float res = 1.0f;
+float res = 1;
 float t = 0.002f;
 
 for(int i = 0; i < 200; i++) {
 float h = map(p + l * t).x;
-if(_fabs(h) < 0 || t >= 6.0f) break;
+if(_fabs(h) < 0 || t >= 6) break;
 t += h;
-res = _fminf(res, 16.0f * h/t);
+res = _fminf(res, 16 * h/t);
 }
-
 return _clampf(res, 0, 1);
 }
 
@@ -362,7 +253,7 @@ w *= 0.95f;
 t += s;
 }
 
-return 1.0f - _clampf(o, 0, 1);
+return 1 - _clampf(o, 0, 1);
 }
 
 __DEVICE__ mat3 camera(float3 eye, float3 lat) {
@@ -380,7 +271,7 @@ float3 mat = make_float3(2, 1.938f, 0.129f);
 if(p.y < -0.86f) {
 mat = make_float3(0.2f);
 } else if(p.y < -0.75f) {
-mat = mix(make_float3(2, 0, 0), make_float3(2.0f), 1.0f - smoothstep(-0.79f, -0.78f, p.y));
+mat = mix(make_float3(2, 0, 0), make_float3(2), 1.0f - smoothstep(-0.79f, -0.78f, p.y));
 } else if(p.y >= -0.45f && p.y < -0.15f && _fabs(p.x) < 0.55f) {
 mat = make_float3(1, 0.2f, 0);
 } else if(p.y >= -0.17f && p.y < -0.095f && _fabs(p.x) < 0.55f) {
@@ -389,16 +280,16 @@ float a = _atan2f(p.z, p.x);
 a = _fmod(a, 0.4f);
 mat = mix(mat, make_float3(1, 0.2f, 0), smoothstep(0.1f, 0.101f, a));
 } else if(p.y >= -0.095f && p.y < 0.12f && _fabs(p.x) < 0.55f) {
-mat = make_float3(2.0f);
+mat = make_float3(2);
 if(m == 1.0f) mat = make_float3(2, 0, 0);
-} else if(p.y > 0.3 && p.y < 0.48 && _fabs(p.x) > 0.5f && _fabs(p.z) < 0.08f) {
-mat = make_float3(2.0f);
-} else if(m == 2.0f && p.y < 0.96f) {
-mat = make_float3(2.0f);
-} else if(m == 3.0f) {
+} else if(p.y > 0.3f && p.y < 0.48f && _fabs(p.x) > 0.5f && _fabs(p.z) < 0.08f) {
+mat = make_float3(2);
+} else if(m == 2 && p.y < 0.96f) {
+mat = make_float3(2);
+} else if(m == 3) {
 p.x = -_fabs(p.x) + 0.15f;
 p.y -= 0.8f;
-mat = mix(make_float3(0.3f, 0.5f, 1.0f), make_float3(0.2f), 1.0f - smoothstep(0.0f, 0.001f, length(make_float2(p.x, p.y)) - 0.02f));
+mat = mix(make_float3(0.3f, 0.5f, 1), make_float3(0.2f), 1 - smoothstep(0.0f, 0.001f, length(make_float2(p.x, p.y)) - 0.02f));
 }
 
 return mat;
@@ -413,23 +304,31 @@ float height = (float)p_Height;
 Y = height - Y;
 
 float2 uv;
-uv.x = -1.0f + 2.0f * (X/width);
-uv.y = -1.0f + 2.0f * (Y/height);
+uv.x = -1 + 2 * (X/width);
+uv.y = -1 + 2 * (Y/height);
 uv.x *= width/height;
+uv.x -= msX * 2;
+uv.y -= msY * 2;
+uv = uv / (SCALE + 0.2f) * 2;
 
 float3 col = make_float3(0.2f, 0.34f, 0.7f);
-float iTime = time * 20 + 3;
-float an = iTime * 0.5f;
+float an = time * 10 + 1.5f;
 
-float3 ro = make_float3(_cosf(an), 0.9f/3.0f, -_sinf(-1.0f)) * 2.5f;
-ro.x *= adjust1 * 2 + 1;
-ro.y *= adjust2 * -2 + 1;
-ro.z *= adjust3 * -2 + 1;
+float3 ro = make_float3(_cosf(an), 0.9f/3, -_sinf(-1)) * 2.5f;
 float3 rd = multi(normalize(make_float3(uv.x, uv.y, 1.97f)), camera(ro, make_float3(0)));
+
+rotate(&ro.x, &ro.z, RotateY * -5);
+rotate(&rd.x, &rd.z, RotateY * -5);
+
+rotate(&ro.x, &ro.y, RotateZ * -2);
+rotate(&rd.x, &rd.y, RotateZ * -2);
+
+rotate(&ro.y, &ro.z, RotateX/2);
+rotate(&rd.y, &rd.z, RotateX/2);
 
 float2 i = march(ro, rd);
 
-if(i.x < 10.0f) {
+if(i.x < 10) {
 float3 pos = ro + rd*i.x;
 float3 nor = normal(pos);
 float3 ref = reflect(rd, nor);
@@ -442,16 +341,16 @@ float amb = _clampf(0.5f + 0.5f * nor.y, 0, 1);
 float gif = _clampf(dot(gli, nor), 0, 1);
 float sif = _clampf(dot(sli, nor), 0, 1);
 float bac = _clampf(0.3f + 0.7f * dot(bli, nor), 0, 1);
-float spe = _powf(_clampf(dot(sli, ref), 0, 1), 8.0f);
-float fre = _powf(_clampf(1 + dot(rd, nor), 0, 1), 2.0f);
+float spe = _powf(_clampf(dot(sli, ref), 0, 1), 8);
+float fre = _powf(_clampf(1 + dot(rd, nor), 0, 1), 2);
 
 float sha = shadow(pos, sli);
 float occ = ao(pos, nor);
 
 col = 0.2f * amb * make_float3(0.2f, 0.34f, 0.7f);
-col = col + (0.3f * gif * make_float3(1.00, 1.00, 1.00) * sha);
-col = col + (0.7f * sif * make_float3(1.00, 0.97, 0.85) * sha);
-col = col + (0.1f * bac * make_float3(1.00, 0.97, 0.85));
+col = col + (0.3f * gif * make_float3(1, 1, 1) * sha);
+col = col + (0.7f * sif * make_float3(1, 0.97f, 0.85f) * sha);
+col = col + (0.1f * bac * make_float3(1, 0.97f, 0.85f));
 
 if(pos.y > -0.99f) {
 col = col * material(pos, i.y);
@@ -465,6 +364,7 @@ col = col + (0.2f * fre * make_float3(1, 1, 1));
 col = col * make_float3(occ);
 }
 col = POW(col, make_float3(0.454545f));
+col = col.x + col.y + col.z < 0.01f ? make_float3(0.48f, 0.6f, 0.85f) : col;
 
 return col;
 }
