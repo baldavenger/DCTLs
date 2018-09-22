@@ -1,0 +1,52 @@
+// Random 48 OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Animate, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(SCALE, Zoom, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(msX, Horizontal, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(msY, Vertical, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(ROTATE, Rotate, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+
+#include "DCTL_Functions.h"
+
+__DEVICE__ float time = 0;
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+float2 resolution = make_float2(width, height);
+float2 XY = make_float2(X, Y);
+time = TIME * 20;
+
+float3 d = normalize( make_float3((XY - resolution * 0.5f) / resolution.x, 0.5f));
+d.x -= msX;
+d.y -= msY;
+rotate(&d.x, &d.y, ROTATE);
+d.x /= (SCALE + 0.1f);
+d.y /= (SCALE + 0.1f);
+
+float3 p, c, f, o;
+float3 g = d;
+float3 y = make_float3(1, 3, 0);
+o.x = 0.3f;
+o.z = time * 10;
+o.y = 1.2f * _cosf(o.x * o.z);
+o.x -= _cosf(time) + 3;
+
+for( float i = 0.0f; i < 8.0f; i += 0.01f ) {
+o = o + (d * i * 0.01f);
+c = o;
+f = fract(c); 
+p = floor(c) * 0.4f;
+if( _cosf(p.z) + _sinf(p.x) > ++p.y ) {
+g = (f.y - 0.04f * _cosf((c.x + c.z) * 10) > 0.7f ? y : f.x * make_float3(y.y, y.x, y.z)) / i;
+break;
+}
+}
+float3 col = g;
+
+return col;
+}
