@@ -61,6 +61,16 @@ __DEVICE__ inline float3 COS( float3 A)
 return make_float3(_cosf(A.x), _cosf(A.y), _cosf(A.z));
 }
 
+__DEVICE__ inline float distance( float2 A, float2 B)
+{
+return _sqrtf(dot(A, B));
+}
+
+__DEVICE__ inline float distance( float3 A, float3 B)
+{
+return _sqrtf(dot(A, B));
+}
+
 __DEVICE__ inline float2 floor( float2 A)
 {
 return make_float2(_floor(A.x), _floor(A.y));
@@ -231,6 +241,14 @@ C.y = _fmod(A.y, B);
 return C;
 }
 
+__DEVICE__ inline float2 MOD( float2 A, float2 B)
+{
+float2 C;
+C.x = _fmod(A.x, B.x);
+C.y = _fmod(A.y, B.y);
+return C;
+}
+
 __DEVICE__ inline float3 MOD( float3 A, float B)
 {
 float3 C;
@@ -322,6 +340,31 @@ C.y = A.x * B.r1.x + A.y * B.r1.y + A.z * B.r1.z;
 C.z = A.x * B.r2.x + A.y * B.r2.y + A.z * B.r2.z;
 return C;
 }
+
+__DEVICE__ inline float4 multi( float4 A, mat4 B)
+{
+float4 C;
+C.x = A.x * B.r0.x + A.y * B.r0.y + A.z * B.r0.z + A.w * B.r0.w;
+C.y = A.x * B.r1.x + A.y * B.r1.y + A.z * B.r1.z + A.w * B.r1.w;
+C.z = A.x * B.r2.x + A.y * B.r2.y + A.z * B.r2.z + A.w * B.r2.w;
+C.w = A.x * B.r3.x + A.y * B.r3.y + A.z * B.r3.z + A.w * B.r3.w;
+return C;
+}
+
+__DEVICE__ inline float4 multi( mat4 B, float4 A)
+{
+float4 C;
+C.x = A.x * B.r0.x + A.y * B.r0.y + A.z * B.r0.z + A.w * B.r0.w;
+C.y = A.x * B.r1.x + A.y * B.r1.y + A.z * B.r1.z + A.w * B.r1.w;
+C.z = A.x * B.r2.x + A.y * B.r2.y + A.z * B.r2.z + A.w * B.r2.w;
+C.w = A.x * B.r3.x + A.y * B.r3.y + A.z * B.r3.z + A.w * B.r3.w;
+return C;
+}
+
+//__DEVICE__ inline float4 multi( mat4 A, float4 B)
+//{
+//return multi(B, A);
+//}
 
 __DEVICE__ inline mat3 multi( mat3 A, mat3 B)
 {

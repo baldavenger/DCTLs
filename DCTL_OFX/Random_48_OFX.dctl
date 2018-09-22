@@ -1,0 +1,96 @@
+// Random 48 OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Animate, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(SCALE, Zoom, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(msX, Horizontal, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(msY, Vertical, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(ROTATEy, RotateY, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+DEFINE_UI_PARAMS(ROTATEz, RotateZ, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+DEFINE_UI_PARAMS(ROTATEx, RotateX, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+
+#include "DCTL_Functions.h"
+
+__DEVICE__ float time = 0;
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+float2 resolution = make_float2(width, height);
+float2 XY = make_float2(X, Y);
+time = TIME * 10;
+
+    float3 d = normalize(make_float3((XY - resolution * 0.5f) / resolution.x, 0.5f));
+	float3 p, c, f, o; 
+	float3 y = make_float3(1, 3, 0);
+	float3 g = d;
+ 	o.y = 1.2f * _cosf((o.x = 0.3f)*(o.z = time * 10));
+	o.x -= _cosf(time) + 3;
+
+    for( float i = 0; i < 8.0f; i += 0.01f ) {
+    c = o + d * i * 0.01f;
+        f = fract(c); 
+	p = floor( c ) * 0.4f;
+        if( _cosf(p.z) + _sinf(p.x) > ++p.y ) {
+	    	g = (f.y - 0.04f * _cosf((c.x + c.z) * 10) > 0.7f ? y : f.x * make_float3(y.y, y.x, y.z)) / i;
+            break;
+        }
+    }
+return g;
+}
+
+/*
+void main( void ) {
+
+     vec3 d = normalize(vec3((gl_FragCoord.xy - resolution.xy * .5) / resolution.x, .5));
+	vec3 p, c, f, g=d, o, y=vec3(1.0,3.0,0.0);
+ 	o.y = 1.2*cos((o.x=0.3)*(o.z=time * 10.0));
+	o.x -= cos(time) + 3.0;
+
+    for( float i=.0; i<8.; i+=.01 ) {
+        f = fract(c = o += d*i*.01); 
+	p = floor( c )*.4;
+        if( cos(p.z) + sin(p.x) > ++p.y ) {
+	    	g = (f.y-.04*cos((c.x+c.z)*10.)>.7?y:f.x*y.yxz) / i;
+            break;
+        }
+    }
+    gl_FragColor = vec4(g,1.0);
+
+
+}
+
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+float2 resolution = make_float2(width, height);
+float2 XY = make_float2(X, Y);
+time = TIME * 10;
+
+float3 RGB = make_float3(0);
+
+float2 uv = XY / resolution - 0.5f;
+uv = uv / (resolution.y / resolution.x);
+uv.x -= msX;
+uv.y -= msY;
+uv = uv / (SCALE + 0.2f);
+
+rotate(&ro.z, &ro.x, ROTATEy);
+rotate(&rd.z, &rd.x, ROTATEy);
+
+rotate(&ro.z, &ro.y, ROTATEz);
+rotate(&rd.z, &rd.y, ROTATEz);
+
+rotate(&ro.y, &ro.x, ROTATEx);
+rotate(&rd.y, &rd.x, ROTATEx);
+
+return RGB;
+}*/

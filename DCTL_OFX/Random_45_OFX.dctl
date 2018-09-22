@@ -1,0 +1,64 @@
+// Random 45 OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Animate, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(SCALE, Zoom, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(msX, Horizontal, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(msY, Vertical, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+
+#include "DCTL_Functions.h"
+
+__DEVICE__ float time = 0;
+
+__DEVICE__ float rand( float2 uv)
+{
+return fract( _sinf( dot( uv, make_float2( 12.235f, 67.532f ) ) ) * 43289.24f );
+}
+
+__DEVICE__ float noise( float2 pos)
+{
+float2 ip = floor( pos );
+float2 fp;
+fp.x = smoothstep(0, 1, fract(pos.x));
+fp.y = smoothstep(0, 1, fract(pos.y));
+float2 a  = make_float2( 
+rand( ip + make_float2( 0, 0 ) ),
+rand( ip + make_float2( 1, 0 ) )
+);
+float2 b  = make_float2(
+rand( ip + make_float2( 0, 1 ) ),
+rand( ip + make_float2( 1, 1 ) )
+);
+a = mix( a, b, fp.y );
+return mix( a.x, a.y, fp.x );
+}
+
+__DEVICE__ float perlin( float2 pos)
+{
+return  ( noise( pos ) * 32 +
+noise( pos * 2) * 16 +
+noise( pos * 4) * 8 +
+noise( pos * 8) * 4 +
+noise( pos * 16) * 2 +
+noise( pos * 32)) / 63;
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+float2 resolution = make_float2(width, height);
+float2 XY = make_float2(X, Y);
+time = TIME * 30;
+
+float2 uv = ( XY / resolution );
+uv.x -= msX;
+uv.y -= msY;
+uv = (uv - 0.5f) / (SCALE + 0.1f) + 0.5f;
+
+float cloud = perlin( uv + make_float2( 0, time ) );
+
+return make_float3(cloud);
+}

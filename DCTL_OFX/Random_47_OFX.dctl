@@ -1,0 +1,83 @@
+// Random 47 OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Animate, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(SCALE, Zoom, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(msX, Horizontal, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(msY, Vertical, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(ROTATE, Rotate, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+
+#include "DCTL_Functions.h"
+
+__DEVICE__ float time = 0;
+
+#define scatterCoeff	make_float3(0.25f, 0.5f, 0.9f)
+
+__DEVICE__ float map( float3 p)
+{
+float scene = p.y + 0.5f;
+scene = length(fract(p) - 0.5f) - 0.2f;
+return _fmaxf(scene, 0);	
+}
+
+__DEVICE__ float rayMarch( float3 direction)
+{
+const int steps = 256;
+
+float3 position = direction;
+float t = 0;
+
+for (int i = 0; i < steps; i++){
+float3 p = make_float3(0, 0, time * 0.5f) + position * t;
+float d = map(p);
+if (d < 0.0005f || t > 1000) break;
+t += d * 0.5f;
+}
+return t;
+}
+
+__DEVICE__ float3 generateNormals( float3 pos)
+{
+const float delta = 0.000001f;
+
+float3 px = pos + make_float3(delta, 0, 0);
+float3 py = pos + make_float3(0, delta, 0);
+float3 pz = pos + make_float3(0, 0, delta);
+
+float d0 = rayMarch(pos);
+float dx = rayMarch(px);
+float dy = rayMarch(py);
+float dz = rayMarch(pz);
+
+float fx = (d0 - dx) / delta;
+float fy = (d0 - dy) / delta;
+float fz = (d0 - dz) / delta;
+
+return normalize(make_float3(fx, -fy, fz));
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+float2 resolution = make_float2(width, height);
+float2 XY = make_float2(X, Y);
+time = TIME * 10;
+
+float2 uv = XY / resolution * 2 - 1;
+uv.x -= msX;
+uv.y -= msY;
+rotate(&uv.x, &uv.y, ROTATE);
+uv = uv / (SCALE + 0.2f);
+float3 worldPosition = make_float3(uv, 1);
+
+float fog = rayMarch(worldPosition);
+float3 normals = generateNormals(worldPosition);
+
+float3 color = make_float3(1) - _exp2f(-fog * 0.1f);
+color = color * (worldPosition + normals);
+
+return color;
+}

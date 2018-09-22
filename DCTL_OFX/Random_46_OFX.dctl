@@ -1,0 +1,193 @@
+// Random 46 OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Animate, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(SCALE, Zoom, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(msX, Horizontal, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(msY, Vertical, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(ROTATE, Rotate, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(GAIN, Gain, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+
+#include "DCTL_Functions.h"
+
+__DEVICE__ float time = 0;
+__DEVICE__ float2 CHAR_SIZE = {6, 12};
+__DEVICE__ float2 CHAR_SPACING = {6, 10};
+__DEVICE__ float2 start_pos = {0, 0};
+__DEVICE__ float2 print_pos = {0, 0};
+__DEVICE__ float2 print_pos_pre_move = {0, 0};
+__DEVICE__ float3 text_color = {1, 1, 1};
+
+#define DOWN_SCALE 10.25f
+
+//Text coloring
+#define HEX(i) text_color = MOD(make_float3(i / 65536, i / 256, i), make_float3(256)) / 255;
+#define RGB(r, g, b) text_color = make_float3(r, g, b);
+
+#define STRWIDTH(c) (c * CHAR_SPACING.x)
+#define STRHEIGHT(c) (c * CHAR_SPACING.y)
+#define BEGIN_TEXT(x, y) print_pos = floor(make_float2(x, y)); start_pos = floor(make_float2(x, y));
+
+#define SPACE	uv.x -= CHAR_SPACING.x;
+#define _ col = col + CHAR(make_float2(0), uv); SPACE
+#define _spc col = col + CHAR(make_float2(0), uv) * text_color; SPACE
+#define _exc col = col + CHAR(make_float2(276705, 32776), uv) * text_color; SPACE
+#define _quo col = col + CHAR(make_float2(1797408, 0), uv) * text_color; SPACE
+#define _hsh col = col + CHAR(make_float2(10738, 1134484), uv) * text_color; SPACE
+#define _dol col = col + CHAR(make_float2(538883, 19976), uv) * text_color; SPACE
+#define _pct col = col + CHAR(make_float2(1664033, 68006), uv) * text_color; SPACE
+#define _amp col = col + CHAR(make_float2(545090, 174362), uv) * text_color; SPACE
+#define _apo col = col + CHAR(make_float2(798848, 0), uv) * text_color; SPACE
+#define _lbr col = col + CHAR(make_float2(270466, 66568), uv) * text_color; SPACE
+#define _rbr col = col + CHAR(make_float2(528449, 33296), uv) * text_color; SPACE
+#define _ast col = col + CHAR(make_float2(10471, 1688832), uv) * text_color; SPACE
+#define _crs col = col + CHAR(make_float2(4167, 1606144), uv) * text_color; SPACE
+#define _per col = col + CHAR(make_float2(0, 1560), uv) * text_color; SPACE
+#define _dsh col = col + CHAR(make_float2(7, 1572864), uv) * text_color; SPACE
+#define _com col = col + CHAR(make_float2(0, 1544), uv) * text_color; SPACE
+#define _lsl col = col + CHAR(make_float2(1057, 67584), uv) * text_color; SPACE
+#define _0 col = col + CHAR(make_float2(935221, 731292), uv) * text_color; SPACE
+#define _1 col = col + CHAR(make_float2(274497, 33308), uv) * text_color; SPACE
+#define _2 col = col + CHAR(make_float2(934929, 1116222), uv) * text_color; SPACE
+#define _3 col = col + CHAR(make_float2(934931, 1058972), uv) * text_color; SPACE
+#define _4 col = col + CHAR(make_float2(137380, 1302788), uv) * text_color; SPACE
+#define _5 col = col + CHAR(make_float2(2048263, 1058972), uv) * text_color; SPACE
+#define _6 col = col + CHAR(make_float2(401671, 1190044), uv) * text_color; SPACE
+#define _7 col = col + CHAR(make_float2(2032673, 66576), uv) * text_color; SPACE
+#define _8 col = col + CHAR(make_float2(935187, 1190044), uv) * text_color; SPACE
+#define _9 col = col + CHAR(make_float2(935187, 1581336), uv) * text_color; SPACE
+#define _col col = col + CHAR(make_float2(195, 1560), uv) * text_color; SPACE
+#define _scl col = col + CHAR(make_float2(195, 1544), uv) * text_color; SPACE
+#define _les col = col + CHAR(make_float2(135300, 66052), uv) * text_color; SPACE
+#define _equ col = col + CHAR(make_float2(496, 3968), uv) * text_color; SPACE
+#define _grt col = col + CHAR(make_float2(528416, 541200), uv) * text_color; SPACE
+#define _que col = col + CHAR(make_float2(934929, 1081352), uv) * text_color; SPACE
+#define _ats col = col + CHAR(make_float2(935285, 714780), uv) * text_color; SPACE
+#define _A col = col + CHAR(make_float2(935188, 780450), uv) * text_color; SPACE
+#define _B col = col + CHAR(make_float2(1983767, 1190076), uv) * text_color; SPACE
+#define _C col = col + CHAR(make_float2(935172, 133276), uv) * text_color; SPACE
+#define _D col = col + CHAR(make_float2(1983764, 665788), uv) * text_color; SPACE
+#define _E col = col + CHAR(make_float2(2048263, 1181758), uv) * text_color; SPACE
+#define _F col = col + CHAR(make_float2(2048263, 1181728), uv) * text_color; SPACE
+#define _G col = col + CHAR(make_float2(935173, 1714334), uv) * text_color; SPACE
+#define _H col = col + CHAR(make_float2(1131799, 1714338), uv) * text_color; SPACE
+#define _I col = col + CHAR(make_float2(921665, 33308), uv) * text_color; SPACE
+#define _J col = col + CHAR(make_float2(66576, 665756), uv) * text_color; SPACE
+#define _K col = col + CHAR(make_float2(1132870, 166178), uv) * text_color; SPACE
+#define _L col = col + CHAR(make_float2(1065220, 133182), uv) * text_color; SPACE
+#define _M col = col + CHAR(make_float2(1142100, 665762), uv) * text_color; SPACE
+#define _N col = col + CHAR(make_float2(1140052, 1714338), uv) * text_color; SPACE
+#define _O col = col + CHAR(make_float2(935188, 665756), uv) * text_color; SPACE
+#define _P col = col + CHAR(make_float2(1983767, 1181728), uv) * text_color; SPACE
+#define _Q col = col + CHAR(make_float2(935188, 698650), uv) * text_color; SPACE
+#define _R col = col + CHAR(make_float2(1983767, 1198242), uv) * text_color; SPACE
+#define _S col = col + CHAR(make_float2(935171, 1058972), uv) * text_color; SPACE
+#define _T col = col + CHAR(make_float2(2035777, 33288), uv) * text_color; SPACE
+#define _U col = col + CHAR(make_float2(1131796, 665756), uv) * text_color; SPACE
+#define _V col = col + CHAR(make_float2(1131796, 664840), uv) * text_color; SPACE
+#define _W col = col + CHAR(make_float2(1131861, 699028), uv) * text_color; SPACE
+#define _X col = col + CHAR(make_float2(1131681, 84130), uv) * text_color; SPACE
+#define _Y col = col + CHAR(make_float2(1131794, 1081864), uv) * text_color; SPACE
+#define _Z col = col + CHAR(make_float2(1968194, 133180), uv) * text_color; SPACE
+#define _lsb col = col + CHAR(make_float2(925826, 66588), uv) * text_color; SPACE
+#define _rsl col = col + CHAR(make_float2(16513, 16512), uv) * text_color; SPACE
+#define _rsb col = col + CHAR(make_float2(919584, 1065244), uv) * text_color; SPACE
+#define _pow col = col + CHAR(make_float2(272656, 0), uv) * text_color; SPACE
+#define _usc col = col + CHAR(make_float2(0, 62), uv) * text_color; SPACE
+#define _a col = col + CHAR(make_float2(224, 649374), uv) * text_color; SPACE
+#define _b col = col + CHAR(make_float2(1065444, 665788), uv) * text_color; SPACE
+#define _c col = col + CHAR(make_float2(228, 657564), uv) * text_color; SPACE
+#define _d col = col + CHAR(make_float2(66804, 665758), uv) * text_color; SPACE
+#define _e col = col + CHAR(make_float2(228, 772124), uv) * text_color; SPACE
+#define _f col = col + CHAR(make_float2(401543, 1115152), uv) * text_color; SPACE
+#define _g col = col + CHAR(make_float2(244, 665474), uv) * text_color; SPACE
+#define _h col = col + CHAR(make_float2(1065444, 665762), uv) * text_color; SPACE
+#define _i col = col + CHAR(make_float2(262209, 33292), uv) * text_color; SPACE
+#define _j col = col + CHAR(make_float2(131168, 1066252), uv) * text_color; SPACE
+#define _k col = col + CHAR(make_float2(1065253, 199204), uv) * text_color; SPACE
+#define _l col = col + CHAR(make_float2(266305, 33292), uv) * text_color; SPACE
+#define _m col = col + CHAR(make_float2(421, 698530), uv) * text_color; SPACE
+#define _n col = col + CHAR(make_float2(452, 1198372), uv) * text_color; SPACE
+#define _o col = col + CHAR(make_float2(228, 665756), uv) * text_color; SPACE
+#define _p col = col + CHAR(make_float2(484, 667424), uv) * text_color; SPACE
+#define _q col = col + CHAR(make_float2(244, 665474), uv) * text_color; SPACE
+#define _r col = col + CHAR(make_float2(354, 590904), uv) * text_color; SPACE
+#define _s col = col + CHAR(make_float2(228, 114844), uv) * text_color; SPACE
+#define _t col = col + CHAR(make_float2(8674, 66824), uv) * text_color; SPACE
+#define _u col = col + CHAR(make_float2(292, 1198868), uv) * text_color; SPACE
+#define _v col = col + CHAR(make_float2(276, 664840), uv) * text_color; SPACE
+#define _w col = col + CHAR(make_float2(276, 700308), uv) * text_color; SPACE
+#define _x col = col + CHAR(make_float2(292, 1149220), uv) * text_color; SPACE
+#define _y col = col + CHAR(make_float2(292, 1163824), uv) * text_color; SPACE
+#define _z col = col + CHAR(make_float2(480, 1148988), uv) * text_color; SPACE
+#define _lpa col = col + CHAR(make_float2(401542, 66572), uv) * text_color; SPACE
+#define _bar col = col + CHAR(make_float2(266304, 33288), uv) * text_color; SPACE
+#define _rpa col = col + CHAR(make_float2(788512, 1589528), uv) * text_color; SPACE
+#define _tid col = col + CHAR(make_float2(675840, 0), uv) * text_color; SPACE
+#define _lar col = col + CHAR(make_float2(8387, 1147904), uv) * text_color; SPACE
+#define _nl uv = UV; print_pos = start_pos - make_float2(0, CHAR_SPACING.y);
+
+__DEVICE__ float extract_bit( float n, float b)
+{
+b = _clampf(b, -1, 22);
+return _floor(_fmod(_floor(n / _powf(2, _floor(b))), 2));  
+}
+
+__DEVICE__ float sprite( float2 spr, float2 size, float2 uv)
+{
+uv = floor(uv);
+float bit = (size.x - uv.x - 1) + uv.y * size.x;  
+bool bounds = uv.x >= 0 && uv.y >= 0 && uv.x < size.x && uv.y < size.y;
+return bounds ? extract_bit(spr.x, bit - 21) + extract_bit(spr.y, bit) : 0;
+}
+
+__DEVICE__ float3 CHAR( float2 ch, float2 uv)
+{
+float px = sprite(ch, CHAR_SIZE, uv - print_pos);
+return make_float3(px);
+}
+
+__DEVICE__ float3 Text( float2 uv, float2 res)
+{
+float2 UV = uv;
+float3 col = make_float3(0);
+float3 c = 0.5f + 0.5f * SIN(time * 12 + uv.x * (PI + make_float3(0.2f, 0.5f, 0)));
+text_color = c;
+float2 center_pos = make_float2((res.y/5) - STRWIDTH(1.0f), (res.y/1.5f) - STRHEIGHT(2.0f)/2.0f );
+
+BEGIN_TEXT(center_pos.x, center_pos.y) RGB(c.x, c.y, c.z)
+_spc _B _a _l _d _a _v _e _n _g _e _r _per _o _r _g
+_nl _spc _P _l _u _g _i _n _s _ _lar _ _D _C _T _L _s
+uv = UV;
+BEGIN_TEXT(center_pos.x, center_pos.y - _fabs(_sinf(time * 3) * 12)) HEX(0xFFFFF) _ast
+
+return col;
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+float2 resolution = make_float2(width, height);
+float2 XY = make_float2(X, Y);
+time = TIME * 10;
+
+float2 res = resolution / DOWN_SCALE;
+float2 uv = XY / DOWN_SCALE;
+float2 duv = uv;
+duv = duv - 0.5f*res;
+rotate(&duv.x, &duv.y, ROTATE * 10);
+duv = duv / (SCALE + 0.1f);
+duv = duv + 0.5f*res;
+duv.x -= msX * 100;
+duv.y -= msY * 40;
+//duv = (duv - 0.5f*res) / (SCALE + 0.1f) + 0.5f* res;
+duv = duv - 5;
+float3 pixel = Text(duv, res) * GAIN;
+float3 col = pixel * 0.9f + 0.1f;
+col = col * (1 - distance(MOD(uv, 1), make_float2(0.65f))) * 2;
+
+return col;
+}
