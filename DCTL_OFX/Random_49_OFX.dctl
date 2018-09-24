@@ -1,0 +1,82 @@
+// Random 44 OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Animate, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(SCALE, Zoom, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(msX, Horizontal, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(msY, Vertical, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(ROTATEy, RotateY, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+DEFINE_UI_PARAMS(ROTATEz, RotateZ, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+DEFINE_UI_PARAMS(ROTATEx, RotateX, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+
+#include "DCTL_Functions.h"
+
+__DEVICE__ float time = 0;
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+float2 resolution = make_float2(width, height);
+float2 XY = make_float2(X, Y);
+time = TIME * 10;
+
+float t, r, c, d, e = 0.005f, p;
+float3 z, w, o, f;
+float2 U = XY;
+U.x -= msX * width;
+U.y -= msY * height;
+U = U - resolution/2;
+U = U / (SCALE + 0.1f);
+U = U + resolution/2;
+float3 O = make_float3(0);
+z = make_float3(resolution.x, resolution.y, 0);
+o = z - z;
+
+w = make_float3((U - make_float2(z.x, z.y) * 0.5f) / z.y, 1);
+o.z = _cosf(r);
+o.x = _sinf(r);
+o = o / -0.4f;
+t = time * 0.5f;
+rotate(&w.x, &w.z, ROTATEy + t);
+rotate(&o.x, &o.z, ROTATEy + t);
+rotate(&w.x, &w.y, ROTATEz + t);
+rotate(&o.x, &o.y, ROTATEz + t);
+rotate(&w.y, &w.z, ROTATEx - t);
+rotate(&o.y, &o.z, ROTATEx - t);
+
+for (int i = 0; i < 90; i++){
+d = 2; z = o;
+for (int i = 0; i < 10; i++){
+r = length(z);
+p = _powf(r, 8);
+if (r < 4)
+d = p / r * 8 * d + 2,
+r = 8 * _acosf(z.z / r),
+f.x = _cosf(r), f.y = _sinf(r),
+r = 8 * _atan2f(z.y, z.x),
+z = p * make_float3(_cosf(r) * f.y, _sinf(r) * f.y, f.x ) + o;
+}
+r = r * _logf(r) / d;
+c = r;
+o = c > e ? o + c * w : o;
+}
+o.x += e;
+d = 2; z = o;
+for (int i = 0; i < 10; i++){
+r = length(z);
+p = _powf(r, 8);
+if (r < 4)
+d = p / r * 8 * d + 2,
+r = 8 * _acosf(z.z / r),
+f.x = _cosf(r), f.y = _sinf(r),
+r = 8 * _atan2f(z.y, z.x),
+z = p * make_float3(_cosf(r) * f.y, _sinf(r) * f.y, f.x ) + o;
+}
+r = r * _logf(r) / d;
+O = O + O + 2 * _fabs( c - r ) / e ;
+
+return O;
+}

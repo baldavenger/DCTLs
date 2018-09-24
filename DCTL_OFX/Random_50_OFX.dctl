@@ -1,0 +1,55 @@
+// Random 50 OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Animate, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(SCALE, Zoom, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(msX, Horizontal, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(msY, Vertical, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(ROTATE, RotateY, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+
+#include "DCTL_Functions.h"
+
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+float2 resolution = make_float2(width, height);
+float2 XY = make_float2(X, Y);
+float time = TIME * 30;
+
+float2 uv = 3.6f * (2 * XY - resolution) / resolution.y;
+uv.x -= msX * 4;
+uv.y -= msY * 4;
+rotate(&uv.x, &uv.y, ROTATE);
+uv = uv / (SCALE + 0.1f);
+float3 color = make_float3(0);
+if (uv.y < 0)
+{ 
+uv.y *= 4;
+color = make_float3(-0.3f);
+}
+float3 rd = make_float3(uv, 1);
+
+float s = 0.5f;
+for (int i = 0; i < 8; i++) {
+rd = ABS(rd) / dot(rd, rd);
+rd = rd - s;
+rotate(&rd.x, &rd.y, 0.1f + time * 0.11f);
+rotate(&rd.x, &rd.z, 0.2f - time * 0.123f);
+rotate(&rd.z, &rd.y, 0.3f + time * 0.131f);
+s *= 0.8f;
+float b = 0.005f;
+color.y += 0.014f / _fmaxf(_fabs(rd.x * 0.8f), _fabs(rd.y * 0.8f));
+color.z += 0.014f / _fmaxf(_fabs(rd.x * 0.8f), _fabs(rd.y * 0.8f));
+color.z += 0.015f / _fmaxf(_fabs(rd.y * 0.6f), _fabs(rd.z * 0.6f));
+color.x += 0.015f / _fmaxf(_fabs(rd.y * 0.6f), _fabs(rd.z * 0.6f));
+color.x += 0.01f / _fmaxf(_fabs(rd.x * 0.7f), _fabs(rd.z * 0.9f));
+color.y += 0.01f / _fmaxf(_fabs(rd.x * 0.7f), _fabs(rd.z * 0.9f));
+}
+color = color * 0.4f;
+
+return color;
+}

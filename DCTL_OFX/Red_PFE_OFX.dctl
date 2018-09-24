@@ -1,4 +1,4 @@
-// Arri LogC Print Film Emulation OFX DCTL
+// REDWideGamutRGB Log3G10 Print Film Emulation OFX DCTL
 // Requires ACES_DCTL set
 
 DEFINE_UI_PARAMS(Exposure, Exposure, DCTLUI_SLIDER_FLOAT, 0, -3, 3, 0.001)
@@ -26,9 +26,18 @@ out.z = peak / (1.0f + _powf(e, (-8.9f * curve) * (In.z - pivot))) + offset;
 return out;
 }
 
-__DEVICE__ float linLogc(float linVal)
+__DEVICE__ float log3G10( float x)
 {
-return linVal > 0.010591f ? 0.247190f * _log10f(5.555556f * linVal + 0.052272f) + 0.385537f : 5.367655f * linVal + 0.092809f;
+const float a = 0.224282f;
+const float b = 155.975327f;
+const float c = 0.01f;
+const float g = 15.1927f;
+x = x + c;
+if (x < 0) {
+return x*g;
+}
+float output = a * _log10f((x * b) + 1);
+return output;
 }
 
 __DEVICE__ float Sat_Soft_Clip( float S, float softclip)
@@ -41,7 +50,7 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p
 { 
 
 float3 aces = make_float3(p_R, p_G, p_B);
-aces = IDT_Alexa_v3_logC_EI800(aces);
+aces = IDT_REDWideGamutRGB_Log3G10(aces);
 
 float Saturation = Sat;
 
@@ -71,11 +80,11 @@ RGB.x = aces.x * AP0_Rec709[0] + aces.y * AP0_Rec709[1] + aces.z * AP0_Rec709[2]
 RGB.y = aces.x * AP0_Rec709[3] + aces.y * AP0_Rec709[4] + aces.z * AP0_Rec709[5]; 
 RGB.z = aces.x * AP0_Rec709[6] + aces.y * AP0_Rec709[7] + aces.z * AP0_Rec709[8];
 
-RGB.x = linLogc(RGB.x);
-RGB.y = linLogc(RGB.y);
-RGB.z = linLogc(RGB.z);
+RGB.x = log3G10(RGB.x);
+RGB.y = log3G10(RGB.y);
+RGB.z = log3G10(RGB.z);
 
-RGB = Sigmoid( RGB, peak, curve, pivot, offset);
+RGB = Sigmoid( RGB, peak * 1.2f, curve, pivot, offset);
 
 if (softClip > 0){
 RGB = rgb_2_ych(RGB);

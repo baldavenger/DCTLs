@@ -1,0 +1,81 @@
+// Fractal Zoom OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Zoom, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(msX, Horizontal, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(msY, Vertical, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(ROTATE, Rotate, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+DEFINE_UI_PARAMS(aa, AA, DCTLUI_SLIDER_INT, 2, 1, 5, 1)
+
+#include "DCTL_Functions.h"
+
+__DEVICE__ float time = 0;
+
+#define start	 	0.78f
+#define end		 	0.65f
+#define maxiters 	400
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float X = (float)p_X + 1;
+float Y = (float)p_Y + 1;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+float2 resolution = make_float2(width, height);
+float2 XY = make_float2(X, Y);
+time = TIME * 20;
+int AA = aa + 1;
+float speed = 0.1f;
+ 
+float2 offset = make_float2(0);;
+float3 col = make_float3(0);
+float t = (time * speed) + 2;
+float2 p = make_float2(0);
+
+for( int m=0; m<AA; m++ )
+for( int n=0; n<AA; n++ )
+{
+p.x = (-resolution.x + 2 * (X + m / AA)) / resolution.y;
+p.y = (-resolution.y + 2 * (Y + n / AA)) / resolution.y;
+float w = AA * m + n;
+time = t + 0.5f * (1.0f / 24.0f) * w / float(AA*AA);
+}
+p.x -= msX * 2;
+p.y -= msY * 2;
+rotate(&p.x, &p.y, ROTATE);
+float zoo = start + end * _cosf(0.509f * time);
+float coa = _cosf( 0.0055f * (1 - zoo) * time );
+float sia = _sinf( 0.0055f * (1 - zoo) * time );
+zoo = _powf(zoo, 8);
+float2 xy = make_float2(p.x * coa - p.y * sia, p.x * sia + p.y * coa);
+float clickX = 0;
+float clickY = 0;
+
+if (offset.x != 0) clickX = offset.x * -0.015f * zoo;
+if (offset.y != 0) clickY = offset.y * -0.015f * zoo;
+
+float2 c = make_float2(-0.745f + clickX, 0.186f + clickY);
+c.x += xy.x * zoo;
+c.y += xy.y * zoo;
+
+const float B = 256;
+float l = 0;
+float2 z  = make_float2(0);
+for( int i = 0; i < maxiters; i++ )
+{
+z = make_float2( z.x * z.x - z.y * z.y, 2 * z.x * z.y ) + c;
+if( dot(z, z) > (B * B)){ break; }
+if ( l == 1.1f ){ l = z.x + z.y; }
+l += 1;
+}
+
+float sl = l - _log2f(_log2f(dot(z, z))) + 4; 
+float al = 1.1f;
+l = mix( l, sl, al );
+
+col.x += 0.5f + 0.5f * _cosf( 3 + l * 0.15f + 0.0f);
+col.y += 0.5f + 0.5f * _cosf( 3 + l * 0.15f + 0.6f);
+col.z += 0.5f + 0.5f * _cosf( 3 + l * 0.15f + 1);
+
+return col;
+}
