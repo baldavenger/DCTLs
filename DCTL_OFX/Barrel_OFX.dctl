@@ -1,0 +1,36 @@
+// Barrel Distortion OFX DCTL
+
+DEFINE_UI_PARAMS(DISTORT, Barrel Distortion, DCTLUI_SLIDER_INT, 15, 1, 30, 1)
+
+#include "DCTL_Functions.h"
+
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+float2 resolution = make_float2(width, height);
+float2 XY = make_float2(X, Y);
+
+float2 TexCoord = XY / resolution;
+float2 tex0 = TexCoord;
+float distortion = DISTORT * 0.025f;
+float rescale = 1 - (0.25f * distortion);
+
+float2 texcoord = tex0 - 0.5f;
+float rsq = texcoord.x * texcoord.x + texcoord.y * texcoord.y;
+texcoord = texcoord + texcoord * distortion * rsq;
+texcoord = texcoord * rescale;
+
+if (_fabs(texcoord.x) > 0.5f || _fabs(texcoord.y) > 0.5f)
+return make_float3(0);
+else
+{
+texcoord = texcoord + 0.5f;
+texcoord = texcoord * resolution;
+float3 col = make_float3(_tex2D(p_TexR, texcoord.x, texcoord.y), _tex2D(p_TexG, texcoord.x, texcoord.y), _tex2D(p_TexB, texcoord.x, texcoord.y));
+return col;
+}
+}

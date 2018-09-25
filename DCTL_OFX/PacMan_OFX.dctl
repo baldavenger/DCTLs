@@ -1,0 +1,39 @@
+// PacMan OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Animate, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(SCALE, Zoom, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(msX, Horizontal, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(msY, Vertical, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(ROTATE, RotateY, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+
+#include "DCTL_Functions.h"
+
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+//Y = height - Y;
+float2 resolution = make_float2(width, height);
+float2 XY = make_float2(X, Y);
+float t = TIME * 4;
+
+float2 f = XY / resolution;
+f.y -= 0.281f;
+f.x -= msX;
+f.y += msY;
+rotate(&f.x, &f.y, ROTATE);
+f = f / (SCALE + 0.1f);
+
+float2 p;
+p.x = f.x - _fmod(t / 2, 1.4f) - 0.2f;
+p.y = f.y;
+float C1 = length(p) < 0.16f 
+&& length(p - make_float2(0, -0.08f)) > 0.025f 
+&& _fabs(_atan2f(p.y, p.x)) > _fabs(_cosf(t * 10)) * 0.8f 
+|| length(make_float2(_fmod(f.x, 0.125f) - 0.062f, f.y)) < 0.018f && p.x > 0 ? 1 : 0;
+
+return make_float3(C1, C1, 0.2f);
+}
