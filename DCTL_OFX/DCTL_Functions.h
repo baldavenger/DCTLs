@@ -61,6 +61,11 @@ __DEVICE__ inline float3 COS( float3 A)
 return make_float3(_cosf(A.x), _cosf(A.y), _cosf(A.z));
 }
 
+__DEVICE__ inline float4 COS( float4 A)
+{
+return make_float4(_cosf(A.x), _cosf(A.y), _cosf(A.z), _cosf(A.w));
+}
+
 __DEVICE__ inline float distance( float2 A, float2 B)
 {
 return _sqrtf(dot(A, B));
@@ -116,6 +121,11 @@ return B;
 __DEVICE__ inline float3 LOG( float3 A)
 {
 return make_float3(_logf(A.x), _logf(A.y), _logf(A.z));
+}
+
+__DEVICE__ inline float4 Make_float4( float A, float3 B)
+{
+return make_float4(A, B.x, B.y, B.z);
 }
 
 __DEVICE__ inline mat2 make_mat2( float A1, float A2, float B1, float B2)
@@ -230,6 +240,16 @@ float3 out;
 out.x = _fminf(in.x, Max.x);
 out.y = _fminf(in.y, Max.y);
 out.z = _fminf(in.z, Max.z);
+return out;
+}
+
+__DEVICE__ inline float4 MIN( float4 in, float4 Max)
+{
+float4 out;
+out.x = _fminf(in.x, Max.x);
+out.y = _fminf(in.y, Max.y);
+out.z = _fminf(in.z, Max.z);
+out.w = _fminf(in.w, Max.w);
 return out;
 }
 
