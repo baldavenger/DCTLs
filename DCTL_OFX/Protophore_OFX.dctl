@@ -1,0 +1,258 @@
+// Protophore OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Animate, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(SCALE, Zoom, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(msX, Horizontal, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(msY, Vertical, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(ROTATEy, RotateY, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+DEFINE_UI_PARAMS(ROTATEz, RotateZ, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+DEFINE_UI_PARAMS(ROTATEx, RotateX, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+DEFINE_UI_PARAMS(RECUR, Recursive Levels, DCTLUI_SLIDER_INT, 4, 1, 6, 1)
+DEFINE_UI_PARAMS(SPLIT, Split Animation, DCTLUI_CHECK_BOX, 1)
+
+#include "DCTL_Functions.h"
+
+__DEVICE__ float time = 0;
+__DEVICE__ bool SPLIT_ANIM = 0;
+__DEVICE__ int RECURSION_LEVELS = 0;
+
+#define RETRACT 			1 
+#define INNER 				0.333f
+#define OUTNESS 			1.414f
+
+__DEVICE__ float3 GetEnvColor2(float3 rayDir, float3 sunDir)
+{
+float3 final = make_float3(1) * dot(rayDir * -1, sunDir) * 0.5f + 0.5f;
+final = final * 0.125f;
+
+if ((rayDir.y > _fabs(rayDir.x) * 1.0f) && (rayDir.y > _fabs(rayDir.z * 0.25f))) final = make_float3(2) *  rayDir.y;
+float roundBox = length(MAX(ABS(make_float2(rayDir.x, rayDir.z) / _fmaxf(0, rayDir.y)) - make_float2(0.9f, 4), 0)) - 0.1f;
+final = final + make_float3(0.8f, 0.8f, 0.8f) * _powf(_saturatef(1 - roundBox * 0.5f), 6);
+final = final + make_float3(8, 6, 7) * _saturatef(0.001f / (1 - _fabs(rayDir.x)));
+final = final + make_float3(8, 7, 6) * _saturatef(0.001f / (1 - _fabs(rayDir.z)));
+return final;
+}
+
+__DEVICE__ float smin( float a, float b, float k )
+{
+float h = _saturatef( 0.5f + 0.5f * (b - a) / k);
+return mix( b, a, h ) - k * h * (1.0f - h);
+}
+
+__DEVICE__ float2 matMin( float2 a, float2 b)
+{
+if (a.x < b.x) return a;
+else return b;
+}
+
+__DEVICE__ float2 sphereIter( float3 p, float radius, float subA, float teeth, float globalTeeth, float spinTime)
+{
+float finWidth = 0.1f;
+teeth = globalTeeth;
+
+float3 diagN = normalize(make_float3(-1));
+float blender = 0.25f * RETRACT;
+float2 final = make_float2(1000000, 0);
+for (int i = 0; i < RECURSION_LEVELS; i++)
+{
+if(SPLIT_ANIM)
+rotate(&p.x, &p.z, spinTime * sign(p.y) * 0.05f / blender);
+float d = length(p) - radius * OUTNESS;
+if(SPLIT_ANIM)
+d = _fmaxf(d, -(_fmaxf(length(p) - radius * OUTNESS + 0.1f, _fabs(p.y) - finWidth * 0.25f)));
+
+float3 corners = ABS(p) + diagN * radius;
+float lenCorners = length(corners);
+float subtracter = lenCorners - radius * subA;
+
+float3 ap = ABS(p * -1) * 0.7071f;	// 1/sqrt(2) to keep distance field normalized
+
+subtracter = _fmaxf(subtracter, -(_fabs(ap.x - ap.y) - finWidth));
+subtracter = _fmaxf(subtracter, -(_fabs(ap.y - ap.z) - finWidth));
+subtracter = _fmaxf(subtracter, -(_fabs(ap.z - ap.x) - finWidth));
+subtracter = _fminf(subtracter, lenCorners - radius * subA + teeth);
+
+d = -smin(-d, subtracter, blender);
+final = matMin(final, make_float2(d, (float)i));
+
+if(SPLIT_ANIM)
+rotate(&corners.x, &corners.z, spinTime * 0.25f / blender);
+p = make_float3(corners.x, corners.z, -corners.y);
+radius *= INNER;
+teeth *= INNER;
+finWidth *= INNER;
+blender *= INNER;
+}
+
+float d = length(p) - radius * OUTNESS;
+final = matMin(final, make_float2(d, 6));
+return final;
+}
+
+__DEVICE__ float2 DistanceToObject( float3 p, float cut, float teeth, float globalTeeth, float spinTime)
+{
+float2 distMat = sphereIter(p, 5.2f / OUTNESS, cut, teeth, globalTeeth, spinTime);
+return distMat;
+}
+
+__DEVICE__ float SphereIntersect( float3 pos, float3 dirVecPLZNormalizeMeFirst, float3 spherePos, float rad)
+{
+float3 radialVec = pos - spherePos;
+float b = dot(radialVec, dirVecPLZNormalizeMeFirst);
+float c = dot(radialVec, radialVec) - rad * rad;
+float h = b * b - c;
+if (h < 0) return -1;
+return -b - _sqrtf(h);
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+float2 resolution = make_float2(width, height);
+float2 XY = make_float2(X, Y);
+time = TIME * 15 + 2;
+SPLIT_ANIM = SPLIT;
+RECURSION_LEVELS = RECUR;
+
+float2 uv = (XY / resolution) * 2 - 1;;
+uv = uv / 1.7f;
+uv = uv / (SCALE + 0.1f);
+uv.x -= msX;
+uv.y -= msY;
+
+float localTime = 0;
+if(SPLIT_ANIM) localTime = time * 0.2f;
+float cut = 0.77f;
+float teeth = 1;
+float globalTeeth = 1;
+
+float3 camPos = make_float3(0);
+float3 camLookat = make_float3(0);
+float3 camUp = make_float3(0, 1.0f, 0);
+
+float mx = 1 / resolution.x * PI * 2 - 0.7f + localTime * PI * 0.0625f * 0.666f;
+float my = -1 / resolution.y * 10 - _sinf(localTime * 0.31f) * 0.5f;
+camPos = camPos + make_float3(_cosf(my) * _cosf(mx), _sinf(my), _cosf(my) * _sinf(mx)) * 12.2f;
+
+float3 camVec = normalize(camLookat - camPos);
+float3 sideNorm = normalize(cross(camUp, camVec));
+float3 upNorm = cross(camVec, sideNorm);
+float3 worldFacing = camPos + camVec;
+float3 worldPix = worldFacing + sideNorm * uv.x * (resolution.x / resolution.y) + uv.y * upNorm;
+float3 rayVec = normalize(worldPix - camPos);
+
+localTime = time * 0.5f;
+
+float rampStep = _fminf(3, _fmaxf(1, _fabs((fract(localTime) - 0.5f) * 1) * 8)) * 0.5f - 0.5f;
+rampStep = smoothstep(0, 1, rampStep);
+
+float step31 = (_fmaxf(0, (fract(localTime + 0.125f) - 0.25f)) - _fminf(0, (fract(localTime + 0.125f) - 0.25f)) * 3) * 0.333f;
+
+float spinTime = step31 + localTime;
+globalTeeth = rampStep * 0.99f;
+cut = _fmaxf(0.48f, _fminf(0.77f, localTime));
+
+float2 distAndMat = make_float2(0.5f, 0);
+float t = 0;
+
+float maxDepth = 24;
+float3 pos = make_float3(0);
+float marchCount = 1;
+
+rotate(&camPos.z, &camPos.x, ROTATEy + 2);
+rotate(&rayVec.z, &rayVec.x, ROTATEy + 2);
+rotate(&camPos.x, &camPos.y, ROTATEz);
+rotate(&rayVec.x, &rayVec.y, ROTATEz);
+rotate(&camPos.y, &camPos.z, ROTATEx);
+rotate(&rayVec.y, &rayVec.z, ROTATEx);
+
+float hit = SphereIntersect(camPos, rayVec, make_float3(0), 5.6f);
+if (hit >= 0)
+{
+t = hit;
+for (int i = 0; i < 290; i++)	
+{
+pos = camPos + rayVec * t;
+distAndMat = DistanceToObject(pos, cut, teeth, globalTeeth, spinTime);
+t += distAndMat.x * 0.7f;
+if ((t > maxDepth) || (_fabs(distAndMat.x) < 0.0025f)) break;
+marchCount += 1;
+}
+}
+else
+{
+t = maxDepth + 1;
+distAndMat.x = 1000000;
+}
+
+float3 sunDir = normalize(make_float3(3.93f, 10.82f, -1.5f));
+float3 finalColor = make_float3(0);
+
+if (t <= maxDepth)
+{
+float3 smallVec = make_float3(0.005f, 0, 0);
+float3 normalU = make_float3(distAndMat.x - DistanceToObject(pos - make_float3(smallVec.x, smallVec.y, smallVec.y), cut, teeth, globalTeeth, spinTime).x,
+distAndMat.x - DistanceToObject(pos - make_float3(smallVec.y, smallVec.x, smallVec.y), cut, teeth, globalTeeth, spinTime).x,
+distAndMat.x - DistanceToObject(pos - make_float3(smallVec.y, smallVec.y, smallVec.x), cut, teeth, globalTeeth, spinTime).x);
+
+float3 normal = normalize(normalU);
+
+float ambientS = 1;
+ambientS *= _saturatef(DistanceToObject(pos + normal * 0.1f, cut, teeth, globalTeeth, spinTime).x * 10);
+ambientS *= _saturatef(DistanceToObject(pos + normal * 0.2f, cut, teeth, globalTeeth, spinTime).x * 5);
+ambientS *= _saturatef(DistanceToObject(pos + normal * 0.4f, cut, teeth, globalTeeth, spinTime).x * 2.5f);
+ambientS *= _saturatef(DistanceToObject(pos + normal * 0.8f, cut, teeth, globalTeeth, spinTime).x * 1.25f);
+
+float ambient = ambientS * _saturatef(DistanceToObject(pos + normal * 1.6f, cut, teeth, globalTeeth, spinTime).x * 1.25f * 0.5f);
+ambient *= _saturatef(DistanceToObject(pos + normal * 3.2f, cut, teeth, globalTeeth, spinTime).x * 1.25f * 0.25f);
+ambient *= _saturatef(DistanceToObject(pos + normal * 6.4f, cut, teeth, globalTeeth, spinTime).x * 1.25f * 0.125f);
+ambient = _fmaxf(0.035f, _powf(ambient, 0.3f));
+ambient = _saturatef(ambient);
+
+float3 ref = reflect(rayVec, normal);
+ref = normalize(ref);
+
+float sunShadow = 1;
+float iter = 0.1f;
+float3 nudgePos = pos + normal * 0.02f;
+for (int i = 0; i < 40; i++)
+{
+float tempDist = DistanceToObject(nudgePos + ref * iter, cut, teeth, globalTeeth, spinTime).x;
+sunShadow *= _saturatef(tempDist * 50);
+if (tempDist <= 0) break;
+iter += _fmaxf(0, tempDist) * 1;
+if (iter > 4.2f) break;
+}
+sunShadow = saturate(sunShadow);
+
+float3 texColor;
+texColor = make_float3(1);// float3(0.65, 0.5, 0.4)*0.1;
+texColor = make_float3(0.85f, 0.945f - distAndMat.y * 0.15f, 0.93f + distAndMat.y * 0.35f) * 0.951f;
+if (distAndMat.y == 6) texColor = make_float3(0.91f, 0.1f, 0.41f) * 10.5f;
+
+texColor = MAX(texColor, 0) * 0.25f;
+
+float3 lightColor = make_float3(0);// sunCol * saturate(dot(sunDir, normal)) * sunShadow*14.0;
+lightColor = lightColor + make_float3(0.1f, 0.35f, 0.95f) * (normal.y * 0.5f + 0.5f) * ambient * 0.2f;
+lightColor = lightColor + make_float3(1) * ((-normal.y) * 0.5f + 0.5f) * ambient * 0.2f;
+
+finalColor = texColor * lightColor;
+
+float3 refColor = GetEnvColor2(ref, sunDir) * sunShadow;
+finalColor = finalColor + refColor * 0.35 * ambient; // * sunCol * sunShadow * 9.0 * texColor.g;
+
+finalColor = mix(make_float3(1, 0.41f, 0.41f) + 1, finalColor, _expf(-t * 0.0007f));
+}
+else
+{
+finalColor = GetEnvColor2(rayVec, sunDir);
+}
+
+finalColor = SQRT(CLAMP(finalColor, 0, 1));
+
+return finalColor;
+}
