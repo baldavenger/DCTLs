@@ -1,0 +1,108 @@
+// Gear OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Animate, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(SCALE, Zoom, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(msX, Horizontal, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(msY, Vertical, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(ROTATE, Rotate, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+DEFINE_UI_PARAMS(OUTER, Outer Wheel, DCTLUI_CHECK_BOX, 1)
+
+#include "DCTL_Functions.h"
+
+typedef struct
+{
+float t;
+float gearR;
+float teethH;
+float teethR;
+float teethCount;
+float diskR;
+float3 color;
+} Gear;
+
+__DEVICE__ Gear make_gear(float A, float B, float C, float D, float E, float F, float3 G)
+{
+Gear H;
+H.t = A;
+H.gearR = B;
+H.teethH = C;
+H.teethR = D;
+H.teethCount = E;
+H.diskR = F;
+H.color = G;
+return H;
+}
+
+__DEVICE__ float GearFunction(float2 uv, Gear g)
+{
+float r = length(uv);
+float a = _atan2f(uv.y, uv.x);
+float p = g.gearR - 0.5f * g.teethH + g.teethH / (1 + _expf(g.teethR * _sinf(g.t + g.teethCount * a)));
+float gear = r - p;
+float disk = r - g.diskR;
+return g.gearR > g.diskR ? _fmaxf(-disk, gear) : _fmaxf(disk, -gear);
+}
+
+__DEVICE__ float GearDe(float2 uv, Gear g)
+{
+float f = GearFunction(uv, g);
+float2 eps = make_float2(0.0001f, 0);
+float2 grad = make_float2( GearFunction(uv + eps, g) - GearFunction(uv - eps, g),
+GearFunction(uv + make_float2(eps.y, eps.x), g) - GearFunction(uv - make_float2(eps.y, eps.x), g)) / (2 * eps.x);
+return f / length(grad);
+}
+
+__DEVICE__ float GearShadow(float2 uv, Gear g)
+{
+float r = length(uv + 0.1f);
+float de = r - g.diskR + 0.1f * (g.diskR - g.gearR);
+float eps = 0.4f * g.diskR;
+return smoothstep(eps, 0, _fabs(de));
+}
+
+__DEVICE__ void DrawGear(float3* color, float2 uv, Gear g, float eps)
+{
+float3 col = *color;
+float d = smoothstep(eps, -eps, GearDe(uv, g));
+float s = 1 - 0.7f * GearShadow(uv, g);
+*color = mix(col * s, g.color, d);
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+float2 resolution = make_float2(width, height);
+float2 XY = make_float2(X, Y);
+
+float2 uv = 2 * (XY - 0.5f * resolution) / resolution.y;
+uv.x -= msX;
+uv.y -= msY;
+uv = uv / (SCALE + 0.1f);
+rotate(&uv.x, &uv.y, -ROTATE);
+
+float t = TIME * 20;
+float eps = 2 / resolution.y;
+
+float3 base = make_float3(0.95f, 0.7f, 0.2f);
+float count = 8;
+Gear outer = make_gear(0, 0.8f, 0.08f, 4, 32, 0.9f, base);
+Gear inner = make_gear(0, 0.4f, 0.08f, 4, 16, 0.3f, base);
+
+float3 color = make_float3(0);
+for(float i = 0; i < count; i++)
+{
+t += 2 * PI / count;
+inner.t = 16 * t;
+inner.color = base * (0.35f + 0.6f * i / (count - 1));
+DrawGear(&color, uv + 0.4f * make_float2(-_cosf(t), _sinf(t)), inner, eps);
+}
+
+if(OUTER)
+DrawGear(&color, uv, outer, eps);
+
+return color;
+}

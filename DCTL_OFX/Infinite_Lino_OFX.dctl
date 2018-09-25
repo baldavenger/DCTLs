@@ -1,0 +1,80 @@
+// Infinite Linoleum OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Animate, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(SCALE, Zoom, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(msX, Horizontal, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(msY, Vertical, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(ROTATEy, RotateY, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+DEFINE_UI_PARAMS(ROTATEz, RotateZ, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+DEFINE_UI_PARAMS(ROTATEx, RotateX, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+
+#include "DCTL_Functions.h"
+
+__DEVICE__ float time = 0;
+
+__DEVICE__ float sdBox(float3 p, float3 b)
+{
+float3 d = ABS(p) - b;
+return _fminf(_fmaxf(d.x, _fmaxf(d.y, d.z)), 0) + length(make_float3(_fmaxf(d.x, 0), _fmaxf(d.y, 0), _fmaxf(d.z, 0)));
+}
+
+__DEVICE__ float map(float3 p)
+{
+float3 q = fract(p) * 2 - 1;
+return sdBox(q, make_float3(0.25f)) - 1;
+}
+
+__DEVICE__ float trace(float3 o, float3 r)
+{
+float t = 0;
+for (int i = 0; i < 32; ++i)
+{
+float3 p = o + r * t;
+float d = map(p);
+t += d * 0.5f;
+}
+return t;
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+float2 resolution = make_float2(width, height);
+float2 XY = make_float2(X, Y);
+time = TIME * 20;
+
+float2 uv = (XY / resolution) * 2 - 1;
+uv.x *= width / height;
+uv.x -= msX;
+uv.y -= msY;
+uv = uv - 0.5f;
+uv = uv / (SCALE + 0.2f);
+uv = uv + 0.5f;
+
+float3 r = normalize(make_float3(uv.x, uv.y, 2));
+float the = time * 0.25f;
+rotate(&r.x, &r.z, the);
+
+float3 o = make_float3(0.5f, 0.5f, time);
+
+rotate(&o.z, &o.x, ROTATEy);
+rotate(&r.z, &r.x, ROTATEy);
+
+rotate(&o.z, &o.y, ROTATEx);
+rotate(&r.z, &r.y, ROTATEx);
+
+rotate(&o.y, &o.x, ROTATEz);
+rotate(&r.y, &r.x, ROTATEz);
+
+float t = trace(o, r);
+float fog = 1 / (1 + t * t * 0.1f);
+float3 fc = make_float3(fog * 2);
+float3 tint = make_float3(0.9f, 0.5f, 0.2f);
+float3 col = fc * tint;
+
+return col;
+}
