@@ -1,0 +1,115 @@
+// Sauron OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Animate, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(Speed, Flame Speed, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(lengthA, Strength, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(lengthB, Depth, DCTLUI_SLIDER_FLOAT, 1, 0, 4, 0.001)
+DEFINE_UI_PARAMS(SCALE, Scale, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(msX, Horizontal, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(msY, Vertical, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(ROTATE, Rotate, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+
+
+#include "DCTL_Functions.h"
+
+__DEVICE__ float snoise(float3 uv, float res)
+{
+uv = uv * res;
+
+float3 uv0;
+uv0.x = _floor(_fmod(uv.x, res)) * 1e0;
+uv0.y = _floor(_fmod(uv.y, res)) * 1e2;
+uv0.z = _floor(_fmod(uv.z, res)) * 1e4;
+
+float3 uv1;
+uv1.x = _floor(_fmod(uv.x + 1, res)) * 1e0;
+uv1.y = _floor(_fmod(uv.y + 1, res)) * 1e2;
+uv1.z = _floor(_fmod(uv.z + 1, res)) * 1e4;
+
+float3 FR;
+FR.x = fract(uv.x);
+FR.x = FR.x * FR.x * (3 - 2 * FR.x);
+FR.y = fract(uv.y);
+FR.y = FR.y * FR.y * (3 - 2 * FR.y);
+FR.z = fract(uv.z);
+FR.z = FR.z * FR.z * (3 - 2 * FR.z);
+
+float4 v = make_float4(uv0.x + uv0.y + uv0.z, uv1.x + uv0.y + uv0.z,
+uv0.x + uv1.y + uv0.z, uv1.x + uv1.y + uv0.z);
+
+float4 r;
+float RX = _sinf(v.x * 1e-3) * 1e5;
+r.x = fract(RX);
+float RY = _sinf(v.y * 1e-3) * 1e5;
+r.y = fract(RY);
+float RZ = _sinf(v.z * 1e-3) * 1e5;
+r.z = fract(RZ);
+float RW = _sinf(v.w * 1e-3) * 1e5;
+r.w = fract(RW);
+
+float AA = r.x * (1 - FR.x) + r.y * FR.x;
+float BB = r.z * (1 - FR.x) + r.w * FR.x;
+float r0 = AA * (1 - FR.y) + BB * FR.y;
+
+RX = _sinf((v.x + uv1.z - uv0.z) * 1e-3) * 1e5;
+r.x = fract(RX);
+RY = _sinf((v.y + uv1.z - uv0.z) * 1e-3) * 1e5;
+r.y = fract(RY);
+RZ = _sinf((v.z + uv1.z - uv0.z) * 1e-3) * 1e5;
+r.z = fract(RZ);
+RW = _sinf((v.w + uv1.z - uv0.z) * 1e-3) * 1e5;
+r.w = fract(RW);
+
+AA = r.x * (1 - FR.x) + r.y * FR.x;
+BB = r.z * (1 - FR.x) + r.w * FR.x;
+float r1 = AA * (1 - FR.y) + BB * FR.y;
+
+float NOSE = (r0 * (1 - FR.z) + r1 * FR.z) * 2 - 1;
+
+return NOSE;
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+float2 resolution = make_float2(width, height);
+float2 XY = make_float2(X, Y);
+float time = TIME * 100;
+float paramFlameSpeed = 10 * Speed;; 
+
+float2 p;
+p.x = X / width;
+p.x -= 0.5f;
+p.x *= width / height;
+p.y = float(p_Y) / p_Height;
+p.y -= 0.5f;
+p.x -= msX * 2;
+p.y += msY * 2;
+rotate(&p.y, &p.x, ROTATE);
+p = p / (SCALE + 0.1f);
+
+float Strength = _sqrtf(p.x * p.x * 2 + p.y * p.y * 2);
+Strength *= 2 - lengthA;
+float Depth = _sqrtf(p.x * p.x + p.y * p.y) * lengthB;
+
+float color = 3 - (3 * Strength);
+
+float3 coord;
+coord = make_float3(_atan2f(p.x, p.y) / 6.2832f + 0.5f, Depth * 0.4f, 0.5f);
+
+for(int i = 1; i <= 7; i++)
+{
+float power = _powf(2, i);
+color += (1.5f / power) * snoise(coord + make_float3(0, -time * paramFlameSpeed / 100 * 0.05f, time * paramFlameSpeed / 100.0f * 0.01f), power * 16);
+}
+
+float3 RGB;
+RGB = make_float3(color, _powf(_fmaxf(color, 0), 2) * 0.4f, _powf(_fmaxf(color, 0), 3) * 0.15f);
+RGB = RGB * 0.7f;
+
+return RGB;
+}
