@@ -1,0 +1,138 @@
+// Key Of Solomon OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Animate, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(SCALE, Zoom, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(msX, Horizontal, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(msY, Vertical, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(ROTATE, Rotate, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+DEFINE_UI_PARAMS(GAIN, Gain, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+
+#include "DCTL_Functions.h"
+
+__DEVICE__ float time = 0;
+
+__DEVICE__ float circle(float pre, float2 p, float r1, float r2, float power)
+{
+float leng = length(p);
+if (r1 < leng && leng < r2) pre = 0;
+float d = _fminf(_fabs(leng - r1), _fabs(leng - r2));
+float res = power / d;
+return _clampf(pre + res, 0, 1);
+}
+
+__DEVICE__ float rectangle(float pre, float2 p, float2 half1, float2 half2, float power)
+{
+p = ABS(p);
+if ((half1.x < p.x || half1.y < p.y) && (p.x < half2.x && p.y < half2.y))
+pre = _fmaxf(0.01f, pre);
+
+float dx1 = p.y < half1.y ? _fabs(half1.x - p.x) : length(p - half1);
+float dx2 = p.y < half2.y ? _fabs(half2.x - p.x) : length(p - half2);
+float dy1 = p.x < half1.x ? _fabs(half1.y - p.y) : length(p - half1);
+float dy2 = p.x < half2.x ? _fabs(half2.y - p.y) : length(p - half2);
+float d = _fminf(_fminf(dx1, dx2), _fminf(dy1, dy2));
+float res = power / d;
+return _clampf(pre + res, 0, 1);
+}
+
+__DEVICE__ float radiation(float pre, float2 p, float r1, float r2, int num, float power)
+{
+float angle = 2 * PI / (float)num;
+float d = 1e10;
+for(int i = 0; i < 360; i++) {
+if (i >= num) break;
+float D = (r1 < p.y && p.y < r2) ? _fabs(p.x) : _fminf(length(p - make_float2(0, r1)), length(p - make_float2(0, r2)));
+d = _fminf(d, D);
+rotate(&p.x, &p.y, angle);
+}
+float res = power / d;
+return _clampf(pre + res, 0, 1);
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+float2 resolution = make_float2(width, height);
+float2 XY = make_float2(X, Y);
+time = TIME * 10;
+
+float2 p = (resolution - XY * 2) / 1000;
+p = p / (SCALE * 0.5f + 0.1f);
+p.x += msX * 4;
+p.y += msY * 4;
+rotate(&p.x, &p.y, ROTATE);
+float dest = 0;
+p = p * (_sinf(PI * time / 10) * 0.02f + 1.1f);
+
+float2 q = p;
+rotate(&q.x, &q.y, time * PI / 6);
+dest = circle(dest, q, 0.85f, 0.9f, 0.006f);
+dest = radiation(dest, q, 0.87f, 0.88f, 36, 0.0008f);
+
+q = p;
+rotate(&q.x, &q.y, time * PI / 6);
+int n = 6;
+float angle = PI / (float)n;
+rotate(&q.x, &q.y, _floor(_atan2f(q.x, q.y) / angle + 0.5f) * angle);
+
+for(int i = 0; i < n; i++) {
+dest = rectangle(dest, q, make_float2(0.85f / _sqrtf(2), 0.85f / _sqrtf(2)), make_float2(0.85f / _sqrtf(2), 0.85f / _sqrtf(2)), 0.0015f);
+rotate(&q.x, &q.y, angle);
+}
+
+q = p;
+rotate(&q.x, &q.y, time * PI / 6);
+n = 12;
+rotate(&q.x, &q.y, 2 * PI / (float)n / 2);
+angle = 2 * PI / (float)n;
+for(int i = 0; i < n; i++) {
+dest = circle(dest, q - make_float2(0, 0.875f), 0.001f, 0.05f, 0.004f);
+dest = circle(dest, q - make_float2(0, 0.875f), 0.001f, 0.001f, 0.008f);
+rotate(&q.x, &q.y, angle);
+}
+q = p;
+dest = circle(dest, q, 0.5f, 0.55f, 0.002f);
+
+q = p;
+rotate(&q.x, &q.y, -time * PI / 6);
+n = 3;
+angle = PI / (float)n;
+rotate(&q.x, &q.y, _floor(_atan2f(q.x, q.y) / angle + 0.5f) * angle);
+for(int i = 0; i < n; i++) {
+dest = rectangle(dest, q, make_float2(0.36f, 0.36f), make_float2(0.36f, 0.36f), 0.0015f);
+rotate(&q.x, &q.y, angle);
+}
+
+q = p;
+rotate(&q.x, &q.y, -time * PI / 6);
+n = 12;
+rotate(&q.x, &q.y, 2 * PI / (float)n / 2);
+angle = 2 * PI / (float)n;
+for(int i = 0; i < n; i++) {
+dest = circle(dest, q - make_float2(0.0f, 0.53f), 0.001f, 0.035f, 0.004f);
+dest = circle(dest, q - make_float2(0.0f, 0.53f), 0.001f, 0.001f, 0.001f);
+rotate(&q.x, &q.y, angle);
+}
+q = p;
+rotate(&q.x, &q.y, time * PI / 6);
+dest = radiation(dest, q, 0.25f, 0.3f, 12, 0.005f);
+
+q = p;
+q = q * (_sinf(PI * time) * 0.04f + 1.1f);
+rotate(&q.x, &q.y, -time * PI / 6);
+for(float i = 0; i < 6; i++) {
+float r = 0.13f - i * 0.01f;
+q = q - make_float2(0.1f, 0);
+dest = circle(dest, q, r, r, 0.002f);
+q = q - make_float2(-0.1f, 0);
+rotate(&q.x, &q.y, -time * PI / 12);
+}
+dest = circle(dest, q, 0.04f, 0.04f, 0.004f);
+float C = _powf(dest, 2.5f); //glow
+
+return make_float3(C, C * 0.95f, C * 0.8f) * GAIN;
+}
