@@ -1,0 +1,110 @@
+// FXAA OFX DCTL
+
+DEFINE_UI_PARAMS(SPAN_MAX, Strength, DCTLUI_SLIDER_INT, 8, 1, 16, 1)
+
+#include "DCTL_Functions.h"
+
+#define FXAA_REDUCE_MIN		(1.0f / 128)
+#define FXAA_REDUCE_MUL		(1.0f / 8)
+
+__DEVICE__ float FXAA_SPAN_MAX = 0;
+
+__DEVICE__ float3 Texture(__TEXTURE__ texR, __TEXTURE__ texG, __TEXTURE__ texB, float2 resolution, float2 uv)
+{
+resolution = resolution + 1;
+float3 RGB;
+RGB.x = _tex2D(texR, int(uv.x * resolution.x), int(uv.y * resolution.y));
+RGB.y = _tex2D(texG, int(uv.x * resolution.x), int(uv.y * resolution.y));
+RGB.z = _tex2D(texB, int(uv.x * resolution.x), int(uv.y * resolution.y));
+return RGB;
+}
+
+__DEVICE__ float3 fxaa(__TEXTURE__ texR, __TEXTURE__ texG, __TEXTURE__ texB, float2 fragCoord, float2 resolution,
+float2 v_rgbNW, float2 v_rgbNE, 
+float2 v_rgbSW, float2 v_rgbSE, 
+float2 v_rgbM)
+{
+float3 color;
+float3 rgbNW = Texture(texR, texG, texB, resolution, v_rgbNW);
+float3 rgbNE = Texture(texR, texG, texB, resolution, v_rgbNE);
+float3 rgbSW = Texture(texR, texG, texB, resolution, v_rgbSW);
+float3 rgbSE = Texture(texR, texG, texB, resolution, v_rgbSE);
+float3 texColor = Texture(texR, texG, texB, resolution, v_rgbM);
+float3 rgbM  = texColor;
+float3 luma = make_float3(0.299f, 0.587f, 0.114f);
+float lumaNW = dot(rgbNW, luma);
+float lumaNE = dot(rgbNE, luma);
+float lumaSW = dot(rgbSW, luma);
+float lumaSE = dot(rgbSE, luma);
+float lumaM  = dot(rgbM,  luma);
+float lumaMin = _fminf(lumaM, _fminf(_fminf(lumaNW, lumaNE), _fminf(lumaSW, lumaSE)));
+float lumaMax = _fmaxf(lumaM, _fmaxf(_fmaxf(lumaNW, lumaNE), _fmaxf(lumaSW, lumaSE)));
+
+float2 dir;
+dir.x = -((lumaNW + lumaNE) - (lumaSW + lumaSE));
+dir.y =  ((lumaNW + lumaSW) - (lumaNE + lumaSE));
+
+float dirReduce = _fmaxf((lumaNW + lumaNE + lumaSW + lumaSE) * (0.25f * FXAA_REDUCE_MUL), FXAA_REDUCE_MIN);
+float2 inverseVP = make_float2(1 / resolution.x, 1 / resolution.y);
+
+float rcpDirMin = 1 / (_fminf(_fabs(dir.x), _fabs(dir.y)) + dirReduce);
+dir = MIN(make_float2(FXAA_SPAN_MAX, FXAA_SPAN_MAX), MAX(make_float2(-FXAA_SPAN_MAX, -FXAA_SPAN_MAX), dir * rcpDirMin)) * inverseVP;
+
+float3 rgbA = 0.5f * 
+(Texture(texR, texG, texB, resolution, fragCoord * inverseVP + dir * (1 / 3.0f - 0.5f)) +
+Texture(texR, texG, texB, resolution, fragCoord * inverseVP + dir * (2 / 3.0f - 0.5f)));
+
+float3 rgbB = rgbA * 0.5f + 0.25f * 
+(Texture(texR, texG, texB, resolution, fragCoord * inverseVP + dir * -0.5f) +
+Texture(texR, texG, texB, resolution, fragCoord * inverseVP + dir * 0.5f));
+
+float lumaB = dot(rgbB, luma);
+if ((lumaB < lumaMin) || (lumaB > lumaMax))
+color = rgbA;
+else
+color = rgbB;
+return color;
+}
+
+__DEVICE__ void texcoords(float2 fragCoord, float2 resolution,
+float2* v_rgbNW, float2* v_rgbNE,
+float2* v_rgbSW, float2* v_rgbSE,
+float2* v_rgbM)
+{
+float2 inverseVP = make_float2(1 / resolution.x, 1 / resolution.y);
+*v_rgbNW = (fragCoord - 1) * inverseVP;
+*v_rgbNE = (fragCoord + make_float2(1, -1)) * inverseVP;
+*v_rgbSW = (fragCoord + make_float2(-1, 1)) * inverseVP;
+*v_rgbSE = (fragCoord + 1) * inverseVP;
+*v_rgbM = fragCoord * inverseVP;
+}
+
+__DEVICE__ float3 apply(__TEXTURE__ texR, __TEXTURE__ texG, __TEXTURE__ texB, float2 fragCoord, float2 resolution)
+{
+float2 v_rgbNW;
+float2 v_rgbNE;
+float2 v_rgbSW;
+float2 v_rgbSE;
+float2 v_rgbM;
+
+texcoords(fragCoord, resolution, &v_rgbNW, &v_rgbNE, &v_rgbSW, &v_rgbSE, &v_rgbM);
+
+return fxaa(texR, texG, texB, fragCoord, resolution, v_rgbNW, v_rgbNE, v_rgbSW, v_rgbSE, v_rgbM);
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{
+float2 uv;
+uv.x = (float)p_X;
+uv.y = (float)p_Y;
+float2 resolution;
+resolution.x = (float)p_Width;
+resolution.y = (float)p_Height;
+
+FXAA_SPAN_MAX = (float)SPAN_MAX;
+
+float3 RGB;
+RGB = apply(p_TexR, p_TexG, p_TexB, uv, resolution);
+
+return RGB;
+}
