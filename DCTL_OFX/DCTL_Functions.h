@@ -6,6 +6,7 @@
 #define INV2_PI 	0.15915494309f
 #define INV4_PI 	0.07957747155f
 #define PHI			1.61803398875f
+#define SQRT3		1.73205080757f
 
 typedef struct
 {
@@ -467,6 +468,15 @@ __DEVICE__ inline float2 sign( float2 A)
 float2 sn;
 sn.x = A.x == 0.0f ? 0.0f : A.x < 0.0f ? -1.0f : 1.0f;
 sn.y = A.y == 0.0f ? 0.0f : A.y < 0.0f ? -1.0f : 1.0f;
+return sn;
+}
+
+__DEVICE__ inline float3 sign( float3 A)
+{
+float3 sn;
+sn.x = A.x < 0.0f ? -1.0f : A.x > 0.0f ? 1.0f : 0.0f;
+sn.y = A.y < 0.0f ? -1.0f : A.y > 0.0f ? 1.0f : 0.0f;
+sn.z = A.z < 0.0f ? -1.0f : A.z > 0.0f ? 1.0f : 0.0f;
 return sn;
 }
 
