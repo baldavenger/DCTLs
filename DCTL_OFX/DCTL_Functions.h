@@ -77,6 +77,11 @@ __DEVICE__ inline float distance( float3 A, float3 B)
 return _sqrtf(dot(A, B));
 }
 
+__DEVICE__ inline float3 EXP( float3 A)
+{
+return make_float3(_expf(A.x), _expf(A.y), _expf(A.z));
+}
+
 __DEVICE__ inline float2 floor( float2 A)
 {
 return make_float2(_floor(A.x), _floor(A.y));

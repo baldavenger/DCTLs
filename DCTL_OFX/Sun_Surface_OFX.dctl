@@ -1,0 +1,170 @@
+// Sun Surface OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Animate, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(GAIN, Heat, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(BUMPS, Bumps, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(SCALE, Zoom, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(msX, Horizontal, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(msY, Vertical, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(ROTATEy, RotateY, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+DEFINE_UI_PARAMS(ROTATEz, RotateZ, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+DEFINE_UI_PARAMS(ROTATEx, RotateX, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+DEFINE_UI_PARAMS(DITHERING, Dithering, DCTLUI_CHECK_BOX, 1)
+DEFINE_UI_PARAMS(ULTRAVIOLET, Ultraviolet, DCTLUI_CHECK_BOX, 0)
+
+#include "DCTL_Functions.h"
+
+__DEVICE__ float time = 0;
+__DEVICE__ float Bumps = 0;
+
+__DEVICE__ float pn( float3 p, __TEXTURE__ texG, __TEXTURE__ texB, float2 resolution)
+{
+float3 ip = floor(p);
+p = fract(p);
+p = p * p * (3 - 2 * p);
+float2 uv = make_float2(ip.x, ip.y) + make_float2(37, 17) * ip.z + make_float2(p.x, p.y);
+
+float2 UV = (uv + 0.5f) * resolution;
+uv.x = _tex2D(texB, (int)UV.x, (int)UV.y);
+uv.y = _tex2D(texG, (int)UV.x, (int)UV.y);
+return mix( uv.x, uv.y, p.z );
+}
+
+__DEVICE__ float fpn( float3 p, __TEXTURE__ texG, __TEXTURE__ texB, float2 resolution)
+{
+return pn(p * 0.06125f, texG, texB, resolution) * 0.57f + pn(p * 0.125f, texG, texB, resolution) * 0.28f + pn(p * 0.25f, texG, texB, resolution) * 0.15f;
+}
+
+__DEVICE__ float rand( float2 co)
+{
+float R = dot(co * 0.123f, make_float2(12.9898f, 78.233f));
+return fract(_sinf(R) * 43758.5453f);
+}
+
+__DEVICE__ float cosNoise( float2 p)
+{
+return 0.5f * (_sinf(p.x) + _sinf(p.y));
+}
+
+__DEVICE__ float sdTorus( float3 p, float2 t )
+{
+return length(make_float2(length(make_float2(p.x, p.z)) - t.x * 1.2f, p.y) ) - t.y;
+}
+
+__DEVICE__ float smin( float a, float b, float k )
+{
+float h = _saturatef( 0.5f + 0.5f * (b - a) / k);
+return mix( b, a, h ) - k * h * (1 - h);
+}
+
+__DEVICE__ float SunSurface( float3 pos)
+{
+float h = Bumps;
+float2 q = make_float2(pos.x, pos.z) * 0.5f;
+float s = 0.5f;
+float d2 = 0;
+float4 m2 = make_float4(1.6f, 1.2f, -1.2f, 1.6f);
+
+for( int i = 0; i < 6; i++ )
+{
+h += s * cosNoise(q + time * 0.05f);
+q = make_float2(q.x * m2.x + q.y * m2.y, q.x * m2.z + q.y * m2.w);
+q = q * 0.85f;
+q = q + make_float2(2.41f, 8.13f);
+s *= 0.48f + 0.2f * h;
+}
+h *= 2;
+float d1 = pos.y - h;
+float3 r1 = MOD(2.3f + pos + 1.0f, 10.0f) - 5.0f;
+r1.y = pos.y - 0.1f - 0.7f * h + 0.5f * _sinf( 3 * 1 + pos.x + 3 * pos.z);
+float c = _cosf(pos.x);
+float s1 = _sinf(pos.x);
+
+float2 XZ = c * make_float2(r1.x, r1.z) + s1 * make_float2(r1.z, -r1.x);
+d2 = sdTorus(make_float3(XZ.x, XZ.y, r1.y), make_float2(_clampf(_fabs(pos.x/pos.z), 0.7f, 2.5f), 0.2f) );
+return smin(d1, d2, 1);
+}
+
+__DEVICE__ float map( float3 p, __TEXTURE__ texG, __TEXTURE__ texB, float2 resolution)
+{
+p.z += 1;
+float py = _cosf(-25.5f) * p.y + _sinf(-25.5f) * p.z;
+float pz = _cosf(-25.5f) * p.z + _sinf(-25.5f) * -p.y;
+p = make_float3(p.x, py, pz);
+float move = 0.008f * PI + time * 0.01f;
+float px = _cosf(move) * p.x + _sinf(move) * p.z;
+pz = _cosf(move) * p.z + _sinf(move) * -p.x;
+p = make_float3(px, p.y, pz) * 0.99f;
+return SunSurface(p) +  fpn(p * 50.0f + time * 25.0f, texG, texB, resolution) * 0.45f;
+}
+
+__DEVICE__ float3 firePalette( float i)
+{
+float T = 1400.0f + 1300.0f * i;
+float3 L = make_float3(7.4f, 5.6f, 4.4f);
+L = POW(L, 5.0f) * (EXP(1.43876719683e5 / (T * L)) - 1);
+return make_float3(1.0f - _expf(-5e8 / L.x), 1.0f - _expf(-5e8 / L.y), 1.0f - _expf(-5e8 / L.z));
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{  
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+float2 resolution = make_float2(width, height);
+float2 XY = make_float2(X, Y);
+time = TIME * 300;
+Bumps = BUMPS;
+
+float rdx = (X - (0.5f * resolution.x)) / resolution.y;
+float rdy = (Y - (0.5f * resolution.y)) / resolution.y;
+rdx = (rdx - msX) / (SCALE + 0.1f);
+rdy = (rdy - msY) / (SCALE + 0.1f);
+
+float3 rd = normalize(make_float3(rdx, rdy, 1));
+float3 ro = make_float3(0, 0, -22);
+rotate(&ro.x, &ro.z, ROTATEy);
+rotate(&rd.x, &rd.z, ROTATEy);
+rotate(&ro.x, &ro.y, ROTATEz);
+rotate(&rd.x, &rd.y, ROTATEz);
+rotate(&ro.y, &ro.z, ROTATEx);
+rotate(&rd.y, &rd.z, ROTATEx);
+
+float ld = 0, td = 0, w = 0;
+float d = 1, 
+t = 1;
+float h = 0.1f / GAIN * 2;
+float3 tc = make_float3(0);
+float2 pos = XY / resolution;
+float2 seed = pos + fract(time);
+
+for (int i = 0; i < 56; i++) {
+if(td > (1 - (1 / 80.0f)) || d < 0.001f * t || t > 40) break;
+d = map(ro + t * rd, p_TexG, p_TexB, resolution); 
+ld = (h - d) * step(d, h);
+w = (1 - td) * ld;   
+tc = tc + w * w + (1.0f / 50);
+td += w + (1.0f / 200);
+
+if(DITHERING){
+if(ULTRAVIOLET){
+d = _fmaxf(d, 0.04f);
+d = _fabs(d) * (1 + 0.28f * rand(seed * make_float2((float)i, (float)i)));
+} else {
+d = _fabs(d) * (0.8f + 0.28f * rand(seed * make_float2((float)i, (float)i)));
+d = _fmaxf(d, 0.04f);
+} 
+} else {
+d = _fmaxf(d, 0.04f);
+}
+t += d * 0.5f;
+}
+tc = firePalette(tc.x);
+
+if(ULTRAVIOLET)
+tc = tc * (1.0f / _expf( ld * 2.82f )) * 1.05f;
+
+return tc;
+}
