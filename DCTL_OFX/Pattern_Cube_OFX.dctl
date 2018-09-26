@@ -1,298 +1,212 @@
 // Pattern Cube OFX DCTL
 
-DEFINE_UI_PARAMS(multiSample, Multi-Sample, DCTLUI_CHECK_BOX, 0)
-DEFINE_UI_PARAMS(rotateX, Rotate X, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
-DEFINE_UI_PARAMS(rotateY, Rotate Y, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(TIME, Animate, DCTLUI_SLIDER_FLOAT, 0, -2, 2, 0.001)
+DEFINE_UI_PARAMS(ROTATEy, RotateY, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+DEFINE_UI_PARAMS(ROTATEz, RotateZ, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+DEFINE_UI_PARAMS(ROTATEx, RotateX, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+DEFINE_UI_PARAMS(msX, Horizontal, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(msY, Vertical, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
 DEFINE_UI_PARAMS(zoom, Zoom, DCTLUI_SLIDER_FLOAT, 0, -5, 5, 0.001)
 DEFINE_UI_PARAMS(density, Density, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
-DEFINE_UI_PARAMS(time, Time, DCTLUI_SLIDER_FLOAT, 0, -2, 2, 0.001)
-DEFINE_UI_PARAMS(background, Background, DCTLUI_SLIDER_INT, 1, 1, 4, 1)
+DEFINE_UI_PARAMS(background, Background, DCTLUI_SLIDER_INT, 1, 1, 5, 1)
 DEFINE_UI_PARAMS(Border, Border, DCTLUI_SLIDER_FLOAT, 0.5, 0, 1, 0.001)
 DEFINE_UI_PARAMS(apply, Apply Border, DCTLUI_CHECK_BOX, 1)
+DEFINE_UI_PARAMS(multiSample, Multi-Sample, DCTLUI_CHECK_BOX, 0)
+
+#include "DCTL_Functions.h"
 
 #define MAX_VOLUME_STEPS	100
 #define VOLUME_STEP_SIZE	0.01f
 #define MAX_ALPHA			0.95f
-#define pi					_atan2f(1.0f, 1.0f) * 4.0f
-#define tau					_atan2f(1.0f, 1.0f) * 8.0f
 
-__DEVICE__ bool LINEAR_SAMPLE = true;
-__DEVICE__ float DENSITY_SCALE = 1.0f;
-__DEVICE__ float BORDER = 1.0f;
+__DEVICE__ bool LINEAR_SAMPLE = 0;
+__DEVICE__ float DENSITY_SCALE = 0;
+__DEVICE__ float BORDER = 0;
 __DEVICE__ bool APPLY = true;
 __DEVICE__ float3 vres = {0,0,0};
 __DEVICE__ float width = 0;
 __DEVICE__ float height = 0;
-__DEVICE__ float iTime = 0;
-
-typedef struct
-{
-float c00, c01;
-float c10, c11;
-} mat2;
-
+__DEVICE__ float time = 0;
 
 __DEVICE__ bool isValid(float3 c)
 {
-    return c.x >= 0.0f && c.y >= 0.0f && c.z >= 0.0f &&  c.x <= 1.0f && c.y <= 1.0f && c.z <= 1.0f;
-}
-
-__DEVICE__ mat2 rotate(float a)
-{
-    mat2 ro;
-    ro.c00 = _cosf(a);
-    ro.c01 = _sinf(a);
-    ro.c10 = -_sinf(a);
-    ro.c11 = _cosf(a);
-    return ro;
-}
-
-__DEVICE__ float3 fract(float3 A)
-{
-	return A - _floor(A);
-}
-
-__DEVICE__ float2 multi(float2 A, mat2 B)
-{
-    float C, D;
-    C = A.x * B.c00 + A.y * B.c01;
-    D = A.x * B.c10 + A.y * B.c11;
-    return make_float2(C, D);
-}
-
-__DEVICE__ float4 mix(float4 A, float4 B, float C)
-{
-	return A * (1 - C) + B * C;
-}
-
-__DEVICE__ float3 _sinf3( float3 a)
-{
-	return make_float3(_sinf(a.x), _sinf(a.y), _sinf(a.z));
+return c.x >= 0.0f && c.y >= 0.0f && c.z >= 0.0f &&  c.x <= 1.0f && c.y <= 1.0f && c.z <= 1.0f;
 }
 
 __DEVICE__ float4 pattern( float3 Coord)
 {
-    float3 uvw = Coord / vres;
+float3 uvw = Coord / vres;
+float4 rgba = make_float4(1, 0, 0, 1);
 
-    float4 rgba = make_float4(1.0f, 0.0f, 0.0f, 1.0f);
-    
-    float3 p0 = _sinf3(make_float3(1.3f, 0.9f, 2.1f) * iTime + 7.0) * 0.5f + 0.5f;
-    float3 p1 = _sinf3(make_float3(0.5f, 1.6f, 0.8f) * iTime + 4.0) * 0.5f + 0.5f;
-    float3 p2 = _sinf3(make_float3(0.9f, 1.2f, 1.5f) * iTime + 2.0) * 0.5f + 0.5f;
-    
-    float s0 = _cosf(length(p0-uvw) * 28.0f);
-    float s1 = _cosf(length(p1-uvw) * 19.0f);
-    float s2 = _cosf(length(p2-uvw) * 22.0f);
-    
-    float dens = (s0 + s1 + s2) / 3.0f;
-    
-    rgba = make_float4(s0, s1, s2, dens);
-    
-    rgba.w *= 0.5;
-    
-    return rgba;
+float3 p0 = SIN(make_float3(1.3f, 0.9f, 2.1f) * time + 7) * 0.5f + 0.5f;
+float3 p1 = SIN(make_float3(0.5f, 1.6f, 0.8f) * time + 4) * 0.5f + 0.5f;
+float3 p2 = SIN(make_float3(0.9f, 1.2f, 1.5f) * time + 2) * 0.5f + 0.5f;
+
+float s0 = _cosf(length(p0 - uvw) * 28);
+float s1 = _cosf(length(p1 - uvw) * 19);
+float s2 = _cosf(length(p2 - uvw) * 22);
+
+float dens = (s0 + s1 + s2) / 3;
+rgba = make_float4(s0, s1, s2, dens);
+rgba.w *= 0.5f;
+
+return rgba;
 }
 
 __DEVICE__ float3 border(float3 uvw, float3 vres)
 {
-    uvw.x = _fmod(_floor(uvw.x * vres.x), vres.x);
-    uvw.y = _fmod(_floor(uvw.y * vres.y), vres.y);
-    uvw.z = _fmod(_floor(uvw.z * vres.z), vres.z);
-    
-	float r = uvw.x / vres.x;
-	float g = uvw.y / vres.y;
-	float b = uvw.z / vres.z;
-	
-	float3 RGB = make_float3(r, g, b);
-	RGB = (RGB - 0.1f) * 1.25f;
-	
-	return RGB;
+uvw = MOD(floor(uvw * vres), vres);
+float3 RGB = uvw / vres;
+RGB = (RGB - 0.1f) * 1.25f;
+return RGB;
 }
 
 __DEVICE__ float4 texture3D(float3 uvw, float3 vres)
 {
-    uvw.x = _fmod(_floor(uvw.x * vres.x), vres.x);
-    uvw.y = _fmod(_floor(uvw.y * vres.y), vres.y);
-    uvw.z = _fmod(_floor(uvw.z * vres.z), vres.z);
-    
-    float idx = (uvw.z * (vres.x * vres.y)) + (uvw.y * vres.x) + uvw.x;
-    
-    float2 uv = make_float2(_fmod(idx, width), _floor(idx / width));
-    uv.x = uv.x + 0.5f;
-    uv.y = uv.y + 0.5f;
-    
-    float4 rgba = pattern(uvw);
-    
-	return rgba;
+uvw = MOD(floor(uvw * vres), vres);
+float idx = (uvw.z * (vres.x * vres.y)) + (uvw.y * vres.x) + uvw.x;
+float2 uv = make_float2(_fmod(idx, width), _floor(idx / width)) + 0.5f;
+float4 rgba = pattern(uvw);
+return rgba;
 }
 
 __DEVICE__ float4 texture3DLinear(float3 uvw, float3 vres)
 {
-    float3 blend = fract(uvw*vres);
-    float4 off = make_float4(1.0f/vres, 0);
-    
-    //2x2x2 sample blending
-    float4 b000 = texture3D(uvw + make_float3(off.w, off.w, off.w), vres);
-    float4 b100 = texture3D(uvw + make_float3(off.x, off.w, off.w), vres);
-    
-    float4 b010 = texture3D(uvw + make_float3(off.w, off.y, off.w), vres);
-    float4 b110 = texture3D(uvw + make_float3(off.x, off.y, off.w), vres);
-    
-    float4 b001 = texture3D(uvw + make_float3(off.w, off.w, off.z), vres);
-    float4 b101 = texture3D(uvw + make_float3(off.x, off.w, off.z), vres);
-    
-    float4 b011 = texture3D(uvw + make_float3(off.w, off.y, off.w), vres);
-    float4 b111 = texture3D(uvw + make_float3(off.x, off.y, off.z), vres);
-    
-    return mix(mix(mix(b000,b100,blend.x), mix(b010,b110,blend.x), blend.y), 
-               mix(mix(b001,b101,blend.x), mix(b011,b111,blend.x), blend.y),
-               blend.z);
+float3 blend = fract(uvw * vres);
+float4 off = make_float4(1.0f / vres, 0);
+
+//2x2x2 sample blending
+float4 b000 = texture3D(uvw + make_float3(off.w, off.w, off.w), vres);
+float4 b100 = texture3D(uvw + make_float3(off.x, off.w, off.w), vres);
+
+float4 b010 = texture3D(uvw + make_float3(off.w, off.y, off.w), vres);
+float4 b110 = texture3D(uvw + make_float3(off.x, off.y, off.w), vres);
+
+float4 b001 = texture3D(uvw + make_float3(off.w, off.w, off.z), vres);
+float4 b101 = texture3D(uvw + make_float3(off.x, off.w, off.z), vres);
+
+float4 b011 = texture3D(uvw + make_float3(off.w, off.y, off.w), vres);
+float4 b111 = texture3D(uvw + make_float3(off.x, off.y, off.z), vres);
+
+return mix(mix(mix(b000,b100,blend.x), mix(b010,b110,blend.x), blend.y), 
+mix(mix(b001,b101,blend.x), mix(b011,b111,blend.x), blend.y),
+blend.z);
 }
 
 __DEVICE__ float2 IntersectBox(float3 orig, float3 dir, float3 pos, float3 size)
 {
-    size.x = _fabs(size.x / dir.x / 2.5f);
-    size.y = _fabs(size.y / dir.y / 2.5f);
-    size.z = _fabs(size.z / dir.z / 2.5f);
-
-    float3 tc = (pos - orig) / dir;    
-
-    float3 t0 = tc - size;
-    float3 t1 = tc + size;
-    
-    float tmin = _fmaxf(_fmaxf(t0.x, t0.y), t0.z);
-    float tmax = _fminf(_fminf(t1.x, t1.y), t1.z);
-    
-	return make_float2(tmin, tmax);
+size = ABS(size / dir / 2.5f);
+float3 tc = (pos - orig) / dir;    
+float3 t0 = tc - size;
+float3 t1 = tc + size;
+float tmin = _fmaxf(_fmaxf(t0.x, t0.y), t0.z);
+float tmax = _fminf(_fminf(t1.x, t1.y), t1.z);
+return make_float2(tmin, tmax);
 }
 
 __DEVICE__ float4 MarchVolume(float3 orig, float3 dir)
 {
-    float2 hit = IntersectBox(orig, dir, make_float3(0), make_float3(2));
-    
-    if(hit.x > hit.y)
-    {
-    return make_float4(0);
-    }
-    
-    //Step though the volume and add up the opacity.
-    float t = hit.x;   
-    float4 dst = make_float4(0);
-    float4 src = make_float4(0);
-    
-    for(int i = 0;i < MAX_VOLUME_STEPS;i++)
-    {
-        t += VOLUME_STEP_SIZE;
-        
-        //Stop marching if the ray leaves the cube.
-        if(t > hit.y){break;}
-        
-    	float3 pos = orig + dir * t;
-        
-        float3 uvw = 1 - (pos * 0.5f + 0.5f);
-        
-        if(LINEAR_SAMPLE){
-        src = texture3DLinear(uvw, vres);
-        } else {
-        src = texture3D(uvw, vres);
-        }
-        src = clamp(src, 0.0f, 1.0f);
-        
-        src.w *= DENSITY_SCALE;
-        src.x *= src.w;
-        src.y *= src.w;
-        src.z *= src.w;
-        
-        dst = (1.0 - dst.w) * src + dst;
-        
-        if(APPLY){
-        float3 brd = border(uvw, vres);
-        float edge = 0.02f;
-        float top = 1 - edge;
-        float XX = (brd.x > edge && brd.x < top) ? 0 : 1;
-        float YY = (brd.y > edge && brd.y < top) ? 0 : 1;
-        float ZZ = (brd.z > edge && brd.z < top) ? 0 : 1;
-        float xx = _fmaxf(XX, YY) * _fmaxf(ZZ,YY) * _fmaxf(ZZ,XX);
-        float xx1 = xx * BORDER;
-        dst.x = dst.x * (1 - xx) + xx1;
-        dst.y = dst.y * (1 - xx) + xx1;
-        dst.z = dst.z * (1 - xx) + xx1;
-        //dst.w = _fmaxf(dst.w, xx);
-        dst.w = dst.w > xx ? dst.w : xx;
-        }
-        
-        //Stop marching if the color is nearly opaque.
-        if(dst.w > MAX_ALPHA){break;}
-    }
-    
-    return dst;
+float2 hit = IntersectBox(orig, dir, make_float3(0), make_float3(2));
+if(hit.x > hit.y)
+{
+return make_float4(0);
+}
+//Step though the volume and add up the opacity.
+float t = hit.x;   
+float4 dst = make_float4(0);
+float4 src = make_float4(0);
+
+for(int i = 0; i < MAX_VOLUME_STEPS; i++)
+{
+t += VOLUME_STEP_SIZE;
+
+//Stop marching if the ray leaves the cube.
+if(t > hit.y){ break; }
+
+float3 pos = orig + dir * t;
+float3 uvw = 1 - (pos * 0.5f + 0.5f);
+
+if(LINEAR_SAMPLE){
+src = texture3DLinear(uvw, vres);
+} else {
+src = texture3D(uvw, vres);
+}
+src = CLAMP(src, 0, 1);
+src.w *= DENSITY_SCALE;
+src.x *= src.w;
+src.y *= src.w;
+src.z *= src.w;
+dst = (1 - dst.w) * src + dst;
+
+if(APPLY){
+float3 brd = border(uvw, vres);
+float edge = 0.02f;
+float top = 1 - edge;
+float XX = (brd.x > edge && brd.x < top) ? 0 : 1;
+float YY = (brd.y > edge && brd.y < top) ? 0 : 1;
+float ZZ = (brd.z > edge && brd.z < top) ? 0 : 1;
+float xx = _fmaxf(XX, YY) * _fmaxf(ZZ, YY) * _fmaxf(ZZ, XX);
+float xx1 = xx * BORDER;
+dst.x = dst.x * (1 - xx) + xx1;
+dst.y = dst.y * (1 - xx) + xx1;
+dst.z = dst.z * (1 - xx) + xx1;
+dst.w = dst.w > xx ? dst.w : xx;
+}
+//Stop marching if the color is nearly opaque.
+if(dst.w > MAX_ALPHA){ break; }
+}
+return dst;
 }
 
 __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
 {
-    iTime = time;
-    width = (float)p_Width;
-    height = (float)p_Height;
-    p_Y = p_Height - p_Y;
-    float2 iMouse = make_float2(0);
-    iMouse.x -= rotateX * p_Width/2;
-    iMouse.y += rotateY * p_Height;
-    float2 iResolution = make_float2(width, height);
-    
-    float vres1 = _powf(width * height, 1.0f/3.0f);
-    vres1 = _floor(vres1);
-    vres = make_float3(vres1);  
-    
-    float2 res, uv;
-    res.x = width / height;
-    res.y = 1.0f;
-	uv.x = (float)p_X / height;
-	uv.y = (float)p_Y / height;
-    
-    float4 color = make_float4(0);
-    DENSITY_SCALE = density;// + 0.001f;
-    BORDER = Border;
-    LINEAR_SAMPLE = multiSample;
-    APPLY = apply;
-    
-    //Checkerboard background
-    float2 bguv = uv - res/2.0f;
-    float back = _sinf(bguv.x * pi * 8.0f) * _sinf(bguv.y * pi * 8.0f);
-    back = step(0.0f, back);
-    back = back * 0.05f + 0.2f;
-    back = background == 2 ? 1 - back : background == 3 ? 0 : background == 4 ? 1 : back;
-    color = make_float4(back, back, back, 0);
-    
-    float3 dir = normalize(make_float3(uv - res/2.0f, 1.0f));
-    float3 orig = make_float3(0.0f, 0.0f, -3.5f);
-	
-    dir.z *= zoom + 1;
-    
-    float2 angles = make_float2(0);
-    
-    angles = (iMouse / iResolution) * 2.0f - 1.0f;
-    angles = angles * make_float2(tau, tau / 2.0f);
+float X = (float)p_X;
+float Y = (float)p_Y;
+width = (float)p_Width;
+height = (float)p_Height;
+Y = height - Y;
+float2 resolution = make_float2(width, height);
+float2 XY = make_float2(X, Y);
+time = TIME * 10;
+DENSITY_SCALE = density; // + 0.001f;
+BORDER = Border;
+LINEAR_SAMPLE = multiSample;
+APPLY = apply;    
 
-    mat2 rX = rotate(angles.y);
-    mat2 rY = rotate(angles.x);
-    
-    float2 dirX = multi(make_float2(dir.y, dir.z), rX);
-    float2 origX = multi(make_float2(orig.y, orig.z), rX);
-    dir.y = dirX.x;
-    dir.z = dirX.y;
-    orig.y = origX.x;
-    orig.z = origX.y;
-    
-    float2 dirY = multi(make_float2(dir.x, dir.z), rY);
-    float2 origY = multi(make_float2(orig.x, orig.z), rY);
-    dir.x = dirY.x;
-    dir.z = dirY.y;
-    orig.x = origY.x;
-    orig.z = origY.y;
-    
-    float4 volume = MarchVolume(orig, dir);
-    
-    color = mix(color, volume, volume.w);
-        
-	return make_float3(color.x, color.y, color.z);
+float3 RGB = make_float3(p_R, p_G, p_B);
+float4 color = make_float4(0);
+
+float vres1 = _powf(width * height, 1.0f/3);
+vres1 = _floor(vres1);
+vres = make_float3(vres1);  
+float2 res = make_float2(width / height, 1);
+float2 uv = XY / height;
+float2 UV = uv;
+uv.x -= msX;
+uv.y -= msY;
+
+//Checkerboard background
+float2 bguv = UV - res / 2;
+float back = _sinf(bguv.x * PI * 8) * _sinf(bguv.y * PI * 8);
+back = step(0, back);
+back = back * 0.05f + 0.2f;
+float3 Back = background == 2 ? RGB : background == 3 ? make_float3(1 - back) : 
+background == 4 ? make_float3(0) : background == 5 ? make_float3(1) : make_float3(back);
+color = make_float4(Back, 0);
+
+float3 dir = normalize(make_float3(uv - res/2, 1));
+float3 orig = make_float3(0, 0, -3.5f);
+dir.z *= zoom + 1;
+
+rotate(&orig.z, &orig.x, ROTATEy);
+rotate(&dir.z, &dir.x, ROTATEy);
+rotate(&orig.x, &orig.y, ROTATEz);
+rotate(&dir.x, &dir.y, ROTATEz);
+rotate(&orig.y, &orig.z, ROTATEx);
+rotate(&dir.y, &dir.z, ROTATEx);
+
+float4 volume = MarchVolume(orig, dir);
+color = mix(color, volume, volume.w);
+
+return make_float3(color.x, color.y, color.z);
 }

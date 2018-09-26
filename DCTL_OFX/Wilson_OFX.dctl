@@ -1,246 +1,200 @@
 // Wilson OFX DCTL
 
+DEFINE_UI_PARAMS(TIME, Animate, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(SEA_SPEED, Sea Speed, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(msX, Horizontal, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(msY, Vertical, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(SCALE, Zoom, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(ROTATEy, RotateY, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+DEFINE_UI_PARAMS(ROTATEz, RotateZ, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+DEFINE_UI_PARAMS(ROTATEx, RotateX, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+DEFINE_UI_PARAMS(SWELL, Swell, DCTLUI_SLIDER_FLOAT, 1, 0, 3, 0.001)
 DEFINE_UI_PARAMS(NUM_STEPS, Steps, DCTLUI_SLIDER_INT, 8, 1, 16, 1)
-DEFINE_UI_PARAMS(p_Speed, Speed, DCTLUI_SLIDER_FLOAT, 0.1, -1, 1, 0.001)
-DEFINE_UI_PARAMS(p_Horizontal, Rotation, DCTLUI_SLIDER_FLOAT, 0, -5, 5, 0.001)
-DEFINE_UI_PARAMS(SEA_SPEED, Sea Speed, DCTLUI_SLIDER_FLOAT, 1, -5, 5, 0.001)
-DEFINE_UI_PARAMS(p_Swell, Swell, DCTLUI_SLIDER_FLOAT, 0, -3, 3, 0.001)
-DEFINE_UI_PARAMS(p_Vertical, Vertical, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
-DEFINE_UI_PARAMS(p_Opacity, Zoom, DCTLUI_SLIDER_FLOAT, 0, -5, 2, 0.001)
-DEFINE_UI_PARAMS(p_PluginTime, Time, DCTLUI_SLIDER_FLOAT, 0, 0, 100, 0.001)
-DEFINE_UI_PARAMS(p_LengthA, Offset, DCTLUI_SLIDER_FLOAT, 0, -5, 5, 0.001)
 DEFINE_UI_PARAMS(ITER_GEOMETRY, Geometry, DCTLUI_SLIDER_INT, 3, 1, 5, 1)
 DEFINE_UI_PARAMS(ITER_FRAGMENT, Fragment, DCTLUI_SLIDER_INT, 5, 1, 7, 1)
 
-#ifndef M_PI
-#define M_PI			3.14159265358979323846264338327950288
-#endif
+#include "DCTL_Functions.h"
 
-__DEVICE__ float fract(float A)
+__DEVICE__ float hash( float2 p)
 {
-float B;
-B = A - _floor(A);
-return B;
+float h = dot(p, make_float2(127.1f, 311.7f));	
+return fract(_sinf(h) * 43758.5453123f);
 }
 
-__DEVICE__ float2 fract(float2 A)
+__DEVICE__ float noise( float2 p)
 {
-float2 B;
-B.x = A.x - _floor(A.x);
-B.y = A.y - _floor(A.y);
-return B;
+float2 i = floor(p);//make_float2(_floor(p.x), _floor(p.y));
+float2 f = fract(p);	
+float2 u = f * f * (3 - 2 * f);
+return -1 + 2 * mix(mix(hash(i + make_float2(0)), hash(i + make_float2(1, 0)), u.x), 
+mix(hash(i + make_float2(0, 1)), hash(i + make_float2(1)), u.x), u.y);
 }
 
-__DEVICE__ float mix(float A, float B, float C)
+__DEVICE__ float diffuse( float3 n, float3 l, float p)
 {
-return A * (1.0f - C) + B * C;
+return _powf(dot(n,l) * 0.4f + 0.6f, p);
 }
 
-__DEVICE__ float3 mix(float3 A, float3 B, float C)
-{
-return A * (1 - C) + B * C;
-}
-
-__DEVICE__ float smoothstep(float edge0, float edge1, float x)
-{
-float t = _saturatef((x - edge0) / (edge1 - edge0));
-return t * t * (3.0f - 2.0f * t);
-}
-
-__DEVICE__ float hash(float2 p)
-{
-	float h = dot(p, make_float2(127.1f, 311.7f));	
-    return fract(_sinf(h) * 43758.5453123f);
-}
-
-__DEVICE__ float noise(float2 p)
-{
-    float2 i = make_float2(_floor(p.x), _floor(p.y));
-    float2 f = fract(p);	
-	float2 u;
-	u.x = f.x * f.x * (3.0f - 2.0f * f.x);
-	u.y = f.y * f.y * (3.0f - 2.0f * f.y);
-    return -1.0f + 2.0f * mix(mix(hash(i + make_float2(0.0f, 0.0f)), hash(i + make_float2(1.0f, 0.0f)), u.x), 
-    mix(hash(i + make_float2(0.0f, 1.0f)), hash(i + make_float2(1.0f, 1.0f)), u.x), u.y);
-}
-
-__DEVICE__ float diffuse(float3 n, float3 l, float p)
-{
-    return _powf(dot(n,l) * 0.4f + 0.6f, p);
-}
-
-__DEVICE__ float specular(float3 n, float3 l, float3 e, float s)
+__DEVICE__ float specular( float3 n, float3 l, float3 e, float s)
 {    
-    float nrm = (s + 8.0f) / (M_PI * 8.0f);
-    return _powf(_fmaxf(dot(reflect(e, n), l), 0.0f), s) * nrm;
+float nrm = (s + 8) / (PI * 8);
+return _powf(_fmaxf(dot(reflect(e, n), l), 0), s) * nrm;
 }
 
 __DEVICE__ float3 getSkyColor(float3 e)
 {
-    e.y = _fmaxf(e.y, 0.0f);
-    return make_float3(_powf(1.0f - e.y, 2.0f), 1.0f - e.y, 0.6f + (1.0f - e.y) * 0.4f);
+e.y = _fmaxf(e.y, 0);
+return make_float3(_powf(1 - e.y, 2), 1 - e.y, 0.6f + (1 - e.y) * 0.4f);
 }
 
-__DEVICE__ float sea_octave(float2 uv, float choppy)
+__DEVICE__ float sea_octave( float2 uv, float choppy)
 {
-    float buzz = noise(uv);
-    uv.x = uv.x + buzz;
-    uv.y = uv.y + buzz;        
-    float2 wv;
-    wv.x = 1.0f - _fabs(_sinf(uv.x));
-    wv.y = 1.0f - _fabs(_sinf(uv.y));
-    float2 swv;
-    swv.x = _fabs(_cosf(uv.x));
-    swv.y = _fabs(_cosf(uv.y));
-    wv.x = mix(wv.x, swv.x, wv.x);
-    wv.y = mix(wv.y, swv.y, wv.y);
-    return _powf(1.0f - _powf(wv.x * wv.y, 0.65f), choppy);
+float buzz = noise(uv);
+uv = uv + buzz;
+float2 wv = 1 - ABS(SIN(uv));
+float2 swv = ABS(COS(uv));
+wv.x = mix(wv.x, swv.x, wv.x);
+wv.y = mix(wv.y, swv.y, wv.y);
+return _powf(1 - _powf(wv.x * wv.y, 0.65f), choppy);
 }
 
-__DEVICE__ float map(float3 p, float SEA_TIME, float freq, float amp, float choppy, int GEOMETRY)
+__DEVICE__ float map( float3 p, float SEA_TIME, float freq, float amp, float choppy, int GEOMETRY)
 {
-    float2 uv;
-    uv.x = p.x;
-    uv.y = p.z;
-    uv.x *= 0.75f;
-    float4 octave_m = make_float4(1.6f, 1.2f, -1.2f, 1.6f);
-    
-    float d;
-    float h = 0.0f;    
-    for(int i = 0; i < GEOMETRY; i++)
-    {
-	d = sea_octave(make_float2((uv.x + SEA_TIME) * freq, (uv.y + SEA_TIME) * freq), choppy);
-	d += sea_octave(make_float2((uv.x - SEA_TIME) * freq, (uv.y - SEA_TIME) * freq), choppy);
-	h += d * amp;        
-	uv.x = uv.x * octave_m.x + uv.y * octave_m.y;
-	uv.y = uv.x * octave_m.z + uv.y * octave_m.w;
-	freq *= 1.9f;
-	amp *= 0.22f;
-	choppy = mix(choppy, 1.0f, 0.2f);
-    }
-    return p.y - h;
-}
-
-__DEVICE__ float map_detailed(float3 p, float SEA_TIME, float freq, float amp, float choppy, int FRAGMENT)
+float2 uv;
+uv.x = p.x;
+uv.y = p.z;
+uv.x *= 0.75f;
+float4 octave_m = make_float4(1.6f, 1.2f, -1.2f, 1.6f);
+float d;
+float h = 0;    
+for(int i = 0; i < GEOMETRY; i++)
 {
-    float2 uv;
-    uv.x = p.x;
-    uv.y = p.z;
-    uv.x *= 0.75f;
-    float4 octave_m = make_float4(1.6f, 1.2f, -1.2f, 1.6f);
-    
-    float d;
-    float h = 0.0f;    
-    for(int i = 0; i < FRAGMENT; i++) {        
-	d = sea_octave(make_float2((uv.x + SEA_TIME) * freq, (uv.y + SEA_TIME) * freq), choppy);
-	d += sea_octave(make_float2((uv.x - SEA_TIME) * freq, (uv.y - SEA_TIME) * freq), choppy);
-	h += d * amp;        
-	uv.x = uv.x * octave_m.x + uv.y * octave_m.y;
-	uv.y = uv.x * octave_m.z + uv.y * octave_m.w;
-	freq *= 1.9f;
-	amp *= 0.22f;
-	choppy = mix(choppy, 1.0f, 0.2f);
-    }
-    return p.y - h;
+d = sea_octave(make_float2((uv.x + SEA_TIME) * freq, (uv.y + SEA_TIME) * freq), choppy);
+d += sea_octave(make_float2((uv.x - SEA_TIME) * freq, (uv.y - SEA_TIME) * freq), choppy);
+h += d * amp;        
+uv.x = uv.x * octave_m.x + uv.y * octave_m.y;
+uv.y = uv.x * octave_m.z + uv.y * octave_m.w;
+freq *= 1.9f;
+amp *= 0.22f;
+choppy = mix(choppy, 1, 0.2f);
+}
+return p.y - h;
 }
 
-__DEVICE__ float3 getSeaColor(float3 p, float3 n, float3 l, float3 eye, float3 dist)
+__DEVICE__ float map_detailed( float3 p, float SEA_TIME, float freq, float amp, float choppy, int FRAGMENT)
+{
+float2 uv;
+uv.x = p.x;
+uv.y = p.z;
+uv.x *= 0.75f;
+float4 octave_m = make_float4(1.6f, 1.2f, -1.2f, 1.6f);
+float d;
+float h = 0.0f;    
+for(int i = 0; i < FRAGMENT; i++) {        
+d = sea_octave(make_float2((uv.x + SEA_TIME) * freq, (uv.y + SEA_TIME) * freq), choppy);
+d += sea_octave(make_float2((uv.x - SEA_TIME) * freq, (uv.y - SEA_TIME) * freq), choppy);
+h += d * amp;        
+uv.x = uv.x * octave_m.x + uv.y * octave_m.y;
+uv.y = uv.x * octave_m.z + uv.y * octave_m.w;
+freq *= 1.9f;
+amp *= 0.22f;
+choppy = mix(choppy, 1.0f, 0.2f);
+}
+return p.y - h;
+}
+
+__DEVICE__ float3 getSeaColor( float3 p, float3 n, float3 l, float3 eye, float3 dist)
 {  
-    float3 SEA_WATER_COLOR = make_float3(0.8f, 0.9f, 0.6f);
-    float3 SEA_BASE = make_float3(0.1f, 0.19f, 0.22f);
-    float SeaHeight = 0.6f;
-    float fresnel = _saturatef(1.0f - dot(n, eye * -1.0f));
-    fresnel = _powf(fresnel, 3.0f) * 0.65f;
-        
-    float3 reflected = getSkyColor(reflect(eye,n));    
-    float3 refracted = SEA_BASE + diffuse(n, l, 80.0f) * SEA_WATER_COLOR * 0.12f;
-    float3 color = mix(refracted, reflected, fresnel);
-    
-    float atten = _fmaxf(1.0f - dot(dist, dist) * 0.001f, 0.0f);
-    color = color + SEA_WATER_COLOR * (p.y - SeaHeight) * 0.18f * atten;
-    color = color + specular(n, l , eye, 60.0f);
-    
-    return color;
+float3 SEA_WATER_COLOR = make_float3(0.8f, 0.9f, 0.6f);
+float3 SEA_BASE = make_float3(0.1f, 0.19f, 0.22f);
+float SeaHeight = 0.6f;
+float fresnel = _saturatef(1.0f - dot(n, eye * -1));
+fresnel = _powf(fresnel, 3) * 0.65f;
+
+float3 reflected = getSkyColor(reflect(eye,n));    
+float3 refracted = SEA_BASE + diffuse(n, l, 80) * SEA_WATER_COLOR * 0.12f;
+float3 color = mix(refracted, reflected, fresnel);
+
+float atten = _fmaxf(1 - dot(dist, dist) * 0.001f, 0);
+color = color + SEA_WATER_COLOR * (p.y - SeaHeight) * 0.18f * atten;
+color = color + specular(n, l , eye, 60);
+
+return color;
 }
 
-__DEVICE__ float3 getNormal(float3 p, float eps, float SEA_TIME, float freq, float amp, float choppy, int FRAGMENT)
+__DEVICE__ float3 getNormal( float3 p, float eps, float SEA_TIME, float freq, float amp, float choppy, int FRAGMENT)
 {
-    float3 n;
-    n.y = map_detailed(p, SEA_TIME, freq, amp, choppy, FRAGMENT);    
-    n.x = map_detailed(make_float3(p.x + eps, p.y, p.z), SEA_TIME, freq, amp, choppy, FRAGMENT) - n.y;
-    n.z = map_detailed(make_float3(p.x, p.y, p.z + eps), SEA_TIME, freq, amp, choppy, FRAGMENT) - n.y;
-    n.y = eps;
-    return normalize(n);
+float3 n;
+n.y = map_detailed(p, SEA_TIME, freq, amp, choppy, FRAGMENT);    
+n.x = map_detailed(make_float3(p.x + eps, p.y, p.z), SEA_TIME, freq, amp, choppy, FRAGMENT) - n.y;
+n.z = map_detailed(make_float3(p.x, p.y, p.z + eps), SEA_TIME, freq, amp, choppy, FRAGMENT) - n.y;
+n.y = eps;
+return normalize(n);
 }
 
-__DEVICE__ void heightMapTracing(float3 ori, float3 dir, float3 *p, float SEA_TIME, int NUM_STEPS, float freq, float amp, float choppy, int GEOMETRY)
+__DEVICE__ void heightMapTracing( float3 ori, float3 dir, float3 *p, float SEA_TIME, int NUM_STEPS, float freq, float amp, float choppy, int GEOMETRY)
 {  
-    
-    float tm = 0.0f;
-    float tx = 1000.0f;    
-    float hx = map(ori + dir * tx, SEA_TIME, freq, amp, choppy, GEOMETRY);
-    hx = hx > 0.0f ? 1000.0f : hx;
-    float hm = map(ori + dir * tm, SEA_TIME, freq, amp, choppy, GEOMETRY);    
-    float tmid = 0.0f;
-    for(int i = 0; i < NUM_STEPS; i++) {
-        tmid = mix(tm, tx, hm/(hm-hx));                   
-        *p = ori + dir * tmid;                   
-    	float hmid = map(*p, SEA_TIME, freq, amp, choppy, GEOMETRY);
-		if(hmid < 0.0f) {
-        	tx = tmid;
-            hx = hmid;
-        } else {
-            tm = tmid;
-            hm = hmid;
-        }
-    }
+float tm = 0;
+float tx = 1000;    
+float hx = map(ori + dir * tx, SEA_TIME, freq, amp, choppy, GEOMETRY);
+hx = hx > 0 ? 1000 : hx;
+float hm = map(ori + dir * tm, SEA_TIME, freq, amp, choppy, GEOMETRY);    
+float tmid = 0;
+for(int i = 0; i < NUM_STEPS; i++) {
+tmid = mix(tm, tx, hm / (hm - hx));                   
+*p = ori + dir * tmid;                   
+float hmid = map(*p, SEA_TIME, freq, amp, choppy, GEOMETRY);
+if(hmid < 0) {
+tx = tmid;
+hx = hmid;
+} else {
+tm = tmid;
+hm = hmid;
+}
+}
 }
 
 __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
 {
-	p_Swell -= 2;
-	p_Swell *= -1;
-	p_Speed *= -1.0f;
-	float2 uv;
-	uv.x = (float)p_X / p_Width;
-	uv.y = (float)(p_Height - p_Y) / p_Height + p_Vertical;
-    uv = uv * 2 - 1;
-    uv.x *= (float)p_Width / p_Height;
-    float time = p_Speed * p_PluginTime * 0.3f + p_LengthA;
-    float SEA_TIME = 1.0f + p_PluginTime * SEA_SPEED * p_Speed;;
-    float freq = 0.08f + (0.08f * p_Swell);
-    float amp = 0.6f;
-    float choppy = 4.0f;
-        
-    float3 ang = make_float3(_sinf(time * 3.0f) * 0.1f, _sinf(time) * 0.2f + 0.3f, time * p_Horizontal);
-    float3 ori = make_float3(0.0f, 3.5, time * 5.0f);
-    float3 dir = normalize(make_float3(uv.x, uv.y, -2.0f));
-    dir.z += length(uv) * 0.15f * (p_Opacity * -1);
-    
-	float2 a1 = make_float2(_sinf(ang.x), _cosf(ang.x));
-    float2 a2 = make_float2(_sinf(ang.y), _cosf(ang.y));
-    float2 a3 = make_float2(_sinf(ang.z), _cosf(ang.z));
-    float3 m[3];
-    m[0] = make_float3(a1.y*a3.y+a1.x*a2.x*a3.x,a1.y*a2.x*a3.x+a3.y*a1.x,-a2.y*a3.x);
-	m[1] = make_float3(-a2.y*a1.x,a1.y*a2.y,a2.x);
-	m[2] = make_float3(a3.y*a1.x*a2.x+a1.y*a3.x,a1.x*a3.x-a1.y*a3.y*a2.x,a2.y*a3.y);
-	dir = normalize(dir);
-	float D1 = dir.x * m[0].x + dir.y * m[0].y + dir.z * m[0].z;
-	float D2 = dir.x * m[1].x + dir.y * m[1].y + dir.z * m[1].z;
-	float D3 = dir.x * m[2].x + dir.y * m[2].y + dir.z * m[2].z;
-	dir = make_float3(D1, D2, D3);
-	
-    float3 p;
-    heightMapTracing(ori, dir, &p, SEA_TIME, NUM_STEPS, freq, amp, choppy, ITER_GEOMETRY);
-    float3 dist = p - ori;
-    float3 n = getNormal(p, dot(dist,dist) * 0.001f, SEA_TIME, freq, amp, choppy, ITER_FRAGMENT);
-    float3 light = normalize(make_float3(0.0f, 1.0f, 0.8f)); 
-    
-    float3 Color = mix(getSkyColor(dir), getSeaColor(p, n, light, dir, dist), _powf(smoothstep(0.0f, -0.05f, dir.y), 0.3f));
-    
-    Color.x = _powf(Color.x, 0.75f);
-    Color.y = _powf(Color.y, 0.75f);
-    Color.z = _powf(Color.z, 0.75f);
-    
-    return Color;
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+float2 resolution = make_float2(width, height);
+float2 XY = make_float2(X, Y);
+float time = TIME * 10;
+
+SWELL = 3 - SWELL;
+float2 uv = XY / resolution;
+uv = uv * 2 - 1;
+uv.x *= width / height;
+uv.x -= msX * 2;
+uv.y -= msY;
+float scale = SCALE < 1 ? SCALE + 0.5f * (1 - SCALE) : _powf(SCALE, SCALE);
+uv = uv / scale;
+float SEA_TIME = 1 + time * SEA_SPEED;
+float freq = 0.08f + (0.08f * SWELL);
+float amp = 0.6f;
+float choppy = 4;
+
+float3 ori = make_float3(0.0f, 3.5f, time * -5);
+float3 dir = normalize(make_float3(uv.x, uv.y, -2));
+rotate(&ori.z, &ori.x, ROTATEy);
+rotate(&dir.z, &dir.x, ROTATEy);
+rotate(&ori.x, &ori.y, ROTATEz);
+rotate(&dir.x, &dir.y, ROTATEz);
+rotate(&ori.y, &ori.z, ROTATEx);
+rotate(&dir.y, &dir.z, ROTATEx);
+
+float3 p;
+heightMapTracing(ori, dir, &p, SEA_TIME, NUM_STEPS, freq, amp, choppy, ITER_GEOMETRY);
+float3 dist = p - ori;
+float3 n = getNormal(p, dot(dist,dist) * 0.001f, SEA_TIME, freq, amp, choppy, ITER_FRAGMENT);
+float3 light = normalize(make_float3(0, 1.0f, 0.8f)); 
+
+float3 Color = mix(getSkyColor(dir), getSeaColor(p, n, light, dir, dist), _powf(smoothstep(0.0f, -0.05f, dir.y), 0.3f));
+Color = POW(Color, 0.75f);
+
+return Color;
 }

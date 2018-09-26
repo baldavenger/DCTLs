@@ -1,6 +1,6 @@
 // PacMan OFX DCTL
 
-DEFINE_UI_PARAMS(TIME, Animate, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(TIME, Gobble, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
 DEFINE_UI_PARAMS(SCALE, Zoom, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
 DEFINE_UI_PARAMS(msX, Horizontal, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
 DEFINE_UI_PARAMS(msY, Vertical, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
@@ -15,7 +15,6 @@ float X = (float)p_X;
 float Y = (float)p_Y;
 float width = (float)p_Width;
 float height = (float)p_Height;
-//Y = height - Y;
 float2 resolution = make_float2(width, height);
 float2 XY = make_float2(X, Y);
 float t = TIME * 4;
