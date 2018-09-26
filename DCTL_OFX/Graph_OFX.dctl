@@ -1,0 +1,228 @@
+// Graph OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Plot, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(SCALE, Zoom, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(msX, Horizontal, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(msY, Vertical, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(ROTATE, Rotate, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+DEFINE_UI_PARAMS(numfunc, Num Function, DCTLUI_SLIDER_INT, 3, 1, 3, 1)
+DEFINE_UI_PARAMS(CURVE, Curve, DCTLUI_SLIDER_INT, 1, 1, 3, 1)
+DEFINE_UI_PARAMS(ZOOM, Toggle Zoom, DCTLUI_SLIDER_INT, 1, 0, 2, 1)
+DEFINE_UI_PARAMS(simple_mode, Simple Mode, DCTLUI_CHECK_BOX, 0)
+
+#include "DCTL_Functions.h"
+
+__DEVICE__ float2 Coord = {0, 0};
+
+#define decimalPlace 8.0f
+#define baseScale 10.0f
+#define thickness 2.5f
+
+#define color1 make_float3(0.1f, 0.5f, 0)
+#define color2 make_float3(0.1f, 0.3f, 0.9f)
+#define color3 make_float3(0.6f, 0.1f, 0.6f)
+
+#define kCharBlank				12.0f
+#define kCharMinus				11.0f
+#define kCharDecimalPoint		10.0f
+
+__DEVICE__ float F( float x, float num)
+{
+float fx = 0;
+if (num == 1){
+fx = _sinf(x);
+} else if (num == 2){
+fx = x * x * x;
+} else {
+fx = x - 4;
+}
+return fx;
+}
+
+__DEVICE__ float de( float2 p, float num)
+{
+float v = F(p.x, num) - p.y;
+float h = 0.5f;
+float g = 1.5f + _powf(F(p.x + h, num) - F(p.x - h, num), 2);
+float de = _fabs(v);
+if(num > 1) de /= _sqrtf(g);
+return float(smoothstep(0, 0.13f, de));
+}
+
+__DEVICE__ float DigitBin( int x)
+{
+return x==0 ? 480599.0f : x==1 ? 139810.0f : x==2 ? 476951.0f : x==3 ? 476999.0f : x==4 ? 350020.0f : x==5 ? 464711.0f : 
+x==6 ? 464727.0f : x==7 ? 476228.0f : x==8 ? 481111.0f : x==9 ? 481095.0f : 0.0f;
+}
+
+__DEVICE__ float PrintValue( float2 vPixelCoords, float2 vFontSize, float fValue, float fMaxDigits, float fDecimalPlaces)
+{
+float2 vStringCharCoords = (Coord - vPixelCoords) / vFontSize;
+if ((vStringCharCoords.y < 0) || (vStringCharCoords.y >= 1)) return 0;
+float fLog10Value = _log2f(_fabs(fValue)) / _log2f(10);
+float fBiggestIndex = _fmaxf(_floor(fLog10Value), 0);
+float fDigitIndex = fMaxDigits - _floor(vStringCharCoords.x);
+float fCharBin = 0;
+if(fDigitIndex > (-fDecimalPlaces - 1.01f)) {
+if(fDigitIndex > fBiggestIndex) {
+if((fValue < 0) && (fDigitIndex < (fBiggestIndex + 1.5f))) fCharBin = 1792;
+} else {		
+if(fDigitIndex == -1) {
+if(fDecimalPlaces > 0) fCharBin = 2;
+} else {
+if(fDigitIndex < 0) fDigitIndex += 1;
+float fDigitValue = (_fabs(fValue / (_powf(10, fDigitIndex))));
+float kFix = 0.0001f;
+fCharBin = DigitBin(int(_floor(_fmod(kFix + fDigitValue, 10))));
+}		
+}
+}
+return _floor(_fmod((fCharBin / _powf(2, _floor(fract(vStringCharCoords.x) * 4) + (_floor(vStringCharCoords.y * 5) * 4))), 2));
+}
+
+__DEVICE__ float print( float value, float line)
+{
+float2 pos = make_float2(0, 20 * line + 5);
+float2 vFontSize = make_float2(8, 15);
+float fDigits = 4;
+float fDecimalPlaces = decimalPlace;
+return PrintValue(pos, vFontSize, value, fDigits, fDecimalPlaces);
+}
+
+__DEVICE__ float zeros( float2 p, float x, float num, float zoom)
+{	
+float rz;
+float d = 0;
+for (float i = 0; i <= 8; i++)
+{
+float yval = F(x + d, num);
+float drv = -yval / ( (F(x + d + 0.4f, num) - F(x + d - 0.4f, num)) * 1.01f );
+if (_fabs(yval) < 0.0002f)
+{
+rz += print(yval, 0);
+rz += print(x + d - drv, 1);
+rz = _fmaxf(1 - _powf(length(make_float2(x + d, yval) - p), 4) * 4e4 / (zoom * zoom), rz);
+break;
+}
+d+= drv;
+}
+return rz;
+}
+
+__DEVICE__ float info( float2 p, float x, float num, float zoom)
+{
+float rz = 0;
+float yval = F(x, num);
+rz += print(yval, 0);
+rz += print(x, 1);
+float dr = F(x + 0.5f, num) - F(x - 0.5f, num);
+rz += print(dr, 2);
+rz += 0.5f - _fabs(smoothstep(0.0f, _fmaxf(0.25f, dr * 0.25f), p.y - p.x * dr - yval + dr * x + 0.1f) - 0.5f);
+rz = _fmaxf(1.0f - _powf(length(make_float2(x, yval) - p), 4) * 2e4 / zoom, rz);
+return rz;
+}
+
+__DEVICE__ float draw( float2 p, float num, float zoom, float Height)
+{
+float rz = de(p, num);
+rz *= (1 / thickness);
+rz /= _sqrtf(zoom / Height);
+rz = 1 - _saturatef(rz);
+rz = _saturatef(rz);
+return rz;
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+float2 resolution = make_float2(width, height);
+float2 XY = make_float2(X, Y);
+float time = TIME;
+bool KEY_1 = ZOOM == 1;
+bool KEY_2 = ZOOM == 0;
+bool KEY_X = CURVE == 1;
+bool KEY_C = CURVE == 2;
+bool KEY_V = CURVE == 3;
+Coord = make_float2(X/4, Y/4);
+float2 mouse = make_float2(time, 0.5f);
+
+float zoom = baseScale;
+width = 0.0f;
+if (KEY_1)
+{
+zoom *= 2;
+width = -0.02f;
+}
+if (KEY_2)
+{
+zoom *= 2;
+width = -0.02f;
+zoom *= 2;
+width = -0.02f;
+}
+width += 3 / resolution.x * zoom;
+float asp = resolution.x / resolution.y;
+float2 q = XY / resolution - 0.5f;
+q = q / (SCALE + 0.1f);
+rotate(&q.x, &q.y, ROTATE);
+q.x -= msX;
+q.y -= msY;
+q = q + 0.5f;
+
+q.x = (q.x * asp) + (1 - asp) * 0.5f;
+float2 uv = q * zoom;
+uv = uv - (0.5f * zoom);
+
+float2 um = (mouse - 0.5f) * zoom;
+um.x *= asp;
+float col1 = 0, col2 = 0, col3 = 0;
+
+if (!simple_mode){
+if (KEY_X)
+{
+col1 += info(uv, um.x, 1, zoom);
+}
+else if (KEY_C && numfunc > 1)
+{
+col2 += info(uv, um.x, 2, zoom);
+}
+else if (KEY_V && numfunc > 2)
+{
+col3 += info(uv, um.x, 3, zoom);
+}
+else
+{
+uv.y -= (mouse.y - 0.5f) * zoom;
+uv.x -= (mouse.x - 0.5f) * zoom * asp;
+}
+} else {
+uv.y -= (mouse.y - 0.5f) * zoom;
+uv.x -= (mouse.x - 0.5f) * zoom * asp;
+}
+
+float3 col = make_float3(0.97f, 0.97f, 0.97f);
+col1 += draw(uv, 1, zoom, resolution.y);
+
+if (numfunc > 1)
+col2 += draw(uv, 2, zoom, resolution.y);
+
+if (numfunc > 2)
+col3 += draw(uv, 3, zoom, resolution.y);
+
+float grid;
+grid = step(_fabs(uv.x), width * 0.5f) * 0.8f;
+grid = _fmaxf(step(_fabs(uv.y), width * 0.5f) * 0.8f, grid);
+grid = _fmaxf(step(fract(uv.x), width * 1.2f) * 0.2f, grid);
+grid = _fmaxf(step(fract(uv.y), width * 1.2f) * 0.2f, grid);
+col = col - grid;
+
+col = col - col1 * (1 - color1);
+col = col - col2 * (1 - color2);
+col = col - col3 * (1 - color3);
+
+return col;
+}
