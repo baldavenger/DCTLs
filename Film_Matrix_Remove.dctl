@@ -1,12 +1,0 @@
-// Arri Film Matrix removal (to be applied to LogC)
-
-
-__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
-{
-    const float r = (p_R * 0.806165f) + (p_G * 0.168534f) + (p_B * 0.025301f);
-    const float g = (p_R * 0.091228f) + (p_G * 0.765221f) + (p_B * 0.14355f);
-    const float b = (p_R * 0.092241f) + (p_G * 0.251418f) + (p_B * 0.656341f);
-
-    return make_float3(r, g, b);
-}
- 
