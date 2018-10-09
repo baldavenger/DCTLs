@@ -1,0 +1,1569 @@
+// Mario OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Animate, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(OFFSET, Offset, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(msX, Horizontal, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(msY, Vertical, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(SCALE, Zoom, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(ROTATE, Rotate, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(VIGNETTE, CRT, DCTLUI_CHECK_BOX, 1)
+DEFINE_UI_PARAMS(SCANLINE, Scanlines, DCTLUI_CHECK_BOX, 1)
+
+__DEVICE__ float Fract( float A)
+{
+float B;
+B = A - _floor(A);
+return B;
+}
+
+__DEVICE__ float mix( float A, float B, float C)
+{
+float D = A * (1.0f - C) + B * C;
+return D;
+}
+
+__DEVICE__ float3 mix_f3( float3 A, float3 B, float C)
+{
+float3 D;
+D.x = A.x * (1.0f - C) + B.x * C;
+D.y = A.y * (1.0f - C) + B.y * C;
+D.z = A.z * (1.0f - C) + B.z * C;
+return D;
+}
+
+__DEVICE__ inline void Rotate( float* ax, float* ay, float b)
+{
+float AX = *ax;
+float AY = *ay;
+float c = _cosf(b);
+float s = _sinf(b);
+*ax = AX * c - AY * s;
+*ay = AX * s + AY * c;
+}
+
+#define SPRITE_DEC( x, i ) _fmod( _floor( i / _powf( 4.0f, float( x ) ) ), 4.0f )
+#define RGB( r, g, b ) make_float3( float( r ) / 255.0f, float( g ) / 255.0f, float( b ) / 255.0f )
+
+__CONSTANT__ float MARIO_SPEED	= 89.0f;
+__CONSTANT__ float GOOMBA_SPEED = 32.0f;
+__CONSTANT__ float INTRO_LENGTH = 2.0f;
+
+__DEVICE__ void SpriteBlock( float3 *color, int x, int y )
+{
+    // black
+    float idx = 1.0f;
+    
+    // light orange
+    idx = x < y ? 3.0f : idx;
+    
+    // dark orange
+    idx = x > 3 && x < 12 && y > 3 && y < 12 ? 2.0f : idx;
+    idx = x == 15 - y ? 2.0f : idx;
+    
+    *color = RGB( 0, 0, 0 );
+	*color = idx == 2.0f ? RGB( 231,  90,  16 ) : *color;
+	*color = idx == 3.0f ? RGB( 247, 214, 181 ) : *color;
+}
+
+__DEVICE__ void SpriteHill( float3 *color, int x, int y )
+{
+    float idx = 0.0f;
+    
+    // dark green
+    idx = ( x > y && 79 - x > y ) && y < 33 ? 2.0f : idx;
+    idx = ( x >= 37 && x <= 42 ) && y == 33 ? 2.0f : idx;
+    
+    // black
+    idx = ( x == y || 79 - x == y ) && y < 33 ? 1.0f : idx;
+    idx = ( x == 33 || x == 46 ) && y == 32 ? 1.0f : idx;
+    idx = ( x >= 34 && x <= 36 ) && y == 33 ? 1.0f : idx;
+    idx = ( x >= 43 && x <= 45 ) && y == 33 ? 1.0f : idx;
+    idx = ( x >= 37 && x <= 42 ) && y == 34 ? 1.0f : idx;
+    idx = ( x >= 25 && x <= 26 ) && ( y >= 8  && y <= 11 ) ? 1.0f : idx;
+    idx = ( x >= 41 && x <= 42 ) && ( y >= 24 && y <= 27 ) ? 1.0f : idx;
+    idx = ( x >= 49 && x <= 50 ) && ( y >= 8  && y <= 11 ) ? 1.0f : idx;
+    idx = ( x >= 28 && x <= 30 ) && ( y >= 11 && y <= 14 ) ? 1.0f : idx;
+    idx = ( x >= 28 && x <= 30 ) && ( y >= 11 && y <= 14 ) ? 1.0f : idx;
+    idx = ( x >= 44 && x <= 46 ) && ( y >= 27 && y <= 30 ) ? 1.0f : idx;
+    idx = ( x >= 44 && x <= 46 ) && ( y >= 27 && y <= 30 ) ? 1.0f : idx;
+    idx = ( x >= 52 && x <= 54 ) && ( y >= 11 && y <= 14 ) ? 1.0f : idx;
+    idx = ( x == 29 || x == 53 ) && ( y >= 10 && y <= 15 ) ? 1.0f : idx;
+    idx = x == 45 && ( y >= 26 && y <= 31 ) ? 1.0f : idx;
+    
+	*color = idx == 1.0f ? RGB( 0,     0,  0 ) : *color;
+	*color = idx == 2.0f ? RGB( 0,   173,  0 ) : *color;
+}
+
+__DEVICE__ void SpritePipe( float3 *color, int x, int y, int h )
+{
+    int offset = h * 16;
+
+    // light green
+	float idx = 3.0f;
+    
+    // dark green
+    idx = ( ( x > 5 && x < 8 ) || ( x == 13 ) || ( x > 15 && x < 23 ) ) && y < 17 + offset ? 2.0f : idx;
+    idx = ( ( x > 4 && x < 7 ) || ( x == 12 ) || ( x > 14 && x < 24 ) ) && ( y > 17 + offset && y < 30 + offset ) ? 2.0f : idx;    
+    idx = ( x < 5 || x > 11 ) && y == 29 + offset ? 2.0f : idx;
+	idx = Fract( float( x ) * 0.5 + float( y ) * 0.5 ) == 0.5 && x > 22 && ( ( x < 26 && y < 17 + offset ) || ( x < 28 && y > 17 + offset && y < 30 + offset ) ) ? 2.0f : idx;    
+    
+    // black
+    idx = y == 31 + offset || x == 0 || x == 31 || y == 17 + offset ? 1.0f : idx;
+    idx = ( x == 2 || x == 29 ) && y < 18 + offset ? 1.0f : idx;
+    idx = ( x > 1 && x < 31 ) && y == 16 + offset ? 1.0f : idx;    
+    
+    // transparent
+    idx = ( x < 2 || x > 29 ) && y < 17 + offset ? 0.0f : idx;
+
+	*color = idx == 1.0f ? RGB( 0,     0,  0 ) : *color;
+	*color = idx == 2.0f ? RGB( 0,   173,  0 ) : *color;
+	*color = idx == 3.0f ? RGB( 189, 255, 24 ) : *color;
+}
+
+__DEVICE__ void SpriteCloud( float3 *color, int x, int y, bool isBush )
+{
+   	float idx = 0.0f;
+	idx = y == 23 ? ( x <= 7 ? 0.0f : ( x <= 15 ? 20480.0f : ( x <= 23 ? 5.0f : 0.0f ) ) ) : idx;
+	idx = y == 22 ? ( x <= 7 ? 0.0f : ( x <= 15 ? 62464.0f : ( x <= 23 ? 31.0f : 0.0f ) ) ) : idx;
+	idx = y == 21 ? ( x <= 7 ? 0.0f : ( x <= 15 ? 64832.0f : ( x <= 23 ? 127.0f : 0.0f ) ) ) : idx;
+	idx = y == 20 ? ( x <= 7 ? 0.0f : ( x <= 15 ? 65488.0f : ( x <= 23 ? 1151.0f : 0.0f ) ) ) : idx;
+	idx = y == 19 ? ( x <= 7 ? 0.0f : ( x <= 15 ? 65488.0f : ( x <= 23 ? 7679.0f : 0.0f ) ) ) : idx;
+	idx = y == 18 ? ( x <= 7 ? 0.0f : ( x <= 15 ? 65488.0f : ( x <= 23 ? 32763.0f : 0.0f ) ) ) : idx;
+	idx = y == 17 ? ( x <= 7 ? 0.0f : ( x <= 15 ? 60404.0f : ( x <= 23 ? 32751.0f : 0.0f ) ) ) : idx;
+	idx = y == 16 ? ( x <= 7 ? 0.0f : ( x <= 15 ? 65277.0f : ( x <= 23 ? 32767.0f : 0.0f ) ) ) : idx;
+	idx = y == 15 ? ( x <= 7 ? 21504.0f : ( x <= 15 ? 65535.0f : ( x <= 23 ? 65535.0f : 65.0f ) ) ) : idx;
+	idx = y == 14 ? ( x <= 7 ? 64768.0f : ( x <= 15 ? 65535.0f : ( x <= 23 ? 65535.0f : 465.0f ) ) ) : idx;
+	idx = y == 13 ? ( x <= 7 ? 65344.0f : ( x <= 15 ? 65535.0f : ( x <= 23 ? 65535.0f : 503.0f ) ) ) : idx;
+	idx = y == 12 ? ( x <= 7 ? 65472.0f : ( x <= 15 ? 65535.0f : ( x <= 23 ? 65535.0f : 4607.0f ) ) ) : idx;
+	idx = y == 11 ? ( x <= 7 ? 65492.0f : ( x <= 15 ? 65535.0f : ( x <= 23 ? 65535.0f : 30719.0f ) ) ) : idx;
+	idx = y == 10 ? ( x <= 7 ? 65533.0f : ( x <= 15 ? 65535.0f : ( x <= 23 ? 65535.0f : 32767.0f ) ) ) : idx;
+	idx = y == 9 ? ( x <= 7 ? 65533.0f : ( x <= 15 ? 65535.0f : ( x <= 23 ? 65535.0f : 32767.0f ) ) ) : idx;
+	idx = y == 8 ? ( x <= 7 ? 65524.0f : ( x <= 15 ? 65535.0f : ( x <= 23 ? 65535.0f : 8191.0f ) ) ) : idx;
+	idx = y == 7 ? ( x <= 7 ? 64464.0f : ( x <= 15 ? 65535.0f : ( x <= 23 ? 65535.0f : 2047.0f ) ) ) : idx;
+	idx = y == 6 ? ( x <= 7 ? 61248.0f : ( x <= 15 ? 65531.0f : ( x <= 23 ? 65534.0f : 8191.0f ) ) ) : idx;
+	idx = y == 5 ? ( x <= 7 ? 48384.0f : ( x <= 15 ? 45034.0f : ( x <= 23 ? 65535.0f : 32767.0f ) ) ) : idx;
+	idx = y == 4 ? ( x <= 7 ? 64768.0f : ( x <= 15 ? 43695.0f : ( x <= 23 ? 64510.0f : 16383.0f ) ) ) : idx;
+	idx = y == 3 ? ( x <= 7 ? 21504.0f : ( x <= 15 ? 64255.0f : ( x <= 23 ? 65194.0f : 6143.0f ) ) ) : idx;
+	idx = y == 2 ? ( x <= 7 ? 0.0f : ( x <= 15 ? 32765.0f : ( x <= 23 ? 65451.0f : 381.0f ) ) ) : idx;
+	idx = y == 1 ? ( x <= 7 ? 0.0f : ( x <= 15 ? 8148.0f : ( x <= 23 ? 24565.0f : 20.0f ) ) ) : idx;
+	idx = y == 0 ? ( x <= 7 ? 0.0f : ( x <= 15 ? 1344.0f : ( x <= 23 ? 1360.0f : 0.0f ) ) ) : idx;
+
+	idx = SPRITE_DEC( _fmod( float( x ), 8.0f ), idx );
+
+    float3 colorB = isBush ? RGB( 0,   173,  0 ) : RGB(  57, 189, 255 );
+    float3 colorC = isBush ? RGB( 189, 255, 24 ) : RGB( 254, 254, 254 );
+
+	*color = idx == 1.0f ? RGB( 0, 0, 0 ) : *color;
+	*color = idx == 2.0f ? colorB 		: *color;
+	*color = idx == 3.0f ? colorC 		: *color;
+}
+
+__DEVICE__ void SpriteCloud1( float3 *color, int x, int y, bool isBush )
+{
+    if ( x >= 0 && x <= 31 )
+    {
+    	SpriteCloud( color, x, y, isBush );
+    }
+}
+
+__DEVICE__ void SpriteCloud2( float3 *color, int x, int y, bool isBush )
+{
+    if ( x >= 0 && x <= 47 )
+    {
+    	SpriteCloud( color, x <= 23 ? x : x - 16, y, isBush );
+    }
+}
+
+__DEVICE__ void SpriteCloud3( float3 *color, int x, int y, bool isBush )
+{
+    if ( x >= 0 && x <= 63 )
+    {
+    	SpriteCloud( color, x <= 23 ? x : ( x <= 39 ? x - 16 : x - 32 ), y, isBush );
+    }
+}
+
+__DEVICE__ void SpriteFlag( float3 *color, int x, int y )
+{
+	float idx = 0.0f;
+	idx = y == 15 ? 43690.0f : idx;
+	idx = y == 14 ? ( x <= 7 ? 43688.0f : 42326.0f ) : idx;
+	idx = y == 13 ? ( x <= 7 ? 43680.0f : 38501.0f ) : idx;
+	idx = y == 12 ? ( x <= 7 ? 43648.0f : 39529.0f ) : idx;
+	idx = y == 11 ? ( x <= 7 ? 43520.0f : 39257.0f ) : idx;
+	idx = y == 10 ? ( x <= 7 ? 43008.0f : 38293.0f ) : idx;
+	idx = y == 9 ? ( x <= 7 ? 40960.0f : 38229.0f ) : idx;
+	idx = y == 8 ? ( x <= 7 ? 32768.0f : 43354.0f ) : idx;
+	idx = y == 7 ? ( x <= 7 ? 0.0f : 43690.0f ) : idx;
+	idx = y == 6 ? ( x <= 7 ? 0.0f : 43688.0f ) : idx;
+	idx = y == 5 ? ( x <= 7 ? 0.0f : 43680.0f ) : idx;
+	idx = y == 4 ? ( x <= 7 ? 0.0f : 43648.0f ) : idx;
+	idx = y == 3 ? ( x <= 7 ? 0.0f : 43520.0f ) : idx;
+	idx = y == 2 ? ( x <= 7 ? 0.0f : 43008.0f ) : idx;
+	idx = y == 1 ? ( x <= 7 ? 0.0f : 40960.0f ) : idx;
+	idx = y == 0 ? ( x <= 7 ? 0.0f : 32768.0f ) : idx;
+
+	idx = SPRITE_DEC( _fmod( float( x ), 8.0f ), idx );
+
+	*color = idx == 1.0f ? RGB(   0, 173,   0 ) : *color;
+	*color = idx == 2.0f ? RGB( 255, 255, 255 ) : *color;
+}
+
+__DEVICE__ void SpriteGoomba3( float3 *color, int x, int y )
+{
+	float idx = 0.0f;
+	idx = y == 15 ? 0.0f : idx;
+	idx = y == 14 ? 0.0f : idx;
+	idx = y == 13 ? 0.0f : idx;
+	idx = y == 12 ? 0.0f : idx;
+	idx = y == 11 ? 0.0f : idx;
+	idx = y == 10 ? 0.0f : idx;
+	idx = y == 9 ? 0.0f : idx;
+	idx = y == 8 ? 0.0f : idx;
+	idx = y == 7 ? ( x <= 7 ? 40960.0f : 10.0f ) : idx;
+	idx = y == 6 ? ( x <= 7 ? 43648.0f : 682.0f ) : idx;
+	idx = y == 5 ? ( x <= 7 ? 42344.0f : 10586.0f ) : idx;
+	idx = y == 4 ? ( x <= 7 ? 24570.0f : 45045.0f ) : idx;
+	idx = y == 3 ? 43690.0f : idx;
+	idx = y == 2 ? ( x <= 7 ? 65472.0f : 1023.0f ) : idx;
+	idx = y == 1 ? ( x <= 7 ? 65280.0f : 255.0f ) : idx;
+	idx = y == 0 ? ( x <= 7 ? 1364.0f : 5456.0f ) : idx;
+
+	idx = SPRITE_DEC( _fmod( float( x ), 8.0f ), idx );
+
+	*color = idx == 1.0f ? RGB( 0,     0,   0 ) : *color;
+	*color = idx == 2.0f ? RGB( 153,  75,  12 ) : *color;
+	*color = idx == 3.0f ? RGB( 255, 200, 184 ) : *color;
+}
+
+__DEVICE__ void SpriteGoomba2( float3 *color, int x, int y )
+{
+	float idx = 0.0f;
+	idx = y == 15 ? ( x <= 7 ? 40960.0f : 10.0f ) : idx;
+	idx = y == 14 ? ( x <= 7 ? 43008.0f : 42.0f ) : idx;
+	idx = y == 13 ? ( x <= 7 ? 43520.0f : 170.0f ) : idx;
+	idx = y == 12 ? ( x <= 7 ? 43648.0f : 682.0f ) : idx;
+	idx = y == 11 ? ( x <= 7 ? 43360.0f : 2410.0f ) : idx;
+	idx = y == 10 ? ( x <= 7 ? 42920.0f : 10970.0f ) : idx;
+	idx = y == 9 ? ( x <= 7 ? 22440.0f : 10965.0f ) : idx;
+	idx = y == 8 ? ( x <= 7 ? 47018.0f : 43742.0f ) : idx;
+	idx = y == 7 ? ( x <= 7 ? 49066.0f : 43774.0f ) : idx;
+	idx = y == 6 ? 43690.0f : idx;
+	idx = y == 5 ? ( x <= 7 ? 65192.0f : 10943.0f ) : idx;
+	idx = y == 4 ? ( x <= 7 ? 65280.0f : 255.0f ) : idx;
+	idx = y == 3 ? ( x <= 7 ? 65360.0f : 255.0f ) : idx;
+	idx = y == 2 ? ( x <= 7 ? 62804.0f : 383.0f ) : idx;
+	idx = y == 1 ? ( x <= 7 ? 54612.0f : 351.0f ) : idx;
+	idx = y == 0 ? ( x <= 7 ? 5456.0f : 84.0f ) : idx;
+
+	idx = SPRITE_DEC( _fmod( float( x ), 8.0f ), idx );
+
+	*color = idx == 1.0f ? RGB( 0,     0,   0 ) : *color;
+	*color = idx == 2.0f ? RGB( 153,  75,  12 ) : *color;
+	*color = idx == 3.0f ? RGB( 255, 200, 184 ) : *color;
+}
+
+__DEVICE__ void SpriteGoomba1( float3 *color, int x, int y )
+{
+	float idx = 0.0f;
+	idx = y == 15 ? ( x <= 7 ? 40960.0f : 10.0f ) : idx;
+	idx = y == 14 ? ( x <= 7 ? 43008.0f : 42.0f ) : idx;
+	idx = y == 13 ? ( x <= 7 ? 43520.0f : 170.0f ) : idx;
+	idx = y == 12 ? ( x <= 7 ? 43648.0f : 682.0f ) : idx;
+	idx = y == 11 ? ( x <= 7 ? 43360.0f : 2410.0f ) : idx;
+	idx = y == 10 ? ( x <= 7 ? 42920.0f : 10970.0f ) : idx;
+	idx = y == 9 ? ( x <= 7 ? 22440.0f : 10965.0f ) : idx;
+	idx = y == 8 ? ( x <= 7 ? 47018.0f : 43742.0f ) : idx;
+	idx = y == 7 ? ( x <= 7 ? 49066.0f : 43774.0f ) : idx;
+	idx = y == 6 ? 43690.0f : idx;
+	idx = y == 5 ? ( x <= 7 ? 65192.0f : 10943.0f ) : idx;
+	idx = y == 4 ? ( x <= 7 ? 65280.0f : 255.0f ) : idx;
+	idx = y == 3 ? ( x <= 7 ? 65280.0f : 1535.0f ) : idx;
+	idx = y == 2 ? ( x <= 7 ? 64832.0f : 5471.0f ) : idx;
+	idx = y == 1 ? ( x <= 7 ? 62784.0f : 5463.0f ) : idx;
+	idx = y == 0 ? ( x <= 7 ? 5376.0f : 1364.0f ) : idx;
+
+	idx = SPRITE_DEC( _fmod( float( x ), 8.0f ), idx );
+
+	*color = idx == 1.0f ? RGB( 0,     0,   0 ) : *color;
+	*color = idx == 2.0f ? RGB( 153,  75,  12 ) : *color;
+	*color = idx == 3.0f ? RGB( 255, 200, 184 ) : *color;
+}
+
+__DEVICE__ void SpriteGoomba( float3 *color, int x, int y, int frame )
+{    
+	if ( frame == 0 )
+    {
+		SpriteGoomba1( color, x, y );
+	}
+	else if ( frame == 1 )
+	{
+		SpriteGoomba2( color, x, y );
+	}
+    else if ( frame == 2 )
+    {
+        SpriteGoomba3( color, x, y );
+    }
+}
+
+__DEVICE__ void SpriteKoopa2( float3 *color, int x, int y )
+{
+	float idx = 0.0f;
+	idx = y == 23 ? 0.0f : idx;
+	idx = y == 22 ? ( x <= 7 ? 192.0f : 0.0f ) : idx;
+	idx = y == 21 ? ( x <= 7 ? 1008.0f : 0.0f ) : idx;
+	idx = y == 20 ? ( x <= 7 ? 3056.0f : 0.0f ) : idx;
+	idx = y == 19 ? ( x <= 7 ? 11224.0f : 0.0f ) : idx;
+	idx = y == 18 ? ( x <= 7 ? 11224.0f : 0.0f ) : idx;
+	idx = y == 17 ? ( x <= 7 ? 11224.0f : 0.0f ) : idx;
+	idx = y == 16 ? ( x <= 7 ? 11256.0f : 0.0f ) : idx;
+	idx = y == 15 ? ( x <= 7 ? 10986.0f : 0.0f ) : idx;
+	idx = y == 14 ? ( x <= 7 ? 10918.0f : 0.0f ) : idx;
+	idx = y == 13 ? ( x <= 7 ? 2730.0f : 341.0f ) : idx;
+	idx = y == 12 ? ( x <= 7 ? 18986.0f : 1622.0f ) : idx;
+	idx = y == 11 ? ( x <= 7 ? 18954.0f : 5529.0f ) : idx;
+	idx = y == 10 ? ( x <= 7 ? 24202.0f : 8037.0f ) : idx;
+	idx = y == 9 ? ( x <= 7 ? 24200.0f : 7577.0f ) : idx;
+	idx = y == 8 ? ( x <= 7 ? 28288.0f : 9814.0f ) : idx;
+	idx = y == 7 ? ( x <= 7 ? 40864.0f : 6485.0f ) : idx;
+	idx = y == 6 ? ( x <= 7 ? 26496.0f : 9814.0f ) : idx;
+	idx = y == 5 ? ( x <= 7 ? 23424.0f : 5529.0f ) : idx;
+	idx = y == 4 ? ( x <= 7 ? 22272.0f : 5477.0f ) : idx;
+	idx = y == 3 ? ( x <= 7 ? 24320.0f : 64921.0f ) : idx;
+	idx = y == 2 ? ( x <= 7 ? 65152.0f : 4054.0f ) : idx;
+	idx = y == 1 ? ( x <= 7 ? 60064.0f : 11007.0f ) : idx;
+	idx = y == 0 ? ( x <= 7 ? 2728.0f : 43520.0f ) : idx;
+
+	idx = SPRITE_DEC( _fmod( float( x ), 8.0f ), idx );
+
+	*color = idx == 1.0f ? RGB( 30,  132,   0 ) : *color;
+	*color = idx == 2.0f ? RGB( 215, 141,  34 ) : *color;
+	*color = idx == 3.0f ? RGB( 255, 255, 255 ) : *color;
+}
+
+__DEVICE__ void SpriteKoopa1( float3 *color, int x, int y )
+{
+	float idx = 0.0f;
+	idx = y == 23 ? ( x <= 7 ? 768.0f : 0.0f ) : idx;
+	idx = y == 22 ? ( x <= 7 ? 4032.0f : 0.0f ) : idx;
+	idx = y == 21 ? ( x <= 7 ? 4064.0f : 0.0f ) : idx;
+	idx = y == 20 ? ( x <= 7 ? 12128.0f : 0.0f ) : idx;
+	idx = y == 19 ? ( x <= 7 ? 12136.0f : 0.0f ) : idx;
+	idx = y == 18 ? ( x <= 7 ? 12136.0f : 0.0f ) : idx;
+	idx = y == 17 ? ( x <= 7 ? 12264.0f : 0.0f ) : idx;
+	idx = y == 16 ? ( x <= 7 ? 11174.0f : 0.0f ) : idx;
+	idx = y == 15 ? ( x <= 7 ? 10922.0f : 0.0f ) : idx;
+	idx = y == 14 ? ( x <= 7 ? 10282.0f : 341.0f ) : idx;
+	idx = y == 13 ? ( x <= 7 ? 30730.0f : 1622.0f ) : idx;
+	idx = y == 12 ? ( x <= 7 ? 31232.0f : 1433.0f ) : idx;
+	idx = y == 11 ? ( x <= 7 ? 24192.0f : 8037.0f ) : idx;
+	idx = y == 10 ? ( x <= 7 ? 24232.0f : 7577.0f ) : idx;
+	idx = y == 9 ? ( x <= 7 ? 28320.0f : 9814.0f ) : idx;
+	idx = y == 8 ? ( x <= 7 ? 40832.0f : 6485.0f ) : idx;
+	idx = y == 7 ? ( x <= 7 ? 26496.0f : 9814.0f ) : idx;
+	idx = y == 6 ? ( x <= 7 ? 23424.0f : 5529.0f ) : idx;
+	idx = y == 5 ? ( x <= 7 ? 22272.0f : 5477.0f ) : idx;
+	idx = y == 4 ? ( x <= 7 ? 24320.0f : 64921.0f ) : idx;
+	idx = y == 3 ? ( x <= 7 ? 65024.0f : 12246.0f ) : idx;
+	idx = y == 2 ? ( x <= 7 ? 59904.0f : 11007.0f ) : idx;
+	idx = y == 1 ? ( x <= 7 ? 43008.0f : 10752.0f ) : idx;
+	idx = y == 0 ? ( x <= 7 ? 40960.0f : 2690.0f ) : idx;
+
+	idx = SPRITE_DEC( _fmod( float( x ), 8.0f ), idx );
+
+	*color = idx == 1.0f ? RGB( 30,  132,   0 ) : *color;
+	*color = idx == 2.0f ? RGB( 215, 141,  34 ) : *color;
+	*color = idx == 3.0f ? RGB( 255, 255, 255 ) : *color;
+}
+
+__DEVICE__ void SpriteKoopa( float3 *color, int x, int y, int frame )
+{    
+	if ( frame == 0 )
+    {
+		SpriteKoopa1( color, x, y );
+	}
+	else if ( frame == 1 )
+	{
+		SpriteKoopa2( color, x, y );
+	}
+}
+
+__DEVICE__ void SpriteQuestion( float3 *color, int x, int y, float t )
+{
+	float idx = 0.0f;
+	idx = y == 15 ? ( x <= 7 ? 43688.0f : 10922.0f ) : idx;
+	idx = y == 14 ? ( x <= 7 ? 65534.0f : 32767.0f ) : idx;
+	idx = y == 13 ? ( x <= 7 ? 65502.0f : 30719.0f ) : idx;
+	idx = y == 12 ? ( x <= 7 ? 44030.0f : 32762.0f ) : idx;
+	idx = y == 11 ? ( x <= 7 ? 23294.0f : 32745.0f ) : idx;
+	idx = y == 10 ? ( x <= 7 ? 56062.0f : 32619.0f ) : idx;
+	idx = y == 9 ? ( x <= 7 ? 56062.0f : 32619.0f ) : idx;
+	idx = y == 8 ? ( x <= 7 ? 55294.0f : 32618.0f ) : idx;
+	idx = y == 7 ? ( x <= 7 ? 49150.0f : 32598.0f ) : idx;
+	idx = y == 6 ? ( x <= 7 ? 49150.0f : 32758.0f ) : idx;
+	idx = y == 5 ? ( x <= 7 ? 65534.0f : 32757.0f ) : idx;
+	idx = y == 4 ? ( x <= 7 ? 49150.0f : 32766.0f ) : idx;
+	idx = y == 3 ? ( x <= 7 ? 49150.0f : 32758.0f ) : idx;
+	idx = y == 2 ? ( x <= 7 ? 65502.0f : 30709.0f ) : idx;
+	idx = y == 1 ? ( x <= 7 ? 65534.0f : 32767.0f ) : idx;
+	idx = y == 0 ? 21845.0f : idx;
+
+	idx = SPRITE_DEC( _fmod( float( x ), 8.0f ), idx );
+
+	*color = idx == 1.0f ? RGB( 0,     0,   0 ) : *color;
+	*color = idx == 2.0f ? RGB( 231,  90,  16 ) : *color;
+	*color = idx == 3.0f ? mix_f3( RGB( 255,  165, 66 ), RGB( 231,  90,  16 ), t ) : *color;
+}
+
+__DEVICE__ void SpriteMushroom( float3 *color, int x, int y )
+{
+    float idx = 0.0f;
+    idx = y == 15 ? ( x <= 7 ? 40960.0f : 10.0f ) : idx;
+	idx = y == 14 ? ( x <= 7 ? 43008.0f : 22.0f ) : idx;
+	idx = y == 13 ? ( x <= 7 ? 43520.0f : 85.0f ) : idx;
+	idx = y == 12 ? ( x <= 7 ? 43648.0f : 341.0f ) : idx;
+	idx = y == 11 ? ( x <= 7 ? 43680.0f : 2646.0f ) : idx;
+	idx = y == 10 ? ( x <= 7 ? 42344.0f : 10922.0f ) : idx;
+	idx = y == 9 ? ( x <= 7 ? 38232.0f : 10922.0f ) : idx;
+	idx = y == 8 ? ( x <= 7 ? 38234.0f : 42410.0f ) : idx;
+	idx = y == 7 ? ( x <= 7 ? 38234.0f : 38314.0f ) : idx;
+	idx = y == 6 ? ( x <= 7 ? 42346.0f : 38570.0f ) : idx;
+	idx = y == 5 ? 43690.0f : idx;
+	idx = y == 4 ? ( x <= 7 ? 64856.0f : 9599.0f ) : idx;
+	idx = y == 3 ? ( x <= 7 ? 65280.0f : 255.0f ) : idx;
+	idx = y == 2 ? ( x <= 7 ? 65280.0f : 239.0f ) : idx;
+	idx = y == 1 ? ( x <= 7 ? 65280.0f : 239.0f ) : idx;
+	idx = y == 0 ? ( x <= 7 ? 64512.0f : 59.0f ) : idx;
+    
+    idx = SPRITE_DEC( _fmod( float( x ), 8.0f ), idx );
+
+    *color = idx == 1.0f ? RGB( 181, 49,   33 ) : *color;
+	*color = idx == 2.0f ? RGB( 230, 156,  33 ) : *color;
+	*color = idx == 3.0f ? RGB( 255, 255, 255 ) : *color;
+}
+
+__DEVICE__ void SpriteGround( float3 *color, int x, int y )
+{   
+	float idx = 0.0f;
+	idx = y == 15 ? ( x <= 7 ? 65534.0f : 49127.0f ) : idx;
+	idx = y == 14 ? ( x <= 7 ? 43691.0f : 27318.0f ) : idx;
+	idx = y == 13 ? ( x <= 7 ? 43691.0f : 27318.0f ) : idx;
+	idx = y == 12 ? ( x <= 7 ? 43691.0f : 27318.0f ) : idx;
+	idx = y == 11 ? ( x <= 7 ? 43691.0f : 27254.0f ) : idx;
+	idx = y == 10 ? ( x <= 7 ? 43691.0f : 38246.0f ) : idx;
+	idx = y == 9 ? ( x <= 7 ? 43691.0f : 32758.0f ) : idx;
+	idx = y == 8 ? ( x <= 7 ? 43691.0f : 27318.0f ) : idx;
+	idx = y == 7 ? ( x <= 7 ? 43691.0f : 27318.0f ) : idx;
+	idx = y == 6 ? ( x <= 7 ? 43691.0f : 27318.0f ) : idx;
+	idx = y == 5 ? ( x <= 7 ? 43685.0f : 27309.0f ) : idx;
+	idx = y == 4 ? ( x <= 7 ? 43615.0f : 27309.0f ) : idx;
+	idx = y == 3 ? ( x <= 7 ? 22011.0f : 27307.0f ) : idx;
+	idx = y == 2 ? ( x <= 7 ? 32683.0f : 27307.0f ) : idx;
+	idx = y == 1 ? ( x <= 7 ? 27307.0f : 23211.0f ) : idx;
+	idx = y == 0 ? ( x <= 7 ? 38230.0f : 38231.0f ) : idx;
+
+	idx = SPRITE_DEC( _fmod( float( x ), 8.0f ), idx );
+
+	*color = RGB( 0, 0, 0 );
+	*color = idx == 2.0f ? RGB( 231,  90,  16 ) : *color;
+	*color = idx == 3.0f ? RGB( 247, 214, 181 ) : *color;
+}
+
+__DEVICE__ void SpriteSuperMarioJump( float3 *color, int x, int y )
+{
+	float idx = 0.0f;
+	idx = y == 31 ? ( x <= 7 ? 0.0f : 16128.0f ) : idx;
+	idx = y == 30 ? ( x <= 7 ? 0.0f : 63424.0f ) : idx;
+	idx = y == 29 ? ( x <= 7 ? 40960.0f : 55274.0f ) : idx;
+	idx = y == 28 ? ( x <= 7 ? 43520.0f : 65514.0f ) : idx;
+	idx = y == 27 ? ( x <= 7 ? 43648.0f : 21866.0f ) : idx;
+	idx = y == 26 ? ( x <= 7 ? 43648.0f : 23210.0f ) : idx;
+	idx = y == 25 ? ( x <= 7 ? 62784.0f : 22013.0f ) : idx;
+	idx = y == 24 ? ( x <= 7 ? 63440.0f : 24573.0f ) : idx;
+	idx = y == 23 ? ( x <= 7 ? 55248.0f : 32767.0f ) : idx;
+	idx = y == 22 ? ( x <= 7 ? 55248.0f : 32735.0f ) : idx;
+	idx = y == 21 ? ( x <= 7 ? 65492.0f : 5461.0f ) : idx;
+	idx = y == 20 ? ( x <= 7 ? 64852.0f : 7511.0f ) : idx;
+	idx = y == 19 ? ( x <= 7 ? 64832.0f : 6143.0f ) : idx;
+	idx = y == 18 ? ( x <= 7 ? 43520.0f : 5477.0f ) : idx;
+	idx = y == 17 ? ( x <= 7 ? 38228.0f : 1382.0f ) : idx;
+	idx = y == 16 ? ( x <= 7 ? 21845.0f : 1430.0f ) : idx;
+	idx = y == 15 ? ( x <= 7 ? 21845.0f : 410.0f ) : idx;
+	idx = y == 14 ? ( x <= 7 ? 22005.0f : 602.0f ) : idx;
+	idx = y == 13 ? ( x <= 7 ? 38909.0f : 874.0f ) : idx;
+	idx = y == 12 ? ( x <= 7 ? 43007.0f : 686.0f ) : idx;
+	idx = y == 11 ? ( x <= 7 ? 44031.0f : 682.0f ) : idx;
+	idx = y == 10 ? ( x <= 7 ? 43763.0f : 17066.0f ) : idx;
+	idx = y == 9 ? ( x <= 7 ? 43708.0f : 21162.0f ) : idx;
+	idx = y == 8 ? ( x <= 7 ? 43648.0f : 21930.0f ) : idx;
+	idx = y == 7 ? ( x <= 7 ? 43584.0f : 21930.0f ) : idx;
+	idx = y == 6 ? ( x <= 7 ? 42389.0f : 21930.0f ) : idx;
+	idx = y == 5 ? ( x <= 7 ? 23189.0f : 21930.0f ) : idx;
+	idx = y == 4 ? ( x <= 7 ? 43669.0f : 21920.0f ) : idx;
+	idx = y == 3 ? ( x <= 7 ? 43669.0f : 0.0f ) : idx;
+	idx = y == 2 ? ( x <= 7 ? 10901.0f : 0.0f ) : idx;
+	idx = y == 1 ? ( x <= 7 ? 5.0f : 0.0f ) : idx;
+	idx = y == 0 ? 0.0f : idx;
+
+    idx = SPRITE_DEC( _fmod( float( x ), 8.0f ), idx );
+    
+	*color = idx == 1.0f ? RGB( 106, 107,  4 ) : *color;
+	*color = idx == 2.0f ? RGB( 177,  52, 37 ) : *color;
+	*color = idx == 3.0f ? RGB( 227, 157, 37 ) : *color;
+}
+
+__DEVICE__ void SpriteSuperMarioWalk3( float3 *color, int x, int y )
+{
+	float idx = 0.0f;
+	idx = y == 31 ? ( x <= 7 ? 40960.0f : 42.0f ) : idx;
+	idx = y == 30 ? ( x <= 7 ? 43520.0f : 58.0f ) : idx;
+	idx = y == 29 ? ( x <= 7 ? 43648.0f : 62.0f ) : idx;
+	idx = y == 28 ? ( x <= 7 ? 43648.0f : 2730.0f ) : idx;
+	idx = y == 27 ? ( x <= 7 ? 62784.0f : 253.0f ) : idx;
+	idx = y == 26 ? ( x <= 7 ? 63440.0f : 4085.0f ) : idx;
+	idx = y == 25 ? ( x <= 7 ? 55248.0f : 16383.0f ) : idx;
+	idx = y == 24 ? ( x <= 7 ? 55252.0f : 16351.0f ) : idx;
+	idx = y == 23 ? ( x <= 7 ? 65492.0f : 1365.0f ) : idx;
+	idx = y == 22 ? ( x <= 7 ? 65364.0f : 1367.0f ) : idx;
+	idx = y == 21 ? ( x <= 7 ? 64832.0f : 1023.0f ) : idx;
+	idx = y == 20 ? ( x <= 7 ? 21504.0f : 15.0f ) : idx;
+	idx = y == 19 ? ( x <= 7 ? 43520.0f : 12325.0f ) : idx;
+	idx = y == 18 ? ( x <= 7 ? 38208.0f : 64662.0f ) : idx;
+	idx = y == 17 ? ( x <= 7 ? 21840.0f : 64922.0f ) : idx;
+	idx = y == 16 ? ( x <= 7 ? 21844.0f : 65114.0f ) : idx;
+	idx = y == 15 ? ( x <= 7 ? 21844.0f : 30298.0f ) : idx;
+	idx = y == 14 ? ( x <= 7 ? 38228.0f : 5722.0f ) : idx;
+	idx = y == 13 ? ( x <= 7 ? 42325.0f : 1902.0f ) : idx;
+	idx = y == 12 ? ( x <= 7 ? 43605.0f : 682.0f ) : idx;
+	idx = y == 11 ? ( x <= 7 ? 44031.0f : 682.0f ) : idx;
+	idx = y == 10 ? ( x <= 7 ? 44031.0f : 17066.0f ) : idx;
+	idx = y == 9 ? ( x <= 7 ? 43775.0f : 21162.0f ) : idx;
+	idx = y == 8 ? ( x <= 7 ? 43772.0f : 21866.0f ) : idx;
+	idx = y == 7 ? ( x <= 7 ? 43392.0f : 21866.0f ) : idx;
+	idx = y == 6 ? ( x <= 7 ? 42640.0f : 21866.0f ) : idx;
+	idx = y == 5 ? ( x <= 7 ? 23189.0f : 21866.0f ) : idx;
+	idx = y == 4 ? ( x <= 7 ? 43605.0f : 21824.0f ) : idx;
+	idx = y == 3 ? ( x <= 7 ? 2389.0f : 0.0f ) : idx;
+	idx = y == 2 ? ( x <= 7 ? 84.0f : 0.0f ) : idx;
+	idx = y == 1 ? ( x <= 7 ? 84.0f : 0.0f ) : idx;
+	idx = y == 0 ? ( x <= 7 ? 336.0f : 0.0f ) : idx;
+
+    idx = SPRITE_DEC( _fmod( float( x ), 8.0f ), idx );
+    
+	*color = idx == 1.0f ? RGB( 106, 107,  4 ) : *color;
+	*color = idx == 2.0f ? RGB( 177,  52, 37 ) : *color;
+	*color = idx == 3.0f ? RGB( 227, 157, 37 ) : *color;
+}
+
+__DEVICE__ void SpriteSuperMarioWalk2( float3 *color, int x, int y )
+{
+	float idx = 0.0f;
+	idx = y == 31 ? 0.0f : idx;
+	idx = y == 30 ? ( x <= 7 ? 40960.0f : 42.0f ) : idx;
+	idx = y == 29 ? ( x <= 7 ? 43520.0f : 58.0f ) : idx;
+	idx = y == 28 ? ( x <= 7 ? 43648.0f : 62.0f ) : idx;
+	idx = y == 27 ? ( x <= 7 ? 43648.0f : 2730.0f ) : idx;
+	idx = y == 26 ? ( x <= 7 ? 62784.0f : 253.0f ) : idx;
+	idx = y == 25 ? ( x <= 7 ? 63440.0f : 4085.0f ) : idx;
+	idx = y == 24 ? ( x <= 7 ? 55248.0f : 16383.0f ) : idx;
+	idx = y == 23 ? ( x <= 7 ? 55252.0f : 16351.0f ) : idx;
+	idx = y == 22 ? ( x <= 7 ? 65492.0f : 1365.0f ) : idx;
+	idx = y == 21 ? ( x <= 7 ? 65360.0f : 1367.0f ) : idx;
+	idx = y == 20 ? ( x <= 7 ? 64832.0f : 1023.0f ) : idx;
+	idx = y == 19 ? ( x <= 7 ? 43520.0f : 15.0f ) : idx;
+	idx = y == 18 ? ( x <= 7 ? 38464.0f : 22.0f ) : idx;
+	idx = y == 17 ? ( x <= 7 ? 21904.0f : 26.0f ) : idx;
+	idx = y == 16 ? ( x <= 7 ? 21904.0f : 90.0f ) : idx;
+	idx = y == 15 ? ( x <= 7 ? 21904.0f : 106.0f ) : idx;
+	idx = y == 14 ? ( x <= 7 ? 21904.0f : 125.0f ) : idx;
+	idx = y == 13 ? ( x <= 7 ? 21904.0f : 255.0f ) : idx;
+	idx = y == 12 ? ( x <= 7 ? 21920.0f : 767.0f ) : idx;
+	idx = y == 11 ? ( x <= 7 ? 22176.0f : 2815.0f ) : idx;
+	idx = y == 10 ? ( x <= 7 ? 23200.0f : 2751.0f ) : idx;
+	idx = y == 9 ? ( x <= 7 ? 43680.0f : 2725.0f ) : idx;
+	idx = y == 8 ? ( x <= 7 ? 43648.0f : 661.0f ) : idx;
+	idx = y == 7 ? ( x <= 7 ? 27136.0f : 341.0f ) : idx;
+	idx = y == 6 ? ( x <= 7 ? 23040.0f : 85.0f ) : idx;
+	idx = y == 5 ? ( x <= 7 ? 26624.0f : 21.0f ) : idx;
+	idx = y == 4 ? ( x <= 7 ? 41984.0f : 86.0f ) : idx;
+	idx = y == 3 ? ( x <= 7 ? 21504.0f : 81.0f ) : idx;
+	idx = y == 2 ? ( x <= 7 ? 21760.0f : 1.0f ) : idx;
+	idx = y == 1 ? ( x <= 7 ? 21760.0f : 21.0f ) : idx;
+	idx = y == 0 ? ( x <= 7 ? 20480.0f : 21.0f ) : idx;
+
+    idx = SPRITE_DEC( _fmod( float( x ), 8.0f ), idx );
+    
+	*color = idx == 1.0f ? RGB( 106, 107,  4 ) : *color;
+	*color = idx == 2.0f ? RGB( 177,  52, 37 ) : *color;
+	*color = idx == 3.0f ? RGB( 227, 157, 37 ) : *color;
+}
+
+__DEVICE__ void SpriteSuperMarioWalk1( float3 *color, int x, int y )
+{
+	float idx = 0.0f;
+	idx = y == 31 ? 0.0f : idx;
+	idx = y == 30 ? 0.0f : idx;
+	idx = y == 29 ? ( x <= 7 ? 32768.0f : 170.0f ) : idx;
+	idx = y == 28 ? ( x <= 7 ? 43008.0f : 234.0f ) : idx;
+	idx = y == 27 ? ( x <= 7 ? 43520.0f : 250.0f ) : idx;
+	idx = y == 26 ? ( x <= 7 ? 43520.0f : 10922.0f ) : idx;
+	idx = y == 25 ? ( x <= 7 ? 54528.0f : 1015.0f ) : idx;
+	idx = y == 24 ? ( x <= 7 ? 57152.0f : 16343.0f ) : idx;
+	idx = y == 23 ? ( x <= 7 ? 24384.0f : 65535.0f ) : idx;
+	idx = y == 22 ? ( x <= 7 ? 24400.0f : 65407.0f ) : idx;
+	idx = y == 21 ? ( x <= 7 ? 65360.0f : 5463.0f ) : idx;
+	idx = y == 20 ? ( x <= 7 ? 64832.0f : 5471.0f ) : idx;
+	idx = y == 19 ? ( x <= 7 ? 62464.0f : 4095.0f ) : idx;
+	idx = y == 18 ? ( x <= 7 ? 43264.0f : 63.0f ) : idx;
+	idx = y == 17 ? ( x <= 7 ? 22080.0f : 6.0f ) : idx;
+	idx = y == 16 ? ( x <= 7 ? 22080.0f : 25.0f ) : idx;
+	idx = y == 15 ? ( x <= 7 ? 22096.0f : 4005.0f ) : idx;
+	idx = y == 14 ? ( x <= 7 ? 22160.0f : 65365.0f ) : idx;
+	idx = y == 13 ? ( x <= 7 ? 23184.0f : 65365.0f ) : idx;
+	idx = y == 12 ? ( x <= 7 ? 23168.0f : 64853.0f ) : idx;
+	idx = y == 11 ? ( x <= 7 ? 27264.0f : 64853.0f ) : idx;
+	idx = y == 10 ? ( x <= 7 ? 43648.0f : 598.0f ) : idx;
+	idx = y == 9 ? ( x <= 7 ? 43648.0f : 682.0f ) : idx;
+	idx = y == 8 ? ( x <= 7 ? 43648.0f : 426.0f ) : idx;
+	idx = y == 7 ? ( x <= 7 ? 43605.0f : 2666.0f ) : idx;
+	idx = y == 6 ? ( x <= 7 ? 43605.0f : 2710.0f ) : idx;
+	idx = y == 5 ? ( x <= 7 ? 43605.0f : 681.0f ) : idx;
+	idx = y == 4 ? ( x <= 7 ? 10837.0f : 680.0f ) : idx;
+	idx = y == 3 ? ( x <= 7 ? 85.0f : 340.0f ) : idx;
+	idx = y == 2 ? ( x <= 7 ? 5.0f : 340.0f ) : idx;
+	idx = y == 1 ? ( x <= 7 ? 1.0f : 5460.0f ) : idx;
+	idx = y == 0 ? ( x <= 7 ? 0.0f : 5460.0f ) : idx;
+
+    idx = SPRITE_DEC( _fmod( float( x ), 8.0f ), idx );
+    
+	*color = idx == 1.0f ? RGB( 106, 107,  4 ) : *color;
+	*color = idx == 2.0f ? RGB( 177,  52, 37 ) : *color;
+	*color = idx == 3.0f ? RGB( 227, 157, 37 ) : *color;
+}
+
+__DEVICE__ void SpriteMarioJump( float3 *color, int x, int y )
+{
+	float idx = 0.0f;
+	idx = y == 15 ? ( x <= 7 ? 0.0f : 64512.0f ) : idx;
+	idx = y == 14 ? ( x <= 7 ? 40960.0f : 64554.0f ) : idx;
+	idx = y == 13 ? ( x <= 7 ? 43008.0f : 64170.0f ) : idx;
+	idx = y == 12 ? ( x <= 7 ? 21504.0f : 21727.0f ) : idx;
+	idx = y == 11 ? ( x <= 7 ? 56576.0f : 22495.0f ) : idx;
+	idx = y == 10 ? ( x <= 7 ? 23808.0f : 32639.0f ) : idx;
+	idx = y == 9 ? ( x <= 7 ? 62720.0f : 5471.0f ) : idx;
+	idx = y == 8 ? ( x <= 7 ? 61440.0f : 2047.0f ) : idx;
+	idx = y == 7 ? ( x <= 7 ? 38224.0f : 405.0f ) : idx;
+	idx = y == 6 ? ( x <= 7 ? 21844.0f : 16982.0f ) : idx;
+	idx = y == 5 ? ( x <= 7 ? 21855.0f : 17066.0f ) : idx;
+	idx = y == 4 ? ( x <= 7 ? 39487.0f : 23470.0f ) : idx;
+	idx = y == 3 ? ( x <= 7 ? 43596.0f : 23210.0f ) : idx;
+	idx = y == 2 ? ( x <= 7 ? 43344.0f : 23210.0f ) : idx;
+	idx = y == 1 ? ( x <= 7 ? 43604.0f : 42.0f ) : idx;
+	idx = y == 0 ? ( x <= 7 ? 43524.0f : 0.0f ) : idx;
+
+	idx = SPRITE_DEC( _fmod( float( x ), 8.0f ), idx );
+
+	*color = idx == 1.0f ? RGB( 106, 107,  4 ) : *color;
+	*color = idx == 2.0f ? RGB( 177,  52, 37 ) : *color;
+	*color = idx == 3.0f ? RGB( 227, 157, 37 ) : *color;
+}
+
+__DEVICE__ void SpriteMarioWalk3( float3 *color, int x, int y )
+{
+	float idx = 0.0f;
+	idx = y == 15 ? ( x <= 7 ? 43008.0f : 10.0f ) : idx;
+	idx = y == 14 ? ( x <= 7 ? 43520.0f : 682.0f ) : idx;
+	idx = y == 13 ? ( x <= 7 ? 54528.0f : 55.0f ) : idx;
+	idx = y == 12 ? ( x <= 7 ? 63296.0f : 1015.0f ) : idx;
+	idx = y == 11 ? ( x <= 7 ? 55104.0f : 4063.0f ) : idx;
+	idx = y == 10 ? ( x <= 7 ? 64832.0f : 343.0f ) : idx;
+	idx = y == 9 ? ( x <= 7 ? 64512.0f : 255.0f ) : idx;
+	idx = y == 8 ? ( x <= 7 ? 42320.0f : 5.0f ) : idx;
+	idx = y == 7 ? ( x <= 7 ? 42335.0f : 16214.0f ) : idx;
+	idx = y == 6 ? ( x <= 7 ? 58687.0f : 15722.0f ) : idx;
+	idx = y == 5 ? ( x <= 7 ? 43535.0f : 1066.0f ) : idx;
+	idx = y == 4 ? ( x <= 7 ? 43648.0f : 1450.0f ) : idx;
+	idx = y == 3 ? ( x <= 7 ? 43680.0f : 1450.0f ) : idx;
+	idx = y == 2 ? ( x <= 7 ? 2708.0f : 1448.0f ) : idx;
+	idx = y == 1 ? ( x <= 7 ? 84.0f : 0.0f ) : idx;
+	idx = y == 0 ? ( x <= 7 ? 336.0f : 0.0f ) : idx;
+												   
+	idx = SPRITE_DEC( _fmod( float( x ), 8.0f ), idx );
+
+	*color = idx == 1.0f ? RGB( 106, 107.0,  4 ) : *color;
+	*color = idx == 2.0f ? RGB( 177,  52.0, 37 ) : *color;
+	*color = idx == 3.0f ? RGB( 227, 157.0, 37 ) : *color;
+}
+
+__DEVICE__ void SpriteMarioWalk2( float3 *color, int x, int y )
+{
+	float idx = 0.0f;
+	idx = y == 15 ? ( x <= 7 ? 43008.0f : 10.0f ) : idx;
+	idx = y == 14 ? ( x <= 7 ? 43520.0f : 682.0f ) : idx;
+	idx = y == 13 ? ( x <= 7 ? 54528.0f : 55.0f ) : idx;
+	idx = y == 12 ? ( x <= 7 ? 63296.0f : 1015.0f ) : idx;
+	idx = y == 11 ? ( x <= 7 ? 55104.0f : 4063.0f ) : idx;
+	idx = y == 10 ? ( x <= 7 ? 64832.0f : 343.0f ) : idx;
+	idx = y == 9 ? ( x <= 7 ? 64512.0f : 255.0f ) : idx;
+	idx = y == 8 ? ( x <= 7 ? 25856.0f : 5.0f ) : idx;
+	idx = y == 7 ? ( x <= 7 ? 38208.0f : 22.0f ) : idx;
+	idx = y == 6 ? ( x <= 7 ? 42304.0f : 235.0f ) : idx;
+	idx = y == 5 ? ( x <= 7 ? 38208.0f : 170.0f ) : idx;
+	idx = y == 4 ? ( x <= 7 ? 62848.0f : 171.0f ) : idx;
+	idx = y == 3 ? ( x <= 7 ? 62976.0f : 42.0f ) : idx;
+	idx = y == 2 ? ( x <= 7 ? 43008.0f : 21.0f ) : idx;
+	idx = y == 1 ? ( x <= 7 ? 21504.0f : 85.0f ) : idx;
+	idx = y == 0 ? ( x <= 7 ? 21504.0f : 1.0f ) : idx;
+										   
+	idx = SPRITE_DEC( _fmod( float( x ), 8.0f ), idx );
+
+	*color = idx == 1.0f ? RGB( 106, 107.0,  4 ) : *color;
+	*color = idx == 2.0f ? RGB( 177,  52.0, 37 ) : *color;
+	*color = idx == 3.0f ? RGB( 227, 157.0, 37 ) : *color;
+}
+
+__DEVICE__ void SpriteMarioWalk1( float3 *color, int x, int y )
+{
+	float idx = 0.0f;
+	idx = y == 15 ? 0.0f : idx;
+	idx = y == 14 ? ( x <= 7 ? 40960.0f : 42.0f ) : idx;
+	idx = y == 13 ? ( x <= 7 ? 43008.0f : 2730.0f ) : idx;
+	idx = y == 12 ? ( x <= 7 ? 21504.0f : 223.0f ) : idx;
+	idx = y == 11 ? ( x <= 7 ? 56576.0f : 4063.0f ) : idx;
+	idx = y == 10 ? ( x <= 7 ? 23808.0f : 16255.0f ) : idx;
+	idx = y == 9 ? ( x <= 7 ? 62720.0f : 1375.0f ) : idx;
+	idx = y == 8 ? ( x <= 7 ? 61440.0f : 1023.0f ) : idx;
+	idx = y == 7 ? ( x <= 7 ? 21504.0f : 793.0f ) : idx;
+	idx = y == 6 ? ( x <= 7 ? 22272.0f : 4053.0f ) : idx;
+	idx = y == 5 ? ( x <= 7 ? 23488.0f : 981.0f ) : idx;
+	idx = y == 4 ? ( x <= 7 ? 43328.0f : 170.0f ) : idx;
+	idx = y == 3 ? ( x <= 7 ? 43584.0f : 170.0f ) : idx;
+	idx = y == 2 ? ( x <= 7 ? 10832.0f : 42.0f ) : idx;
+	idx = y == 1 ? ( x <= 7 ? 16400.0f : 5.0f ) : idx;
+	idx = y == 0 ? ( x <= 7 ? 16384.0f : 21.0f ) : idx;
+
+    idx = SPRITE_DEC( _fmod( float( x ), 8.0f ), idx );
+    
+	*color = idx == 1.0f ? RGB( 106, 107,  4 ) : *color;
+	*color = idx == 2.0f ? RGB( 177,  52, 37 ) : *color;
+	*color = idx == 3.0f ? RGB( 227, 157, 37 ) : *color;
+}
+
+__DEVICE__ void SpriteMario( float3 *color, int x, int y, int frame )
+{    
+	if ( frame == 0 )
+    {
+		SpriteMarioWalk1( color, x, y );
+	}
+    else if ( frame == 1 ) 
+    {
+        SpriteMarioWalk2( color, x, y );
+    }
+    else if ( frame == 2 ) 
+    {
+        SpriteMarioWalk3( color, x, y );
+    }
+    else
+    {
+        SpriteMarioJump( color, x, y );
+    }
+}
+
+__DEVICE__ void SpriteSuperMario( float3 *color, int x, int y, int frame )
+{    
+	if ( frame == 0 )
+    {
+		SpriteSuperMarioWalk1( color, x, y );
+	}
+    else if ( frame == 1 ) 
+    {
+        SpriteSuperMarioWalk2( color, x, y );
+    }
+    else if ( frame == 2 ) 
+    {
+        SpriteSuperMarioWalk3( color, x, y );
+    }
+    else
+    {
+        SpriteSuperMarioJump( color, x, y );
+    }
+}
+
+__DEVICE__ void SpriteCoin0( float3 *color, int x, int y )
+{
+    float idx = 0.0f;
+   	idx = y == 15 ? 0.0f : idx;
+	idx = y == 14 ? ( x <= 7 ? 32768.0f : 1.0f ) : idx;
+	idx = y == 13 ? ( x <= 7 ? 32768.0f : 1.0f ) : idx;
+	idx = y == 12 ? ( x <= 7 ? 24576.0f : 5.0f ) : idx;
+	idx = y == 11 ? ( x <= 7 ? 24576.0f : 5.0f ) : idx;
+	idx = y == 10 ? ( x <= 7 ? 24576.0f : 5.0f ) : idx;
+	idx = y == 9 ? ( x <= 7 ? 24576.0f : 5.0f ) : idx;
+	idx = y == 8 ? ( x <= 7 ? 28672.0f : 5.0f ) : idx;
+	idx = y == 7 ? ( x <= 7 ? 28672.0f : 5.0f ) : idx;
+	idx = y == 6 ? ( x <= 7 ? 24576.0f : 5.0f ) : idx;
+	idx = y == 5 ? ( x <= 7 ? 24576.0f : 5.0f ) : idx;
+	idx = y == 4 ? ( x <= 7 ? 24576.0f : 5.0f ) : idx;
+	idx = y == 3 ? ( x <= 7 ? 24576.0f : 5.0f ) : idx;
+	idx = y == 2 ? ( x <= 7 ? 32768.0f : 1.0f ) : idx;
+	idx = y == 1 ? ( x <= 7 ? 32768.0f : 1.0f ) : idx;
+	idx = y == 0 ? 0.0f : idx;
+
+    idx = SPRITE_DEC( _fmod( float( x ), 8.0f ), idx );
+    
+	*color = idx == 1.0f ? RGB( 181, 49,   33 ) : *color;
+	*color = idx == 2.0f ? RGB( 230, 156,  33 ) : *color;
+	*color = idx == 3.0f ? RGB( 255, 255, 255 ) : *color;
+}
+
+__DEVICE__ void SpriteCoin1( float3 *color, int x, int y )
+{
+    float idx = 0.0f;
+	idx = y == 15 ? 0.0f : idx;
+	idx = y == 14 ? ( x <= 7 ? 32768.0f : 2.0f ) : idx;
+	idx = y == 13 ? ( x <= 7 ? 40960.0f : 10.0f ) : idx;
+	idx = y == 12 ? ( x <= 7 ? 43008.0f : 42.0f ) : idx;
+	idx = y == 11 ? ( x <= 7 ? 59392.0f : 41.0f ) : idx;
+	idx = y == 10 ? ( x <= 7 ? 47616.0f : 166.0f ) : idx;
+	idx = y == 9 ? ( x <= 7 ? 47616.0f : 166.0f ) : idx;
+	idx = y == 8 ? ( x <= 7 ? 47616.0f : 166.0f ) : idx;
+	idx = y == 7 ? ( x <= 7 ? 47616.0f : 166.0f ) : idx;
+	idx = y == 6 ? ( x <= 7 ? 47616.0f : 166.0f ) : idx;
+	idx = y == 5 ? ( x <= 7 ? 47616.0f : 166.0f ) : idx;
+	idx = y == 4 ? ( x <= 7 ? 59392.0f : 41.0f ) : idx;
+	idx = y == 3 ? ( x <= 7 ? 43008.0f : 42.0f ) : idx;
+	idx = y == 2 ? ( x <= 7 ? 40960.0f : 10.0f ) : idx;
+	idx = y == 1 ? ( x <= 7 ? 32768.0f : 2.0f ) : idx;
+	idx = y == 0 ? 0.0f : idx;
+
+    idx = SPRITE_DEC( _fmod( float( x ), 8.0f ), idx );
+    
+	*color = idx == 1.0f ? RGB( 181, 49,   33 ) : *color;
+	*color = idx == 2.0f ? RGB( 230, 156,  33 ) : *color;
+	*color = idx == 3.0f ? RGB( 255, 255, 255 ) : *color;
+}
+
+__DEVICE__ void SpriteCoin2( float3 *color, int x, int y )
+{
+    float idx = 0.0f;
+	idx = y == 15 ? 0.0f : idx;
+	idx = y == 14 ? ( x <= 7 ? 49152.0f : 1.0f ) : idx;
+	idx = y == 13 ? ( x <= 7 ? 49152.0f : 1.0f ) : idx;
+	idx = y == 12 ? ( x <= 7 ? 61440.0f : 7.0f ) : idx;
+	idx = y == 11 ? ( x <= 7 ? 61440.0f : 7.0f ) : idx;
+	idx = y == 10 ? ( x <= 7 ? 61440.0f : 7.0f ) : idx;
+	idx = y == 9 ? ( x <= 7 ? 61440.0f : 7.0f ) : idx;
+	idx = y == 8 ? ( x <= 7 ? 61440.0f : 7.0f ) : idx;
+	idx = y == 7 ? ( x <= 7 ? 61440.0f : 7.0f ) : idx;
+	idx = y == 6 ? ( x <= 7 ? 61440.0f : 7.0f ) : idx;
+	idx = y == 5 ? ( x <= 7 ? 61440.0f : 7.0f ) : idx;
+	idx = y == 4 ? ( x <= 7 ? 61440.0f : 7.0f ) : idx;
+	idx = y == 3 ? ( x <= 7 ? 61440.0f : 7.0f ) : idx;
+	idx = y == 2 ? ( x <= 7 ? 49152.0f : 1.0f ) : idx;
+	idx = y == 1 ? ( x <= 7 ? 49152.0f : 1.0f ) : idx;
+	idx = y == 0 ? 0.0f : idx;
+
+    idx = SPRITE_DEC( _fmod( float( x ), 8.0f ), idx );
+    
+	*color = idx == 1.0f ? RGB( 181, 49,   33 ) : *color;
+	*color = idx == 2.0f ? RGB( 230, 156,  33 ) : *color;
+	*color = idx == 3.0f ? RGB( 255, 255, 255 ) : *color;
+}
+
+__DEVICE__ void SpriteCoin3( float3 *color, int x, int y )
+{
+    float idx = 0.0f;
+	idx = y == 15 ? 0.0f : idx;
+	idx = y == 14 ? ( x <= 7 ? 0.0f : 2.0f ) : idx;
+	idx = y == 13 ? ( x <= 7 ? 0.0f : 2.0f ) : idx;
+	idx = y == 12 ? ( x <= 7 ? 0.0f : 2.0f ) : idx;
+	idx = y == 11 ? ( x <= 7 ? 0.0f : 2.0f ) : idx;
+	idx = y == 10 ? ( x <= 7 ? 0.0f : 2.0f ) : idx;
+	idx = y == 9 ? ( x <= 7 ? 0.0f : 2.0f ) : idx;
+	idx = y == 8 ? ( x <= 7 ? 0.0f : 3.0f ) : idx;
+	idx = y == 7 ? ( x <= 7 ? 0.0f : 3.0f ) : idx;
+	idx = y == 6 ? ( x <= 7 ? 0.0f : 2.0f ) : idx;
+	idx = y == 5 ? ( x <= 7 ? 0.0f : 2.0f ) : idx;
+	idx = y == 4 ? ( x <= 7 ? 0.0f : 2.0f ) : idx;
+	idx = y == 3 ? ( x <= 7 ? 0.0f : 2.0f ) : idx;
+	idx = y == 2 ? ( x <= 7 ? 0.0f : 2.0f ) : idx;
+	idx = y == 1 ? ( x <= 7 ? 0.0f : 2.0f ) : idx;
+	idx = y == 0 ? 0.0f : idx;
+
+    idx = SPRITE_DEC( _fmod( float( x ), 8.0f ), idx );
+    
+	*color = idx == 1.0f ? RGB( 181, 49,   33 ) : *color;
+	*color = idx == 2.0f ? RGB( 230, 156,  33 ) : *color;
+	*color = idx == 3.0f ? RGB( 255, 255, 255 ) : *color;
+}
+
+__DEVICE__ void SpriteCoin( float3 *color, int x, int y, int frame )
+{    
+	if ( frame == 0 )
+    {
+		SpriteCoin0( color, x, y );
+	}
+    else if ( frame == 1 ) 
+    {
+        SpriteCoin1( color, x, y );
+    }
+    else if ( frame == 2 ) 
+    {
+        SpriteCoin2( color, x, y );
+    }
+    else
+    {
+        SpriteCoin3( color, x, y );
+    }
+}
+
+__DEVICE__ void DrawPipe( float3 *color, int tileX, int tileY, int pixelX, int pixelY, int h )
+{
+    int pipeX = pixelX - tileX * 16;
+    int pipeY = pixelY - tileY * 16;    
+    if ( pipeX >= 0 && pipeX <= 31 && pipeY >= 0 && pipeY <= 31 + h * 16 )
+    {
+        SpritePipe( color, pipeX, pipeY, h );
+    }
+}
+
+__DEVICE__ void SpriteBrick( float3 *color, int x, int y )
+{    
+	int ymod4 = int( _fmod( float( y ), 4.0f ) );    
+    int xmod8 = int( _fmod( float( x ), 8.0f ) );
+    int ymod8 = int( _fmod( float( y ), 8.0f ) );
+    
+    // dark orange
+    float idx = 2.0f;
+   
+    // black
+    idx = ymod4 == 0 ? 1.0f : idx;
+    idx = xmod8 == ( ymod8 < 4 ? 3 : 7 ) ? 1.0f : idx;
+
+    // light orange
+    idx = y == 15 ? 3.0f : idx;
+
+    *color = idx == 1.0f ? RGB( 0,     0,   0 ) : *color;
+	*color = idx == 2.0f ? RGB( 231,  90,  16 ) : *color;
+	*color = idx == 3.0f ? RGB( 247, 214, 181 ) : *color;
+}
+
+__DEVICE__ void DrawCastle( float3 *color, int x, int y )
+{
+    if ( x >= 0 && x < 80 && y >= 0 && y < 80 )
+    {
+        int ymod4    = int( _fmod( float( y ), 4.0f ) );
+        int xmod8    = int( _fmod( float( x ), 8.0f ) );
+        int xmod16_4 = int( _fmod( float( x + 4 ), 16.0f ) );
+        int xmod16_3 = int( _fmod( float( x + 5 ), 16.0f ) );
+        int ymod8    = int( _fmod( float( y ), 8.0f ) );
+        
+        // dark orange
+        float idx = 2.0f;
+
+        // black
+        idx = ymod4 == 0 && y <= 72 && ( y != 44 || xmod16_3 > 8 ) ? 1.0f : idx;
+        idx = x >= 24 && x <= 32 && y >= 48 && y <= 64 ? 1.0f : idx;
+        idx = x >= 48 && x <= 56 && y >= 48 && y <= 64 ? 1.0f : idx;
+        idx = x >= 32 && x <= 47 && y <= 25 ? 1.0f : idx;
+        idx = xmod8 == ( ymod8 < 4 ? 3 : 7 ) && y <= 72 && ( xmod16_3 > 8 || y <= 40 || y >= 48 ) ? 1.0f : idx;  
+        
+        // white
+        idx = y == ( xmod16_4 < 8 ? 47 : 40 ) ? 3.0f : idx;
+        idx = y == ( xmod16_4 < 8 ? 79 : 72 ) ? 3.0f : idx;
+        idx = xmod8 == 3 && y >= 40 && y <= 47 ? 3.0f : idx;
+        idx = xmod8 == 3 && y >= 72 ? 3.0f : idx;
+        
+        // transparent
+        idx = ( x < 16 || x >= 64 ) && y >= 48 ? 0.0f : idx;
+        idx = x >= 4  && x <= 10 && y >= 41 && y <= 47 ? 0.0f : idx;
+        idx = x >= 68 && x <= 74 && y >= 41 && y <= 47 ? 0.0f : idx;             
+        idx = y >= 73 && xmod16_3 > 8 ? 0.0f : idx;
+        
+		*color = idx == 1.0f ? RGB(   0,   0,   0 ) : *color;
+		*color = idx == 2.0f ? RGB( 231,  90,  16 ) : *color;
+		*color = idx == 3.0f ? RGB( 247, 214, 181 ) : *color;
+    }
+}
+
+__DEVICE__ void DrawGoomba( float3 *color, int x, int y, int frame )
+{
+    if ( x >= 0 && x <= 15 )
+    {
+        SpriteGoomba( color, x, y, frame );
+    }
+}
+
+__DEVICE__ void DrawKoopa( float3 *color, int x, int y, int frame )
+{
+    if ( x >= 0 && x <= 15 )
+    {
+        SpriteKoopa( color, x, y, frame );
+    }
+}
+
+__DEVICE__ void MarioLand( int* jumpOffset, float time, float startTime, float amplitude )
+{
+    float timeLength = amplitude / 120.0f;
+    if ( time >= startTime && time <= startTime + timeLength )
+    {
+        float t = 0.5f * ( time - startTime ) / timeLength + 0.5f;
+       	*jumpOffset = int( _sinf( t * 3.14f ) * amplitude );
+    }
+}
+
+__DEVICE__ void MarioJump( int* jumpOffset, float time, float startTime, float scale )
+{
+    float timeLength = 1.5f  * scale;
+    float amplitude  = 76.0f * scale;
+    if ( time >= startTime && time <= startTime + timeLength )
+    {
+        float t = ( time - startTime ) / timeLength;
+        *jumpOffset = int( _sinf( t * 3.14f ) * amplitude );
+    }
+}
+
+__DEVICE__ void GoombaWalk( float3 *color, int worldX, int worldY, float time, int goombaFrame, int startX, float lifeTime )
+{
+    if ( lifeTime > 0.0f )
+    {
+    	goombaFrame = time > lifeTime + 0.0f ? 2 : goombaFrame;
+    	goombaFrame = time > lifeTime + 0.6f ? 3 : goombaFrame;
+    	time = _fminf( time, lifeTime );
+    }
+    
+    int x = worldX - startX + int( time * GOOMBA_SPEED );
+    DrawGoomba( color, x, worldY - 16, goombaFrame );    
+}
+
+__DEVICE__ void KoopaWalk( float3 *color, int worldX, int worldY, float time, int goombaFrame, int startX )
+{
+    int x = worldX - startX + int( time * GOOMBA_SPEED );
+    DrawKoopa( color, x, worldY - 16, goombaFrame );    
+}
+
+__DEVICE__ void GoombaPatrol( float3 *color, int worldX, int worldY, float time, float timeOffset, int goombaFrame, int startX, int endX, float lifeTime )
+{    
+    if ( lifeTime > 0.0f )
+    {
+    	goombaFrame = time > lifeTime + 0.0f ? 2 : goombaFrame;
+    	goombaFrame = time > lifeTime + 0.6 ? 3 : goombaFrame;
+    	time = _fminf( time, lifeTime );
+    }
+
+    float segment = float( endX - 16 - startX );
+    int x = worldX - startX - int( abs( _fmod( ( time + timeOffset ) * GOOMBA_SPEED, 2.0f * segment ) - segment ) ); 
+    DrawGoomba( color, x, worldY - 16, goombaFrame );
+}
+
+__DEVICE__ void DrawCoin( float3 *color, int coinX, int coinY, int coinFrame, float time, float startTime )
+{
+   	float t = _saturatef( ( time - startTime ) / 0.8f);
+    t = 1.0f - _fabs( 2.0f * t - 1.0f );
+    
+    coinY -= int( t * 64.0f );
+    if ( coinX >= 0 && coinX <= 15 && time >= startTime + 0.1f )
+    {   
+        SpriteCoin( color, coinX, coinY, coinFrame );
+    }
+}
+
+__DEVICE__ void DrawHitQuestion( float3 *color, int questionX, int questionY, float time, float questionT, float questionHitTime )
+{
+	float t = _saturatef( ( time - questionHitTime ) / 0.25);
+    t = 1.0f - _fabs( 2.0f * t - 1.0f );
+        
+    questionY -= int( t * 8.0f );
+    if ( questionX >= 0 && questionX <= 15 )
+    {            
+    	if ( time >= questionHitTime )
+        {                
+        	SpriteQuestion( color, questionX, questionY, 1.0f );
+            if ( questionX >= 3 && questionX <= 12 && questionY >= 1 && questionY <= 15 )
+            {
+                *color = RGB( 231, 90, 16 );
+            }
+        }
+        else
+        {
+         	SpriteQuestion( color, questionX, questionY, questionT );
+        }
+    }
+}
+
+__DEVICE__ void DrawW( float3 *color, int x, int y )
+{
+    if ( x >= 0 && x < 14 && y >= 0 && y < 14 )
+    {
+        if (    ( x <= 3 || x >= 10 ) 
+             || ( x >= 4 && x <= 5 && y >= 2 && y <= 7 )
+             || ( x >= 8 && x <= 9 && y >= 2 && y <= 7 )
+             || ( x >= 6 && x <= 7 && y >= 4 && y <= 9 )
+           )
+        {
+            *color = RGB( 255, 255, 255 );
+        }
+    }
+}
+
+__DEVICE__ void DrawO( float3 *color, int x, int y )
+{
+    if ( x >= 0 && x < 14 && y >= 0 && y < 14 )
+    {
+        if (    ( x <= 1 || x >= 12 ) && ( y >= 2 && y <= 11 )
+             || ( x >= 2 && x <= 4 )
+             || ( x >= 9 && x <= 11 )
+             || ( y <= 1 || y >= 11 ) && ( x >= 2 && x <= 11 )
+           )
+        {
+            *color = RGB( 255, 255, 255 );
+        }
+    }
+}
+
+__DEVICE__ void DrawR( float3 *color, int x, int y )
+{
+    if ( x >= 0 && x < 14 && y >= 0 && y < 14 )
+    {
+        if (    ( x <= 3 )
+			 || ( y >= 12 && x <= 11 )
+             || ( x >= 10 && y >= 6 && y <= 11 )
+             || ( x >= 8  && x <= 9 && y <= 7 )
+             || ( x <= 9  && y >= 4 && y <= 5 )
+             || ( x >= 8  && y <= 1 )
+             || ( x >= 6  && x <= 11 && y >= 2 && y <= 3 )
+           )
+        {
+            *color = RGB( 255, 255, 255 );
+        }
+    }
+}
+
+__DEVICE__ void DrawL( float3 *color, int x, int y )
+{
+    if ( x >= 0 && x < 14 && y >= 0 && y < 14 )
+    {
+        if ( x <= 3 || y <= 1 )
+        {
+            *color = RGB( 255, 255, 255 );
+        }
+    }
+}
+
+__DEVICE__ void DrawD( float3 *color, int x, int y )
+{    
+    if ( x >= 0 && x < 14 && y >= 0 && y < 14 )
+    {
+    	*color = RGB( 255, 255, 255 );        
+        
+        if (    ( x >= 4 && x <= 7 && y >= 2 && y <= 11 ) 
+           	 || ( x >= 8 && x <= 9 && y >= 4 && y <= 9 ) 
+             || ( x >= 12 && ( y <= 3 || y >= 10 ) )
+             || ( x >= 10 && ( y <= 1 || y >= 12 ) )
+           )
+        {
+            *color = RGB( 0, 0, 0 );
+        }
+    }
+}
+
+__DEVICE__ void Draw1( float3 *color, int x, int y )
+{    
+    if ( x >= 0 && x < 14 && y >= 0 && y < 14 )
+    {
+        if (    ( y <= 1 )
+             || ( x >= 5 && x <= 8 )
+             || ( x >= 3 && x <= 4 && y >= 10 && y <= 11 )
+           )
+        {
+            *color = RGB( 255, 255, 255 );
+        }
+    }
+}
+
+__DEVICE__ void DrawM( float3 *color, int x, int y )
+{    
+    if ( x >= 0 && x < 14 && y >= 0 && y < 14 )
+    {
+        if ( y >= 4 && y <= 7 )
+        {
+            *color = RGB( 255, 255, 255 );
+        }
+    }
+}
+
+__DEVICE__ void DrawIntro( float3 *color, int x, int y, int screenWidth, int screenHeight )
+{
+    *color = RGB( 0, 0, 0 );
+        
+    int offset 	= 18;     
+    int textX 	= x - ( screenWidth - offset * 8 - 7 ) / 2;
+    int textY 	= y - ( screenHeight - 7 ) / 2 - 16 * 2;
+    int marioX	= textX - offset * 4;
+    int marioY	= textY + 16 * 3;
+	
+    DrawW( color, textX - offset * 0, textY );
+    DrawO( color, textX - offset * 1, textY );
+    DrawR( color, textX - offset * 2, textY );
+    DrawL( color, textX - offset * 3, textY );
+    DrawD( color, textX - offset * 4, textY );
+    Draw1( color, textX - offset * 6, textY );
+    DrawM( color, textX - offset * 7, textY );
+    Draw1( color, textX - offset * 8, textY );
+    
+    if ( marioX >= 0 && marioX <= 15 )
+    {
+    	SpriteSuperMario( color, marioX, marioY, 0 );
+    }
+}
+
+__DEVICE__ void DrawGame( float3 *color, float time, int pixelX, int pixelY, int screenWidth, int screenHeight )
+{
+    float mushroomPauseStart 	= 16.25;    
+    float mushroomPauseLength 	= 2.0f;    
+    
+    int cameraX 		= int( _fminf( ( time - _clampf( time - mushroomPauseStart, 0.0f, mushroomPauseLength ) ) * MARIO_SPEED - 240.0f, 3152.0f ) );    
+    int worldX 			= pixelX + cameraX;
+    int worldY  		= pixelY - 8;
+    int tileX			= worldX / 16;
+    int tileY			= worldY / 16;
+    int worldXMod16		= int( _fmod( float( worldX ), 16.0f ) );
+    int worldYMod16 	= int( _fmod( float( worldY ), 16.0f ) );
+
+
+    // default background *color
+    *color = RGB( 92, 148, 252 );
+
+    
+    // draw big hills
+    int hillX = int( _fmod( float( worldX ), 768.0f ) );
+    int hillY = worldY - 16;    
+    SpriteHill( color, hillX, hillY );
+    
+    // draw small hills
+    hillX = int( _fmod( float( worldX - 240 ), 768.0f ) );
+    hillY = worldY;    
+    SpriteHill( color, hillX, hillY );    
+    
+    // draw single clouds
+    int cloundX = int( _fmod( float( worldX - 296 ), 768.0f ) );
+    int cloundY = worldY - 168;
+    SpriteCloud1( color, cloundX, cloundY, false );
+    cloundX = int( _fmod( float( worldX - 904 ), 768.0f ) );
+    cloundY = worldY - 152;
+    SpriteCloud1( color, cloundX, cloundY, false );    
+    
+    // draw double clouds
+    cloundX = int( _fmod( float( worldX - 584 ), 768.0f ) );
+    cloundY = worldY - 168;
+    SpriteCloud2( color, cloundX, cloundY, false );
+    
+    // draw tripple clouds
+    cloundX = int( _fmod( float( worldX - 440 ), 768.0f ) );
+    cloundY = worldY - 152;
+    SpriteCloud3( color, cloundX, cloundY, false );
+    
+    // draw single bushes
+    int bushX = int( _fmod( float( worldX - 376 ), 768.0f ) );
+    int bushY = worldY - 8;    
+    SpriteCloud1( color, bushX, bushY, true );
+    
+    // draw double bushes
+    bushX = int( _fmod( float( worldX - 664 ), 768.0f ) );
+    SpriteCloud2( color, bushX, bushY, true );    
+    
+    // draw tripple bushes
+    bushX = int( _fmod( float( worldX - 184 ), 768.0f ) );
+    SpriteCloud3( color, bushX, bushY, true );
+    
+    // draw flag pole
+    if ( worldX >= 3175 && worldX <= 3176 && worldY <= 176 )        
+    {
+        *color = RGB( 189, 255, 24 );
+    }
+    
+    // draw flag
+    int flagX = worldX - 3160;
+    int flagY = worldY - 160;
+    if ( flagX >= 0 && flagX <= 15 )
+    {
+    	SpriteFlag( color, flagX, flagY );
+    }     
+    
+    // draw blocks
+   	if (    ( tileX >= 134 && tileX < 138 && tileX - 132 > tileY )
+         || ( tileX >= 140 && tileX < 144 && 145 - tileX > tileY )
+         || ( tileX >= 148 && tileX < 153 && tileX - 146 > tileY && tileY < 5 )
+         || ( tileX >= 155 && tileX < 159 && 160 - tileX > tileY ) 
+         || ( tileX >= 181 && tileX < 190 && tileX - 179 > tileY && tileY < 9 )
+         || ( tileX == 198 && tileY == 1 )
+       )
+    {
+        SpriteBlock( color, worldXMod16, worldYMod16 );
+    }    
+    
+    // draw pipes
+    DrawPipe( color,  28, 1, worldX, worldY, 0 );
+    DrawPipe( color,  38, 1, worldX, worldY, 1 );
+    DrawPipe( color,  46, 1, worldX, worldY, 2 );
+    DrawPipe( color,  57, 1, worldX, worldY, 2 );
+    DrawPipe( color, 163, 1, worldX, worldY, 0 );
+    DrawPipe( color, 179, 1, worldX, worldY, 0 );
+    
+    // draw mushroom
+    float mushroomStart = 15.7f;    
+    if ( time >= mushroomStart && time <= 17.0f )
+    {
+        //float jumpTime = 0.5f;
+        
+        int mushroomX = worldX - 1248;
+        int mushroomY = worldY - 4 * 16;
+        if ( time >= mushroomStart )
+        {
+            mushroomY = worldY - 4 * 16 - int( 16.0f * _saturatef( ( time - mushroomStart ) / 0.5f) );
+        }
+        if ( time >= mushroomStart + 0.5f )
+        {
+            mushroomX -= int( MARIO_SPEED * ( time - mushroomStart - 0.5f ) );
+        }
+        if ( time >= mushroomStart + 0.5f + 0.4f )
+        {
+            mushroomY = mushroomY + int( _sinf( ( ( time - mushroomStart - 0.5f - 0.4f ) ) * 3.14f ) * 4.0f * 16.0f );
+        }
+        
+        if ( mushroomX >= 0 && mushroomX <= 15 )
+        {
+        	SpriteMushroom( color, mushroomX, mushroomY );
+        }
+    }
+    
+    // draw coins
+    int coinFrame = int( _fmod( time * 12.0f, 4.0f ) );
+    DrawCoin( color, worldX -  352, worldY - 4 * 16, coinFrame, time,  5.5f );
+    DrawCoin( color, worldX - 1696, worldY - 4 * 16, coinFrame, time, 22.5f );
+    DrawCoin( color, worldX - 2720, worldY - 4 * 16, coinFrame, time, 34.0f );
+    
+    // draw hitted questions
+    float questionT = _saturatef( _sinf( time * 6.0f ));
+    DrawHitQuestion( color, worldX - 352,  worldY - 4 * 16, time, questionT,  5.3f );
+    DrawHitQuestion( color, worldX - 1248, worldY - 4 * 16, time, questionT, 15.4f );
+    DrawHitQuestion( color, worldX - 1696, worldY - 4 * 16, time, questionT, 22.4f );
+    DrawHitQuestion( color, worldX - 2720, worldY - 4 * 16, time, questionT, 33.9f );
+    
+    // draw questions
+    if (    ( tileY == 4 && ( tileX == 16 || tileX == 20 || tileX == 109 || tileX == 112 ) )
+         || ( tileY == 8 && ( tileX == 21 || tileX == 94 || tileX == 109 ) )
+         || ( tileY == 8 && ( tileX >= 129 && tileX <= 130 ) )
+       )
+    {
+        SpriteQuestion( color, worldXMod16, worldYMod16, questionT );
+    }
+    
+    // draw bricks
+   	if (    ( tileY == 4 && ( tileX == 19 || tileX == 21 || tileX == 23 || tileX == 77 || tileX == 79 || tileX == 94 || tileX == 118 || tileX == 168 || tileX == 169 || tileX == 171 ) )
+         || ( tileY == 8 && ( tileX == 128 || tileX == 131 ) )
+         || ( tileY == 8 && ( tileX >= 80 && tileX <= 87 ) )
+         || ( tileY == 8 && ( tileX >= 91 && tileX <= 93 ) )
+         || ( tileY == 4 && ( tileX >= 100 && tileX <= 101 ) )
+         || ( tileY == 8 && ( tileX >= 121 && tileX <= 123 ) )
+         || ( tileY == 4 && ( tileX >= 129 && tileX <= 130 ) )
+       )
+    {
+        SpriteBrick( color, worldXMod16, worldYMod16 );
+    }   
+    
+    DrawCastle( color, worldX - 3232, worldY - 16 );
+
+    // draw ground
+    if ( tileY <= 0
+         && !( tileX >= 69  && tileX < 71 )
+         && !( tileX >= 86  && tileX < 89 ) 
+         && !( tileX >= 153 && tileX < 155 ) 
+       )
+    {
+        SpriteGround( color, worldXMod16, worldYMod16 );
+    }    
+    
+    // draw Goomba
+    int goombaFrame = int( _fmod( time * 5.0f, 2.0f ) );
+    GoombaPatrol( color, worldX, worldY, time, 6.6, goombaFrame, 638, 738, 0.0f );
+    GoombaPatrol( color, worldX, worldY, time, 6.3, goombaFrame, 766, 914 - 24, 0.0f );
+    GoombaPatrol( color, worldX, worldY, time, 6.3, goombaFrame, 766 + 24, 914, 10.3f );    
+    GoombaWalk( color, worldX, worldY, time, goombaFrame, 435, 0.0f );
+    GoombaWalk( color, worldX, worldY, time, goombaFrame, 2150, 20.29f );
+    GoombaWalk( color, worldX, worldY, time, goombaFrame, 2150 + 24, 0.0f );
+    KoopaWalk(  color, worldX, worldY, time, goombaFrame, 2370 );
+    GoombaWalk( color, worldX, worldY, time, goombaFrame, 2540, 23.5f );
+    GoombaWalk( color, worldX, worldY, time, goombaFrame, 2540 + 24, 0.0f );
+    GoombaWalk( color, worldX, worldY, time, goombaFrame, 2760, 25.3f );
+    GoombaWalk( color, worldX, worldY, time, goombaFrame, 2760 + 24, 0.0f );
+    GoombaWalk( color, worldX, worldY, time, goombaFrame, 2850, 0.0f );
+    GoombaWalk( color, worldX, worldY, time, goombaFrame, 2850 + 24, 26.3f );
+    GoombaWalk( color, worldX, worldY, time, goombaFrame, 3850, 0.0f );
+    GoombaWalk( color, worldX, worldY, time, goombaFrame, 3850 + 24, 0.0f );
+
+    // draw mario
+    int marioJumpOffset = 0;
+    MarioJump( &marioJumpOffset, time, 4.2f, 0.45f );
+    MarioJump( &marioJumpOffset, time, 5.0f, 0.5f );
+    MarioJump( &marioJumpOffset, time, 6.05f, 0.7f );
+    MarioJump( &marioJumpOffset, time, 7.8f, 0.8f );
+    MarioJump( &marioJumpOffset, time, 9.0f, 1.0f );
+    MarioJump( &marioJumpOffset, time, 10.3f, 0.3f );
+    MarioJump( &marioJumpOffset, time, 11.05f, 1.0f );
+    MarioJump( &marioJumpOffset, time, 13.62f, 0.45f );   
+    MarioJump( &marioJumpOffset, time, 15.1f, 0.5f );
+    MarioJump( &marioJumpOffset, time, 18.7f, 0.6f );
+    MarioJump( &marioJumpOffset, time, 19.65f, 0.45f );
+    MarioJump( &marioJumpOffset, time, 20.29f, 0.3f );
+    MarioJump( &marioJumpOffset, time, 21.8f, 0.35f );
+    MarioJump( &marioJumpOffset, time, 22.3f, 0.35f );    
+    MarioJump( &marioJumpOffset, time, 23.0f, 0.40f );
+    MarioJump( &marioJumpOffset, time, 23.5f, 0.3f );
+    MarioJump( &marioJumpOffset, time, 24.7f, 0.45f );
+    MarioJump( &marioJumpOffset, time, 25.3f, 0.3f );
+    MarioJump( &marioJumpOffset, time, 25.75f, 0.4f );
+    MarioJump( &marioJumpOffset, time, 26.3f, 0.25f );
+    
+    float marioBigJump1 = 27.1f;
+    MarioJump( &marioJumpOffset, time, marioBigJump1, 1.0f );
+    MarioJump( &marioJumpOffset, time, marioBigJump1 + 1.0f, 0.6f );
+    MarioLand( &marioJumpOffset, time, marioBigJump1 + 1.0f + 0.45f, 109.0f );    
+    
+    float marioBigJump2 = 29.75f;
+    MarioJump( &marioJumpOffset, time, marioBigJump2, 1.0f );
+    MarioJump( &marioJumpOffset, time, marioBigJump2 + 1.0f, 0.6f );
+    MarioLand( &marioJumpOffset, time, marioBigJump2 + 1.0f + 0.45f, 109.0f );    
+    
+	MarioJump( &marioJumpOffset, time, 32.3f, 0.7f );
+    MarioJump( &marioJumpOffset, time, 33.7f, 0.3f );
+    MarioJump( &marioJumpOffset, time, 34.15f, 0.45f );
+    
+    float marioBigJump3 = 35.05f;
+    MarioJump( &marioJumpOffset, time, marioBigJump3, 1.0f );
+    MarioJump( &marioJumpOffset, time, marioBigJump3 + 1.2, 0.89 );
+    MarioJump( &marioJumpOffset, time, marioBigJump3 + 1.2 + 0.75, 0.5 );
+    MarioLand( &marioJumpOffset, time, marioBigJump3 + 1.2 + 0.75 + 0.375, 150.0f );    
+    MarioJump( &marioJumpOffset, time, 38.7, 0.45 );
+
+    int marioBase = 0;
+    if ( time >= marioBigJump1 + 1.0f && time < marioBigJump1 + 1.0f + 0.45f )
+    {
+        marioBase = 16 * 4;
+    }
+    if ( time >= marioBigJump2 + 1.0f && time < marioBigJump2 + 1.0f + 0.45f )
+    {
+        marioBase = 16 * 4;
+    }    
+    if ( time >= marioBigJump3 + 1.2f && time < marioBigJump3 + 1.2f + 0.75f )
+    {
+        marioBase = 16 * 3;
+    }    
+    if ( time >= marioBigJump3 + 1.2f + 0.75f && time < marioBigJump3 + 1.2f + 0.75f + 0.375f )
+    {
+        marioBase = 16 * 7;
+    }
+
+    int marioX		= pixelX - 112;
+    int marioY		= pixelY - 16 - 8 - marioBase - marioJumpOffset;    
+    int marioFrame 	= marioJumpOffset == 0 ? int( _fmod( time * 10.0f, 3.0f ) ) : 3;
+    int superMario 	= 0;
+    if ( time >= mushroomPauseStart && time <= mushroomPauseStart + mushroomPauseLength )
+    {
+    	marioFrame = 1;
+    }    
+    if ( time > mushroomPauseStart + 0.7f )
+    {
+        float t = time - mushroomPauseStart - 0.7f;
+    	superMario = _fmod( t, 0.2f ) <= mix( 0.0, 0.2f, _saturatef( t / 1.3) ) ? 1 : 0;
+    }    
+    if ( marioX >= 0 && marioX <= 15 && cameraX < 3152 )
+    {
+        if ( superMario == 1 )
+        {
+            SpriteSuperMario( color, marioX, marioY, marioFrame );
+        }
+        else
+        {
+        	SpriteMario( color, marioX, marioY, marioFrame );
+        }
+    }
+}
+
+__DEVICE__ float2 CRTCurveUV( float2 uv )
+{
+    uv = uv * 2.0f - 1.0f;
+    float2 offset = make_float2(_fabs(uv.y), _fabs(uv.x)) / make_float2( 6.0f, 4.0f );
+    uv = uv + uv * offset * offset;
+    uv = uv * 0.5f + 0.5f;
+    return uv;
+}
+
+__DEVICE__ void DrawVignette( float3 *color, float2 uv )
+{    
+    float vignette = uv.x * uv.y * ( 1.0f - uv.x ) * ( 1.0f - uv.y );
+    vignette = _saturatef( _powf( 16.0f * vignette, 0.3f ));
+    *color = *color * vignette;
+}
+
+__DEVICE__ void DrawScanline( float3 *color, float2 uv, float time )
+{
+    float scanline 	= _saturatef( 0.95f + 0.05f * _cosf( 3.14f * ( uv.y + 0.008f * time ) * 240.0f * 1.0f ));
+    float grille 	= 0.85f + 0.15f * _saturatef( 1.5f * _cosf( 3.14f * uv.x * 640.0f * 1.0f ));    
+    *color = *color * scanline * grille * 1.2f;
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{
+	p_Y = p_Height - p_Y;
+	float X = (float)p_X;
+	float Y = (float)p_Y;
+	float width = (float)p_Width;
+	float height = (float)p_Height;
+	float2 resolution = make_float2(width, height);
+	X -= width / 2.0f + msX * width;
+	Y -= height / 2.0f + msY * height;
+	//Y -= msY * height;
+	Rotate(&X, &Y, ROTATE * 6.0f);
+	Y += height / 2.0f;
+	X /= (SCALE + 0.01f);
+	Y /= (SCALE + 0.01f);
+	Y -= height / 2.0f;
+	X += width / 2.0f;
+	Y += height / 2.0f;
+
+	float2 uv = make_float2(X / resolution.x, Y / resolution.y);
+    // we want to see at least 256x224 (overscan) and we want multiples of pixel size
+    float resMultX  = _floor( resolution.x / 256.0f );
+    float resMultY  = _floor( resolution.y / 224.0f );
+    float resRcp	= 1.0f / _fmaxf( _fminf( resMultX, resMultY ), 1.0f );
+    
+    float time			= TIME * 42;
+    int screenWidth		= int( resolution.x * resRcp );
+    int screenHeight	= int( resolution.y * resRcp );
+    X *= resRcp;
+    Y *= resRcp;
+    int pixelX = int(X + OFFSET * width);
+    int pixelY = int(Y);
+    
+    float3 color = RGB( 92, 148, 252 );
+ 	DrawGame( &color, time, pixelX, pixelY, screenWidth, screenHeight );
+    if ( time < INTRO_LENGTH )
+    {
+        DrawIntro( &color, pixelX, pixelY, screenWidth, screenHeight );
+    }    
+
+    // CRT effects (curvature, vignette, scanlines and CRT grille)
+    
+	float2 crtUV = CRTCurveUV( uv );
+    
+	if(VIGNETTE){
+	if ( crtUV.x < 0.0f || crtUV.x > 1.0f || crtUV.y < 0.0f || crtUV.y > 1.0f )
+    color = make_float3( 0.0f, 0.0f, 0.0f );
+    DrawVignette( &color, crtUV );
+    }
+    if(SCANLINE)
+    DrawScanline( &color, uv, time );
+    
+	return color;
+ 
+}
