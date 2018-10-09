@@ -1,0 +1,77 @@
+// Monochromatic Noise DCTL
+
+__CONSTANT__ int NOISE 				= 10;		// 1 to 20 (rough to ultra-fine)
+__CONSTANT__ int INTENSITY          = 10;		// Adjust contrast of noise (0 to 100)
+
+__DEVICE__ float2 ADD(float2 A, float B)
+{
+float2 C;
+C.x = A.x + B;
+C.y = A.y + B;
+return C;
+}
+
+__DEVICE__ float DOT(float2 A, float2 B)
+{
+float C = A.x * B.x + A.y * B.y;
+return C;
+}
+
+__DEVICE__ float FRACT(float A)
+{
+float B;
+B = A - floor(A);
+return B;
+}
+
+__DEVICE__ float nrand( float2 n )
+{
+return FRACT(_sinf(DOT(n, make_float2(12.9898f, 78.233f))) * 43758.5453f);
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{
+float iTime = _tex2D(p_TexR, 500, 500);
+p_Y = p_Height - p_Y;
+
+float contrast = (float)INTENSITY * 0.1f;
+
+float2 uv;
+uv.x = (float)p_X / p_Width;
+uv.y = (float)p_Y / p_Height;
+
+float t = FRACT( iTime );
+float nrnd[20];
+nrnd[0] = nrand( ADD(uv, 0.07f * t) );
+nrnd[1] = nrand( ADD(uv, 0.11f * t) );
+nrnd[2] = nrand( ADD(uv, 0.13f * t) );
+nrnd[3] = nrand( ADD(uv, 0.17f * t) );
+nrnd[4] = nrand( ADD(uv, 0.19f * t) );
+nrnd[5] = nrand( ADD(uv, 0.23f * t) );
+nrnd[6] = nrand( ADD(uv, 0.29f * t) );
+nrnd[7] = nrand( ADD(uv, 0.31f * t) );
+nrnd[8] = nrand( ADD(uv, 0.37f * t) );
+nrnd[9] = nrand( ADD(uv, 0.41f * t) );
+nrnd[10] = nrand( ADD(uv, 0.43f * t) );
+nrnd[11] = nrand( ADD(uv, 0.47f * t) );
+nrnd[12] = nrand( ADD(uv, 0.53f * t) );
+nrnd[13] = nrand( ADD(uv, 0.59f * t) );
+nrnd[14] = nrand( ADD(uv, 0.61f * t) );
+nrnd[15] = nrand( ADD(uv, 0.67f * t) );
+nrnd[16] = nrand( ADD(uv, 0.71f * t) );
+nrnd[17] = nrand( ADD(uv, 0.73f * t) );
+nrnd[18] = nrand( ADD(uv, 0.79f * t) );
+nrnd[19] = nrand( ADD(uv, 0.83f * t) );
+
+float yo = 0.0f;
+for(int N = 0; N < NOISE; N++)
+{
+yo += nrnd[N];
+}
+
+yo /= (float)NOISE;
+
+yo = (yo - 0.5f) * contrast + 0.5f;
+
+return make_float3(yo, yo, yo);
+}

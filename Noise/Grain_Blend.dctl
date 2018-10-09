@@ -1,0 +1,82 @@
+// Grain Blend DCTL
+
+
+#define RGB_GRAIN			// alternative monochromatic
+#define SOFTLIGHT			// alternative is overlay blend
+#define INTENSITY 12		// grain contrast
+
+
+__DEVICE__ float FRACT(float A)
+{
+float B;
+B = A - _floor(A);
+return B;
+}
+
+__DEVICE__ float RAND(float x)
+{
+return FRACT(_sinf(x) * 100000.0f);
+}
+
+__DEVICE__ float intensity(float grain, float contrast)
+{
+return (grain - 0.5f) * contrast + 0.5f;
+}
+
+__DEVICE__ float softLight(float col, float grain)
+{
+return grain < 0.5f ? 2.0f * col * grain + (col * col) * (1.0f - 2.0f * grain) : 2.0f * col * (1.0f - grain) + _sqrtf(col) * (2.0f * grain - 1.0f);
+}
+
+__DEVICE__ float3 softLight(float3 col, float3 grain)
+{
+return make_float3(softLight(col.x, grain.x), softLight(col.y, grain.y), softLight(col.z, grain.z));
+}
+
+__DEVICE__ float overlay_f(float col, float grain)
+{
+return col < 0.5f ? (2 * col * grain) : (1 - 2 * (1 - col) * (1 - grain));
+}
+
+__DEVICE__ float3 overlay_f3(float3 col, float3 grain)
+{
+return make_float3(overlay_f(col.x, grain.x), overlay_f(col.y, grain.y), overlay_f(col.z, grain.z));
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{
+
+float3 col = make_float3(_tex2D(p_TexR, p_X, p_Y), _tex2D(p_TexG, p_X, p_Y), _tex2D(p_TexB, p_X, p_Y));
+
+float contrast = (float)INTENSITY * 0.01f;
+float iTime = _tex2D(p_TexR, 500, 500) * 20.0f;
+float X = (float)p_X + 1.0f;
+float Y = (float)(p_Height - p_Y) + 1.0f;
+float2 resolution = make_float2((float)p_Width, (float)p_Height);
+float2 position = make_float2(X/resolution.x, Y/resolution.y);
+float x = position.x * position.y * 100000.0f + iTime;
+float f = FRACT(x);
+float i = _floor(x);
+x *= 100.0f;
+
+float3 grain;
+grain.x = RAND(x);
+grain.x = intensity(grain.x, contrast);
+#ifdef RGB_GRAIN
+grain.y = RAND(x * iTime);
+grain.y = intensity(grain.y, contrast);
+grain.z = RAND(x + iTime);
+grain.z = intensity(grain.z, contrast);
+#else
+grain.z = grain.y = grain.x;
+#endif
+
+#ifdef SOFTLIGHT
+col = softLight(col, grain);
+#else
+col = overlay_f3(col, grain);
+#endif
+
+return col;
+ 
+}

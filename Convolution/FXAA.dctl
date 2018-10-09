@@ -1,0 +1,202 @@
+// FXAA DCTL
+
+#ifndef FXAA_REDUCE_MIN
+#define FXAA_REDUCE_MIN   (1.0f / 128.0f)
+#endif
+#ifndef FXAA_REDUCE_MUL
+#define FXAA_REDUCE_MUL   (1.0f / 8.0f)
+#endif
+#ifndef FXAA_SPAN_MAX
+#define FXAA_SPAN_MAX     8.0f
+#endif
+
+__DEVICE__ float2 add_f2_f(float2 A, float B)
+{
+float2 C;
+C.x = A.x + B;
+C.y = A.y + B;
+return C;
+}
+
+__DEVICE__ float2 add_f2_f2(float2 A, float2 B)
+{
+float2 C;
+C.x = A.x + B.x;
+C.y = A.y + B.y;
+return C;
+}
+
+__DEVICE__ float3 add_f3_f3(float3 A, float3 B)
+{
+float3 C;
+C.x = A.x + B.x;
+C.y = A.y + B.y;
+C.z = A.z + B.z;
+return C;
+}
+
+__DEVICE__ float DOT(float3 A, float3 B)
+{
+float C = A.x * B.x + A.y * B.y + A.z * B.z;
+return C;
+}
+
+__DEVICE__ float4 Make_Float(float3 A, float B)
+{
+return make_float4(A.x, A.y, A.z, B);
+}
+
+__DEVICE__ float2 Max(float2 A, float2 B)
+{
+float2 C;
+C.x = _fmaxf(A.x, B.x);
+C.y = _fmaxf(A.y, B.y);
+return C;
+}
+
+__DEVICE__ float2 Min(float2 A, float2 B)
+{
+float2 C;
+C.x = _fminf(A.x, B.x);
+C.y = _fminf(A.y, B.y);
+return C;
+}
+
+__DEVICE__ float2 multi_f2_f(float2 A, float B)
+{
+float2 C;
+C.x = A.x * B;
+C.y = A.y * B;
+return C;
+}
+
+__DEVICE__ float2 multi_f2_f2(float2 A, float2 B)
+{
+float2 C;
+C.x = A.x * B.x;
+C.y = A.y * B.y;
+return C;
+}
+
+__DEVICE__ float3 multi_f_f3(float A, float3 B)
+{
+float3 C;
+C.x = A * B.x;
+C.y = A * B.y;
+C.z = A * B.z;
+return C;
+}
+
+__DEVICE__ float3 multi_f3_f(float3 A, float B)
+{
+float3 C;
+C.x = A.x * B;
+C.y = A.y * B;
+C.z = A.z * B;
+return C;
+}
+
+__DEVICE__ float3 Texture(__TEXTURE__ texR, __TEXTURE__ texG, __TEXTURE__ texB, float2 resolution, float2 uv)
+{
+	 resolution = add_f2_f(resolution, 1.0f);
+	 float3 RGB;
+	 RGB.x = _tex2D(texR, int(uv.x * resolution.x), int(uv.y * resolution.y));
+	 RGB.y = _tex2D(texG, int(uv.x * resolution.x), int(uv.y * resolution.y));
+	 RGB.z = _tex2D(texB, int(uv.x * resolution.x), int(uv.y * resolution.y));
+	 return RGB;
+}
+
+__DEVICE__ float3 fxaa(__TEXTURE__ texR, __TEXTURE__ texG, __TEXTURE__ texB, float2 fragCoord, float2 resolution,
+            float2 v_rgbNW, float2 v_rgbNE, 
+            float2 v_rgbSW, float2 v_rgbSE, 
+            float2 v_rgbM)
+{
+    float3 color;
+    float3 rgbNW = Texture(texR, texG, texB, resolution, v_rgbNW);
+    float3 rgbNE = Texture(texR, texG, texB, resolution, v_rgbNE);
+    float3 rgbSW = Texture(texR, texG, texB, resolution, v_rgbSW);
+    float3 rgbSE = Texture(texR, texG, texB, resolution, v_rgbSE);
+    float3 texColor = Texture(texR, texG, texB, resolution, v_rgbM);
+    float3 rgbM  = texColor;
+    float3 luma = make_float3(0.299f, 0.587f, 0.114f);
+    float lumaNW = DOT(rgbNW, luma);
+    float lumaNE = DOT(rgbNE, luma);
+    float lumaSW = DOT(rgbSW, luma);
+    float lumaSE = DOT(rgbSE, luma);
+    float lumaM  = DOT(rgbM,  luma);
+    float lumaMin = _fminf(lumaM, _fminf(_fminf(lumaNW, lumaNE), _fminf(lumaSW, lumaSE)));
+    float lumaMax = _fmaxf(lumaM, _fmaxf(_fmaxf(lumaNW, lumaNE), _fmaxf(lumaSW, lumaSE)));
+    
+    float2 dir;
+    dir.x = -((lumaNW + lumaNE) - (lumaSW + lumaSE));
+    dir.y =  ((lumaNW + lumaSW) - (lumaNE + lumaSE));
+    
+    float dirReduce = _fmaxf((lumaNW + lumaNE + lumaSW + lumaSE) *
+                          (0.25f * FXAA_REDUCE_MUL), FXAA_REDUCE_MIN);
+                          
+    float2 inverseVP = make_float2(1.0f / resolution.x, 1.0f / resolution.y);
+    
+    float rcpDirMin = 1.0f / (_fminf(_fabs(dir.x), _fabs(dir.y)) + dirReduce);
+    dir = multi_f2_f2(Min(make_float2(FXAA_SPAN_MAX, FXAA_SPAN_MAX),
+              Max(make_float2(-FXAA_SPAN_MAX, -FXAA_SPAN_MAX),
+              multi_f2_f(dir, rcpDirMin))), inverseVP);
+    
+    float3 rgbA = multi_f_f3(0.5f, add_f3_f3(
+        Texture(texR, texG, texB, resolution, add_f2_f2(multi_f2_f2(fragCoord, inverseVP), multi_f2_f(dir, (1.0f / 3.0f - 0.5f)))),
+        Texture(texR, texG, texB, resolution, add_f2_f2(multi_f2_f2(fragCoord, inverseVP), multi_f2_f(dir, (2.0f / 3.0f - 0.5f))))));
+    float3 rgbB = add_f3_f3(multi_f3_f(rgbA, 0.5f), multi_f_f3(0.25f, add_f3_f3(
+        Texture(texR, texG, texB, resolution, add_f2_f2(multi_f2_f2(fragCoord, inverseVP), multi_f2_f(dir, -0.5f))),
+        Texture(texR, texG, texB, resolution, add_f2_f2(multi_f2_f2(fragCoord, inverseVP), multi_f2_f(dir, 0.5f))))));
+
+    float lumaB = DOT(rgbB, luma);
+    if ((lumaB < lumaMin) || (lumaB > lumaMax))
+        color = rgbA;
+    else
+        color = rgbB;
+    return color;
+
+}
+
+__DEVICE__ void texcoords(float2 fragCoord, float2 resolution,
+            float2* v_rgbNW, float2* v_rgbNE,
+            float2* v_rgbSW, float2* v_rgbSE,
+            float2* v_rgbM)
+{
+	float2 inverseVP = make_float2(1.0f / resolution.x, 1.0f / resolution.y);
+    *v_rgbNW = multi_f2_f2(add_f2_f2(fragCoord, make_float2(-1.0f, -1.0f)), inverseVP);
+    *v_rgbNE = multi_f2_f2(add_f2_f2(fragCoord, make_float2(1.0f, -1.0f)), inverseVP);
+    *v_rgbSW = multi_f2_f2(add_f2_f2(fragCoord, make_float2(-1.0f, 1.0f)), inverseVP);
+    *v_rgbSE = multi_f2_f2(add_f2_f2(fragCoord, make_float2(1.0f, 1.0f)), inverseVP);
+    *v_rgbM = multi_f2_f2(fragCoord, inverseVP);
+}
+
+__DEVICE__ float3 apply(__TEXTURE__ texR, __TEXTURE__ texG, __TEXTURE__ texB, float2 fragCoord, float2 resolution)
+{
+    float2 v_rgbNW;
+    float2 v_rgbNE;
+    float2 v_rgbSW;
+	float2 v_rgbSE;
+    float2 v_rgbM;
+
+    //compute the Texture coords
+    texcoords(fragCoord, resolution, &v_rgbNW, &v_rgbNE, &v_rgbSW, &v_rgbSE, &v_rgbM);
+    
+    //compute FXAA
+    return fxaa(texR, texG, texB, fragCoord, resolution, v_rgbNW, v_rgbNE, v_rgbSW, v_rgbSE, v_rgbM);
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{
+
+float2 uv;
+uv.x = (float)p_X;
+uv.y = (float)p_Y;
+float2 resolution;
+resolution.x = (float)p_Width;
+resolution.y = (float)p_Height;
+
+float3 Color;
+Color = apply(p_TexR, p_TexG, p_TexB, uv, resolution);
+return Color;
+ 
+}

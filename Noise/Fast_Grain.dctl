@@ -1,0 +1,338 @@
+// Fast Grain DCTL
+
+__CONSTANT__ bool Grain_Plate_Only  =    false;   			// Grain plate only (true or false)
+__CONSTANT__ bool Coloured          =    true;   			// Coloured noise (true or false)
+__CONSTANT__ float Scale            =    1.0f;   			// Grain plate resolution
+__CONSTANT__ float Intensity        =    1.0f;   			// Grain contrast
+
+__CONSTANT__ float Grain_Size       =    1.4f;   			// Grain size
+__CONSTANT__ float Grainamount      =    2.0f;   			// Grain amount
+__CONSTANT__ float Colour_Amount    =    0.6f;   			// Colour amount
+__CONSTANT__ float Luma_Amount      =    1.0f;   			// Luminance amount
+__CONSTANT__ float Scratch_Opacity  =    1.0f;   			// Scratch opacity
+__CONSTANT__ float Dust_Opacity     =    1.0f;   			// Dust opacity
+__CONSTANT__ float Flicker_Opacity  =    1.0f;   			// Flicker opacity
+__CONSTANT__ float PermTexUnit      =    1.0f / 256.0f;		// Perm texture texel-size
+__CONSTANT__ float PermTexUnitHalf  =    0.5f / 256.0f;		// Half perm texture texel-size
+
+__DEVICE__ float3 add_f3_f(float3 A, float B)
+{
+float3 C;
+C.x = A.x + B;
+C.y = A.y + B;
+C.z = A.z + B;
+return C;
+}
+
+__DEVICE__ float2 add_f2_f2(float2 A, float2 B)
+{
+float2 C;
+C.x = A.x + B.x;
+C.y = A.y + B.y;
+return C;
+}
+
+__DEVICE__ float3 add_f3_f3(float3 A, float3 B)
+{
+float3 C;
+C.x = A.x + B.x;
+C.y = A.y + B.y;
+C.z = A.z + B.z;
+return C;
+}
+
+__DEVICE__ float dot_f2(float2 A, float2 B)
+{
+float C = A.x * B.x + A.y * B.y;
+return C;
+}
+
+__DEVICE__ float dot_f3(float3 A, float3 B)
+{
+float C = A.x * B.x + A.y * B.y + A.z * B.z;
+return C;
+}
+
+__DEVICE__ float fract_f(float A)
+{
+float B;
+B = A - floor(A);
+return B;
+}
+
+__DEVICE__ float3 fract_f3(float3 A)
+{
+float3 B;
+B.x = A.x - _floor(A.x);
+B.y = A.y - _floor(A.y);
+B.z = A.z - _floor(A.z);
+return B;
+}
+
+__DEVICE__ float3 floor_f3(float3 A)
+{
+float3 B;
+B.x = _floor(A.x);
+B.y = _floor(A.y);
+B.z = _floor(A.z);
+return B;
+}
+
+__DEVICE__ float3 make_float3_f(float A)
+{
+float3 B;
+B.x = A;
+B.y = A;
+B.z = A;
+return B;
+}
+
+__DEVICE__ float3 make_float3_f2_f(float2 A, float B)
+{
+float3 C;
+C.x = A.x;
+C.y = A.y;
+C.z = B;
+return C;
+}
+
+__DEVICE__ float3 minus_f3_f(float3 A, float B)
+{
+float3 C;
+C.x = A.x - B;
+C.y = A.y - B;
+C.z = A.z - B;
+return C;
+}
+
+__DEVICE__ float3 minus_f3_f3(float3 A, float3 B)
+{
+float3 C;
+C.x = A.x - B.x;
+C.y = A.y - B.y;
+C.z = A.z - B.z;
+return C;
+}
+
+__DEVICE__ float mix_f(float A, float B, float C)
+{
+float D = A * (1.0f - C) + B * C;
+return D;
+}
+
+__DEVICE__ float2 mix_f2_f(float2 A, float2 B, float C)
+{
+float2 D;
+D.x = A.x * (1.0f - C) + B.x * C;
+D.y = A.y * (1.0f - C) + B.y * C;
+return D;
+}
+
+__DEVICE__ float3 mix_f3_f(float3 A, float3 B, float C)
+{
+float3 D;
+D.x = A.x * (1.0f - C) + B.x * C;
+D.y = A.y * (1.0f - C) + B.y * C;
+D.z = A.z * (1.0f - C) + B.z * C;
+return D;
+}
+
+__DEVICE__ float4 mix_f4_f(float4 A, float4 B, float C)
+{
+float4 D;
+D.x = A.x * (1.0f - C) + B.x * C;
+D.y = A.y * (1.0f - C) + B.y * C;
+D.z = A.z * (1.0f - C) + B.z * C;
+D.w = A.w * (1.0f - C) + B.w * C;
+return D;
+}
+
+__DEVICE__ float2 multi_f2_f(float2 A, float B)
+{
+float2 C;
+C.x = A.x * B;
+C.y = A.y * B;
+return C;
+}
+
+__DEVICE__ float2 multi_f2_f2(float2 A, float2 B)
+{
+float2 C;
+C.x = A.x * B.x;
+C.y = A.y * B.y;
+return C;
+}
+
+__DEVICE__ float3 multi_f3_f(float3 A, float B)
+{
+float3 C;
+C.x = A.x * B;
+C.y = A.y * B;
+C.z = A.z * B;
+return C;
+}
+
+__DEVICE__ float Smoothstep(float edge0, float edge1, float x)
+{
+float t = _saturatef((x - edge0) / (edge1 - edge0));
+return t * t * (3.0f - 2.0f * t);
+}
+
+//a random texture generator, but you can also use a pre-computed perturbation texture
+
+__DEVICE__ float4 rnm(float2 tc, float timer) 
+{
+float noise =  _sinf(dot_f2(add_f2_f2(tc, make_float2(timer,timer)), make_float2(12.9898f, 78.233f))) * 43758.5453f;
+
+float noiseR =  fract_f(noise) * 2.0f - 1.0f;
+float noiseG =  fract_f(noise * 1.2154f) * 2.0f - 1.0f; 
+float noiseB =  fract_f(noise * 1.3453f) * 2.0f - 1.0f;
+float noiseA =  fract_f(noise * 1.3647f) * 2.0f - 1.0f;
+
+return make_float4(noiseR, noiseG, noiseB, noiseA);
+}
+
+__DEVICE__ float rand(float2 co)
+{
+float a = 12.9898f;
+float b = 78.233f;
+float c = 43758.5453f;
+float dt = dot_f2(co, make_float2(a,b));
+float sn = _fmod(dt, 3.14f);
+return fract_f(_sinf(sn) * c);
+}
+
+//good for large clumps of smooth looking noise, but too repetitive
+//for small grains
+
+__DEVICE__ float fastNoise(float2 n)
+{
+const float2 d = make_float2(0.0f, 1.0f);
+float2 b, f;
+b.x = _floor(n.x);
+b.y = _floor(n.y);
+f.x = Smoothstep(0.0f, 1.0f, fract_f(n.x));
+f.y = Smoothstep(0.0f, 1.0f, fract_f(n.y));
+float D1 = mix_f(mix_f(rand(b), rand(add_f2_f2(b, make_float2(d.y, d.x))), f.x), mix_f(rand(add_f2_f2(b, d)), rand(add_f2_f2(b, make_float2(d.y, d.y))), f.x), f.y);
+return D1;
+}
+
+__DEVICE__ float fade(float t)
+{
+return t * t * t * (t * (t * 6.0f - 15.0f) + 10.0f);
+}
+
+__DEVICE__ float pnoise3D(float3 p, float timer)
+{
+float3 pi = add_f3_f(multi_f3_f(floor_f3(p), PermTexUnit), PermTexUnitHalf); // Integer part, scaled so +1 moves PermTexUnit texel
+
+// and offset 1/2 texel to sample texel centers
+
+float3 pf = fract_f3(p);     // Fractional part for interpolation
+
+// Noise contributions from (x=0, y=0), z=0 and z=1
+
+float perm00 = rnm(make_float2(pi.x, pi.y), timer).w ;
+float3  grad000 = minus_f3_f(multi_f3_f(make_float3(rnm(make_float2(perm00, pi.z), timer).x, rnm(make_float2(perm00, pi.z), timer).y, rnm(make_float2(perm00, pi.z), timer).z), 4.0f), 1.0f);
+float n000 = dot_f3(grad000, pf);
+float3  grad001 = minus_f3_f(multi_f3_f(make_float3(rnm(make_float2(perm00, pi.z + PermTexUnit), timer).x, rnm(make_float2(perm00, pi.z + PermTexUnit), timer).y, rnm(make_float2(perm00, pi.z + PermTexUnit), timer).z), 4.0f), 1.0f);
+float n001 = dot_f3(grad001, minus_f3_f3(pf, make_float3(0.0f, 0.0f, 1.0f)));
+
+// Noise contributions from (x=0, y=1), z=0 and z=1
+float perm01 = rnm(add_f2_f2(make_float2(pi.x, pi.y), make_float2(0.0f, PermTexUnit)), timer).w ;
+float3  grad010 = minus_f3_f(multi_f3_f(make_float3(rnm(make_float2(perm01, pi.z), timer).x, rnm(make_float2(perm01, pi.z), timer).y, rnm(make_float2(perm01, pi.z), timer).z), 4.0f), 1.0f);
+float n010 = dot_f3(grad010, minus_f3_f3(pf, make_float3(0.0f, 1.0f, 0.0f)));
+float3  grad011 = minus_f3_f(multi_f3_f(make_float3(rnm(make_float2(perm01, pi.z + PermTexUnit), timer).x, rnm(make_float2(perm01, pi.z + PermTexUnit), timer).y, rnm(make_float2(perm01, pi.z + PermTexUnit), timer).z), 4.0f), 1.0f);
+float n011 = dot_f3(grad011, minus_f3_f3(pf, make_float3(0.0f, 1.0f, 1.0f)));
+
+// Noise contributions from (x=1, y=0), z=0 and z=1
+
+float perm10 = rnm(add_f2_f2(make_float2(pi.x, pi.y), make_float2(PermTexUnit, 0.0f)), timer).w;
+float3  grad100 = minus_f3_f(multi_f3_f(make_float3(rnm(make_float2(perm10, pi.z), timer).x, rnm(make_float2(perm10, pi.z), timer).y, rnm(make_float2(perm10, pi.z), timer).z), 4.0f), 1.0f);
+float n100 = dot_f3(grad100, minus_f3_f3(pf, make_float3(1.0f, 0.0f, 0.0f)));
+float3  grad101 = minus_f3_f(multi_f3_f(make_float3(rnm(make_float2(perm10, pi.z + PermTexUnit), timer).x, rnm(make_float2(perm10, pi.z + PermTexUnit), timer).y, rnm(make_float2(perm10, pi.z + PermTexUnit), timer).z), 4.0f), 1.0f);
+float n101 = dot_f3(grad101, minus_f3_f3(pf, make_float3(1.0f, 0.0f, 1.0f)));
+
+// Noise contributions from (x=1, y=1), z=0 and z=1
+float perm11 = rnm(add_f2_f2(make_float2(pi.x, pi.y), make_float2(PermTexUnit, PermTexUnit)), timer).w;
+float3  grad110 = minus_f3_f(multi_f3_f(make_float3(rnm(make_float2(perm11, pi.z), timer).x, rnm(make_float2(perm11, pi.z), timer).y, rnm(make_float2(perm11, pi.z), timer).z), 4.0f), 1.0f);
+float n110 = dot_f3(grad110, minus_f3_f3(pf, make_float3(1.0f, 1.0f, 0.0f)));
+float3  grad111 = minus_f3_f(multi_f3_f(make_float3(rnm(make_float2(perm11, pi.z + PermTexUnit), timer).x, rnm(make_float2(perm11, pi.z + PermTexUnit), timer).y, rnm(make_float2(perm11, pi.z + PermTexUnit), timer).z), 4.0f), 1.0f);
+float n111 = dot_f3(grad111, minus_f3_f3(pf, make_float3(1.0f, 1.0f, 1.0f)));
+
+// Blend contributions along x
+float4 n_x = mix_f4_f(make_float4(n000, n001, n010, n011), make_float4(n100, n101, n110, n111), fade(pf.x));
+
+// Blend contributions along y
+float2 n_xy = mix_f2_f(make_float2(n_x.x, n_x.y), make_float2(n_x.z, n_x.w), fade(pf.y));
+
+// Blend contributions along z
+float n_xyz = mix_f(n_xy.x, n_xy.y, fade(pf.z));
+
+// We're done, return the final noise value.
+return n_xyz;
+}
+
+//2d coordinate orientation thing
+
+__DEVICE__ float2 coordRot(float2 tc, float angle, float width, float height)
+{
+float aspect = width/height;
+float rotX = ((tc.x * 2.0f - 1.0f) * aspect * _cosf(angle)) - ((tc.y * 2.0f - 1.0f) * _sinf(angle));
+float rotY = ((tc.y * 2.0f - 1.0f) * _cosf(angle)) + ((tc.x * 2.0f - 1.0f) * aspect * _sinf(angle));
+rotX = ((rotX / aspect) * 0.5f + 0.5f);
+rotY = rotY * 0.5f + 0.5f;
+return make_float2(rotX, rotY);
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{
+
+float grainsize = Grain_Size * 1.5f;
+
+float iTime = _tex2D(p_TexR, 500, 500) / 24.0f;
+float timer = iTime * 0.05f;
+float Y = p_Height - p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+float2 texCoord = make_float2(p_X/width, Y/height);
+
+texCoord = multi_f2_f(texCoord, 10.0f / Scale);
+
+float3 rotOffset = make_float3(1.425f, 3.892f, 5.835f); //rotation offset values	
+float2 rotCoordsR = coordRot(texCoord, timer + rotOffset.x, width, height);
+float3 noise = make_float3_f(pnoise3D(make_float3_f2_f(multi_f2_f2(rotCoordsR, make_float2(width/grainsize, height/grainsize)), 0.0f), timer));
+
+if (Coloured)
+{
+float2 rotCoordsG = coordRot(texCoord, timer + rotOffset.y, width, height);
+float2 rotCoordsB = coordRot(texCoord, timer + rotOffset.z, width, height);
+noise.y = mix_f(noise.x, pnoise3D(make_float3_f2_f(multi_f2_f2(rotCoordsG, make_float2(width/grainsize, height/grainsize)), 1.0f), timer), Colour_Amount);
+noise.z = mix_f(noise.x, pnoise3D(make_float3_f2_f(multi_f2_f2(rotCoordsB, make_float2(width/grainsize, height/grainsize)), 2.0f), timer), Colour_Amount);
+}
+
+float3 col;
+
+if (Grain_Plate_Only)
+{
+
+col = make_float3_f(0.5f);
+
+} else {
+
+col = make_float3(_tex2D(p_TexR, p_X, p_Y), _tex2D(p_TexG, p_X, p_Y), _tex2D(p_TexB, p_X, p_Y));
+float3 lumcoeff = make_float3(0.2126f, 0.7152f, 0.0722f);
+float luminance = mix_f(0.0f, dot_f3(col, lumcoeff), Luma_Amount * 0.5f);
+float lum = Smoothstep(0.2f, 0.0f, luminance);
+lum += luminance;
+noise = mix_f3_f(noise, make_float3_f(0.0f), _powf(lum, 4.0f));
+
+}
+
+col = add_f3_f3(col, multi_f3_f(noise, 0.025f * Grainamount));
+
+col = add_f3_f(multi_f3_f(minus_f3_f(col, 0.5f), Intensity), 0.5f);
+
+return make_float3(col.x, col.y, col.z);
+
+}

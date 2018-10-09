@@ -1,0 +1,11 @@
+// Linear Ramp to Waveform DCTL
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+    p_Y = p_Height - p_Y;
+    float R = p_R >= (p_Y - 5.0f) / p_Height && p_R <= (p_Y + 5.0f)/ p_Height ? 1 : 0;
+	float G = p_G >= (p_Y - 5.0f) / p_Height && p_G <= (p_Y + 5.0f)/ p_Height ? 1 : 0;
+	float B = p_B >= (p_Y - 5.0f) / p_Height && p_B <= (p_Y + 5.0f)/ p_Height ? 1 : 0;
+    
+    return make_float3(R, B, B);
+}
