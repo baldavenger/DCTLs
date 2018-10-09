@@ -16,7 +16,7 @@ B = A - _floor(A);
 return B;
 }
 
-__DEVICE__ float mix( float A, float B, float C)
+__DEVICE__ float mix_f( float A, float B, float C)
 {
 float D = A * (1.0f - C) + B * C;
 return D;
@@ -42,7 +42,7 @@ float s = _sinf(b);
 }
 
 #define SPRITE_DEC( x, i ) _fmod( _floor( i / _powf( 4.0f, float( x ) ) ), 4.0f )
-#define RGB( r, g, b ) make_float3( float( r ) / 255.0f, float( g ) / 255.0f, float( b ) / 255.0f )
+#define RGB( r, g, b ) make_float3(r / 255.0f,  g / 255.0f, b / 255.0f)
 
 __CONSTANT__ float MARIO_SPEED	= 89.0f;
 __CONSTANT__ float GOOMBA_SPEED = 32.0f;
@@ -1051,7 +1051,7 @@ __DEVICE__ void GoombaPatrol( float3 *color, int worldX, int worldY, float time,
     }
 
     float segment = float( endX - 16 - startX );
-    int x = worldX - startX - int( abs( _fmod( ( time + timeOffset ) * GOOMBA_SPEED, 2.0f * segment ) - segment ) ); 
+    int x = worldX - startX - int( _fabs( _fmod( ( time + timeOffset ) * GOOMBA_SPEED, 2.0f * segment ) - segment ) ); 
     DrawGoomba( color, x, worldY - 16, goombaFrame );
 }
 
@@ -1069,7 +1069,7 @@ __DEVICE__ void DrawCoin( float3 *color, int coinX, int coinY, int coinFrame, fl
 
 __DEVICE__ void DrawHitQuestion( float3 *color, int questionX, int questionY, float time, float questionT, float questionHitTime )
 {
-	float t = _saturatef( ( time - questionHitTime ) / 0.25);
+	float t = _saturatef( ( time - questionHitTime ) / 0.25f);
     t = 1.0f - _fabs( 2.0f * t - 1.0f );
         
     questionY -= int( t * 8.0f );
@@ -1474,7 +1474,7 @@ __DEVICE__ void DrawGame( float3 *color, float time, int pixelX, int pixelY, int
     if ( time > mushroomPauseStart + 0.7f )
     {
         float t = time - mushroomPauseStart - 0.7f;
-    	superMario = _fmod( t, 0.2f ) <= mix( 0.0, 0.2f, _saturatef( t / 1.3) ) ? 1 : 0;
+    	superMario = _fmod( t, 0.2f ) <= mix_f( 0.0, 0.2f, _saturatef( t / 1.3f) ) ? 1 : 0;
     }    
     if ( marioX >= 0 && marioX <= 15 && cameraX < 3152 )
     {
