@@ -1,0 +1,173 @@
+// Flame OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Animate, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(GLOW, Glow, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(msX, Horizontal, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(msY, Vertical, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(SCALE, Zoom, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(ROTATEz, RotateZ, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+DEFINE_UI_PARAMS(ROTATEy, RotateY, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+DEFINE_UI_PARAMS(ROTATEx, RotateX, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+
+__DEVICE__ inline void Rotate( float* ax, float* ay, float b)
+{
+float AX = *ax;
+float AY = *ay;
+float c = _cosf(b);
+float s = _sinf(b);
+*ax = AX * c - AY * s;
+*ay = AX * s + AY * c;
+}
+
+__DEVICE__ float3 cos(float3 A)
+{
+float3 B;
+B.x = _cosf(A.x);
+B.y = _cosf(A.y);
+B.z = _cosf(A.z);
+return B;
+}
+
+__DEVICE__ float4 cos(float4 A)
+{
+float4 B;
+B.x = _cosf(A.x);
+B.y = _cosf(A.y);
+B.z = _cosf(A.z);
+B.w = _cosf(A.w);
+return B;
+}
+
+__DEVICE__ float3 floor(float3 A)
+{
+float3 B;
+B.x = _floor(A.x);
+B.y = _floor(A.y);
+B.z = _floor(A.z);
+return B;
+}
+
+__DEVICE__ float mix(float A, float B, float C)
+{
+float D = A * (1.0f - C) + B * C;
+return D;
+}
+
+__DEVICE__ float2 mix(float2 A, float2 B, float C)
+{
+float2 D;
+D.x = A.x * (1.0f - C) + B.x * C;
+D.y = A.y * (1.0f - C) + B.y * C;
+return D;
+}
+
+__DEVICE__ float3 mix(float3 A, float3 B, float C)
+{
+float3 D;
+D.x = A.x * (1.0f - C) + B.x * C;
+D.y = A.y * (1.0f - C) + B.y * C;
+D.z = A.z * (1.0f - C) + B.z * C;
+return D;
+}
+
+__DEVICE__ float4 mix(float4 A, float4 B, float C)
+{
+float4 D;
+D.x = A.x * (1.0f - C) + B.x * C;
+D.y = A.y * (1.0f - C) + B.y * C;
+D.z = A.z * (1.0f - C) + B.z * C;
+D.w = A.w * (1.0f - C) + B.w * C;
+return D;
+}
+
+__DEVICE__ float4 sin(float4 A)
+{
+float4 B;
+B.x = _sinf(A.x);
+B.y = _sinf(A.y);
+B.z = _sinf(A.z);
+B.w = _sinf(A.w);
+return B;
+}
+
+__DEVICE__ float noise(float3 p)
+{
+float3 i = floor(p);
+float4 a = dot(i, make_float3(1.0f, 57.0f, 21.0f)) + make_float4(0.0f, 57.0f, 21.0f, 78.0f);
+float3 f = cos((p - i) * _acosf(-1.0f)) * -0.5f + 0.5f;
+a = mix(sin(cos(a) * a), sin(cos(1.0f + a) * (1.0f + a)), f.x);
+float2 axy = mix(make_float2(a.x, a.z), make_float2(a.y, a.w), f.y);
+a.x = axy.x;
+a.y = axy.y;
+return mix(a.x, a.y, f.z);
+}
+
+__DEVICE__ float sphere(float3 p, float4 spr)
+{
+return length(make_float3(spr.x, spr.y, spr.z) - p) - spr.w;
+}
+
+__DEVICE__ float flame(float3 p, float iTime)
+{
+float d = sphere(p * make_float3(1.0f, 0.5f, 1.0f), make_float4(0.0f, -1.0f, 0.0f, 1.0f));
+return d + (noise(p + make_float3(0.0f, iTime * 2.0f, 0.0f)) + noise(p * 3.0f) * 0.5f) * 0.25 * (p.y);
+}
+
+__DEVICE__ float scene(float3 p, float iTime)
+{
+return _fminf(100.0f - length(p) , _fabs(flame(p, iTime)) );
+}
+
+__DEVICE__ float4 raymarch(float3 org, float3 dir, float iTime)
+{
+float d = 0.0f, glow = 0.0f, eps = 0.02f;
+float3  p = org;
+bool glowed = false;
+
+for(int i=0; i<64; i++)
+{
+d = scene(p, iTime) + eps;
+p = p + d * dir;
+if( d > eps )
+{
+if(flame(p, iTime) < 0.0f)
+glowed = true;
+if(glowed)
+glow = float(i)/64.0f;
+}
+}
+return make_float4(p,glow);
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{
+float iTime = TIME * 20;
+float X = (float)p_X;
+float Y = (float)(p_Height - p_Y);
+float2 resolution = make_float2((float)p_Width, (float)p_Height);
+
+float2 v;
+v.x = -1.0f + 2.0f * X / resolution.x;
+v.y = -1.0f + 2.0f * Y / resolution.y;
+v.x *= resolution.x/resolution.y;
+v.x -= msX;
+v.y -= msY;
+v = v / (SCALE + 0.01f);
+
+float3 org = make_float3(0.0f, -2.0f, 4.0f);
+float3 dir = normalize(make_float3(v.x * 1.6f, -v.y, -1.5f));
+Rotate(&org.x, &org.y, ROTATEz * 2);
+Rotate(&dir.x, &dir.y, ROTATEz * 2);
+Rotate(&org.x, &org.z, ROTATEy * 2);
+Rotate(&dir.x, &dir.z, ROTATEy * 2);
+Rotate(&org.y, &org.z, ROTATEx * 2);
+Rotate(&dir.y, &dir.z, ROTATEx * 2);
+
+float4 p = raymarch(org, dir, iTime);
+float glow = p.w * (1.0f + GLOW * 0.5f);
+
+float4 col = mix(make_float4(1.0, 0.5f, 0.1f, 1.0f), make_float4(0.1f, 0.5f, 1.0f, 1.0f), p.y * 0.02f + 0.4f);
+float4 Col = mix(make_float4(0.0f, 0.0f, 0.0f, 0.0f), col, _powf(glow * 2.0f, 4.0f));
+
+return make_float3(Col.x, Col.y, Col.z);
+}

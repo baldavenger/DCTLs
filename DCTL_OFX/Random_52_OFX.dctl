@@ -1,0 +1,280 @@
+// Random 52 OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Animate, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(msX, Horizontal, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(msY, Vertical, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(SCALE, Zoom, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(ROTATE, Rotate, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+DEFINE_UI_PARAMS(BUMP_FACTOR, Bump, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+
+__DEVICE__ inline void Rotate( float* ax, float* ay, float b)
+{
+float AX = *ax;
+float AY = *ay;
+float c = _cosf(b);
+float s = _sinf(b);
+*ax = AX * c - AY * s;
+*ay = AX * s + AY * c;
+}
+
+__DEVICE__ float2 add_f2_f2(float2 A, float2 B)
+{
+float2 C;
+C.x = A.x + B.x;
+C.y = A.y + B.y;
+return C;
+}
+
+__DEVICE__ float2 add_f2_f2_f2(float2 A, float2 B, float2 C)
+{
+float2 D;
+D.x = A.x + B.x + C.x;
+D.y = A.y + B.y + C.y;
+return D;
+}
+
+__DEVICE__ float3 add_f3_f3(float3 A, float3 B)
+{
+float3 C;
+C.x = A.x + B.x;
+C.y = A.y + B.y;
+C.z = A.z + B.z;
+return C;
+}
+
+__DEVICE__ float dot_f2(float2 A, float2 B)
+{
+float C = A.x * B.x + A.y * B.y;
+return C;
+}
+
+__DEVICE__ float dot_f3(float3 A, float3 B)
+{
+float C = A.x * B.x + A.y * B.y + A.z * B.z;
+return C;
+}
+
+__DEVICE__ float2 floor_f2(float2 A)
+{
+float2 B;
+B.x = _floor(A.x);
+B.y = _floor(A.y);
+return B;
+}
+
+__DEVICE__ float fract_f(float A)
+{
+float B;
+B = A - _floor(A);
+return B;
+}
+
+__DEVICE__ float2 fract_f2(float2 A)
+{
+float2 B;
+B.x = A.x - _floor(A.x);
+B.y = A.y - _floor(A.y);
+return B;
+}
+
+__DEVICE__ float length_f3(float3 A)
+{
+float B = _sqrtf(A.x * A.x + A.y * A.y + A.z * A.z);
+return B;
+}
+
+__DEVICE__ float2 minus_f2_f2(float2 A, float2 B)
+{
+float2 C;
+C.x = A.x - B.x;
+C.y = A.y - B.y;
+return C;
+}
+
+__DEVICE__ float3 minus_f3_f3(float3 A, float3 B)
+{
+float3 C;
+C.x = A.x - B.x;
+C.y = A.y - B.y;
+C.z = A.z - B.z;
+return C;
+}
+
+__DEVICE__ float2 multi_f2_f(float2 A, float B)
+{
+float2 C;
+C.x = A.x * B;
+C.y = A.y * B;
+return C;
+}
+
+__DEVICE__ float2 multi_f2_f2(float2 A, float2 B)
+{
+float2 C;
+C.x = A.x * B.x;
+C.y = A.y * B.y;
+return C;
+}
+
+
+__DEVICE__ float3 multi_f3_f(float3 A, float B)
+{
+float3 C;
+C.x = A.x * B;
+C.y = A.y * B;
+C.z = A.z * B;
+return C;
+}
+
+__DEVICE__ float3 multi_f3_f3(float3 A, float3 B)
+{
+float3 C;
+C.x = A.x * B.x;
+C.y = A.y * B.y;
+C.z = A.z * B.z;
+return C;
+}
+
+__DEVICE__ float2 multi_f4_f2(float4 A, float2 B)
+{
+float2 C;
+C.x = B.x * A.x + B.y * A.y;
+C.y = B.x * A.z + B.y * A.w;
+return C;
+}
+
+__DEVICE__ float3 normalize_f3(float3 A)
+{
+float3 B;
+float C = _sqrtf((A.x * A.x) + (A.y * A.y) + (A.z * A.z));
+B.x = A.x / C;
+B.y = A.y / C;
+B.z = A.z / C;
+return B;
+}
+
+__DEVICE__ float3 reflect_f3(float3 A, float3 B)
+{
+float3 C;
+C.x = A.x - 2.0f * dot(B, A) * B.x;
+C.y = A.y - 2.0f * dot(B, A) * B.y;
+C.z = A.z - 2.0f * dot(B, A) * B.z;
+return C;
+}
+
+__DEVICE__ float2 hash22( float2 p)
+{ 
+float n = _sinf(dot_f2(p, make_float2(41.0f, 289.0f)));
+return fract_f2(multi_f2_f(make_float2(262144.0f, 32768.0f), n)); 
+}
+
+__DEVICE__ float Voronoi( float2 p)
+{	
+float2 ip = floor_f2(p);
+p = fract_f2(p);
+float d = 1.0f;
+for (float i = -1.0f; i < 1.1f; i++){
+for (float j = -1.0f; j < 1.1f; j++){
+float2 cellRef = make_float2(i, j);
+float2 offset = hash22(add_f2_f2(ip, cellRef));
+float2 r = add_f2_f2_f2(cellRef, offset, make_float2(-p.x, -p.y)); 
+float d2 = dot_f2(r, r);
+d = _fminf(d, d2);
+}
+}
+return _sqrtf(d); 
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{  
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+float2 XY = make_float2(X, Y);
+float time = TIME * 10;
+float2 resolution = make_float2(width, height);
+
+float2 uv;
+uv.x = (X - resolution.x * 0.5f) / resolution.y;
+uv.y = (Y - resolution.y * 0.5f) / resolution.y;
+uv.x -= msX;
+uv.y -= msY;
+Rotate(&uv.x, &uv.y, ROTATE);
+uv = uv / (SCALE + 0.01f);
+
+float t = time, s, a, e;
+
+float th = _sinf(time * 0.1f) * _sinf(time * 0.13f) * 4.0f;
+float cs = _cosf(th), si = _sinf(th);
+//uv *= mat2(cs, -si, si, cs);
+uv = make_float2(uv.x * cs + uv.y * -si, uv.x * si + uv.y * cs);
+
+float3 sp = make_float3(uv.x, uv.y, 0.0f);
+float3 ro = make_float3(0.0f, 0.0f, -1.0f);
+float3 rd = normalize_f3(minus_f3_f3(sp, ro));
+float3 lp = make_float3(_cosf(time) * 0.375f, _sinf(time) * 0.1f, -1.0f);
+
+const float L = 8.0f;
+const float gFreq = 0.5f;
+float sum = 0.0f;
+
+th = 3.14159265f * 0.7071f / L;
+cs = _cosf(th), si = _sinf(th);
+float4 M = make_float4(cs, -si, si, cs);
+
+float3 col = make_float3(0.0f, 0.0f, 0.0f);
+
+float f=0.0f, fx=0.0f, fy=0.0f;
+float2 eps = make_float2(4.0f / resolution.y, 0.0f);
+float2 offs = make_float2(0.1f, 0.1f);
+
+for (float i = 0.0f; i < L; i++)
+{
+s = fract_f((i - t * 2.0f) / L);
+e = _exp2f(s * L) * gFreq;
+a = (1.0f - _cosf(s * 6.283f)) / e;
+float2 spxy = make_float2(sp.x, sp.y);
+float2 epsxy = make_float2(eps.x, eps.y);
+float2 epsyx = make_float2(eps.y, eps.x);
+f += Voronoi(add_f2_f2(multi_f2_f(multi_f4_f2(M, spxy), e), offs)) * a;
+fx += Voronoi(add_f2_f2(multi_f2_f(multi_f4_f2(M, minus_f2_f2(spxy, epsxy)), e), offs)) * a;
+fy += Voronoi(add_f2_f2(multi_f2_f(multi_f4_f2(M, minus_f2_f2(spxy, epsyx)), e), offs)) * a;
+sum += a;
+M = make_float4(M.x * M.x + M.y * M.z, M.x * M.y + M.y * M.w, M.z * M.x + M.w * M.z, M.z * M.y + M.w * M.w); 
+}
+
+sum = _fmaxf(sum, 0.001f);
+
+f /= sum;
+fx /= sum;
+fy /= sum;
+
+float bumpFactor = BUMP_FACTOR / 5.0f;
+
+fx = (fx - f) / eps.x;
+fy = (fy - f) / eps.x;
+
+float3 n = normalize_f3( add_f3_f3(make_float3(0.0f, 0.0f, -1.0f), multi_f3_f(make_float3(fx, fy, 0.0f), bumpFactor)) );           
+
+float3 ld = minus_f3_f3(lp, sp);
+float lDist = _fmaxf(length_f3(ld), 0.001);
+ld.x /= lDist;
+ld.y /= lDist;
+ld.z /= lDist;
+
+float atten = 1.25f / (1.0f + lDist * 0.15f + lDist * lDist * 0.15f);
+float diff = _fmaxf(dot_f3(n, ld), 0.0f);  
+diff = _powf(diff, 2.0f) * 0.66f + _powf(diff, 4.0f) * 0.34f; 
+float spec = _powf(_fmaxf(dot_f3( reflect_f3(make_float3(-ld.x, -ld.y, -ld.z), n), make_float3(-rd.x, -rd.y, -rd.z)), 0.0f), 16.0f);
+float3 objCol = make_float3(f * f, _powf(f, 5.0f) * 0.05f, f * f * 0.36f);
+
+col = multi_f3_f(add_f3_f3(multi_f3_f(objCol, (diff + 0.5f)), multi_f3_f(make_float3(0.4f, 0.6f, 1.0f), spec * 1.5f)), atten);
+
+float3 COL;
+COL.x = _sqrtf(_fminf(col.x, 1.0f));
+COL.y = _sqrtf(_fminf(col.y, 1.0f));
+COL.z = _sqrtf(_fminf(col.z, 1.0f));
+return COL;
+}

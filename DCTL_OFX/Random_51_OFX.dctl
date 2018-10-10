@@ -1,0 +1,58 @@
+// Random 51 OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Animate, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(msX, Horizontal, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(msY, Vertical, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(SCALE, Zoom, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(ROTATE, Rotate, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+
+__DEVICE__ inline void Rotate( float* ax, float* ay, float b)
+{
+float AX = *ax;
+float AY = *ay;
+float c = _cosf(b);
+float s = _sinf(b);
+*ax = AX * c - AY * s;
+*ay = AX * s + AY * c;
+}
+
+__DEVICE__ float _Smoothstep(float edge0, float edge1, float x)
+{
+float t = _saturatef((x - edge0) / (edge1 - edge0));
+return t * t * (3.0f - 2.0f * t);
+}
+
+__DEVICE__ float FUNC(float x, float time)
+{
+return 3.0f * _asinf(_sinf(x * 1.0f + time * 2.0));	
+}
+ 
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{ 
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+float time = TIME * 30;
+float2 resolution = make_float2(width, height);
+float2 position = make_float2(X/resolution.x, Y/resolution.y) - 0.5f;
+position.x -= msX;
+position.y -= msY;
+position = position / (SCALE + 0.001f);
+Rotate(&position.x, &position.y, ROTATE);
+position = position + 0.5f;
+position.x = (position.x * 2.0f - 1.0f) * 20.0f;
+position.y = (position.y * 2.0f - 1.0f) * 20.0f;
+
+float color = 0.0f;
+
+for(float i = 1.0f; i < 20.0f; i++)
+{
+color += 0.999f - _Smoothstep(0.01f, 0.1f, _fabs(0.25f * position.y + FUNC(position.x / i * 3.14f, time)));
+}
+
+color = _fminf(color, 1.275f);
+
+return make_float3(color * 0.33f, color, color * 0.33f);
+}
