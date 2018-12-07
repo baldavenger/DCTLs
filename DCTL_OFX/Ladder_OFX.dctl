@@ -1,0 +1,151 @@
+// Ladder OFX DCTL
+
+DEFINE_UI_PARAMS(msX, Horizontal, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(msY, Vertical, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(SCALE, Zoom, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+
+#include "DCTL_Functions.h"
+
+__DEVICE__ float PrBox2Df( float2 p, float2 b);
+__DEVICE__ float PrRoundCylDf( float3 p, float r, float rt, float h);
+__DEVICE__ float2 Rot2D( float2 q, float a);
+
+__DEVICE__ float3 qHit;
+__DEVICE__ float dstFar;
+__DEVICE__ int idObj;
+
+#define DMINQ(id) if (d < dMin) { dMin = d;  idObj = id;  qHit = q; }
+
+__DEVICE__ float ObjDf( float3 p)
+{
+float3 q;
+float dMin, d, a, r, ns;
+r = 3.5f;
+ns = 32.0f;
+dMin = dstFar;
+q = p;
+a = _atan2f (q.z, q.x);
+float2 qXZ = make_float2(q.x, q.z);
+qXZ = make_float2(length(qXZ) - r, q.y);
+qXZ = Rot2D(qXZ, 1.5f * a);
+qXZ = Rot2D(qXZ, -PI * (_floor(_atan2f(qXZ.y, qXZ.x) / PI + 0.5f)));
+qXZ.x -= 1.0f;
+d = PrBox2Df(qXZ, make_float2(0.3f)) - 0.05f;
+q = make_float3(qXZ.x, q.y, qXZ.y);
+DMINQ(1);
+q = p;
+a = _atan2f(q.z, -q.x) / (2.0f * PI);
+a = 2.0f * PI * (_floor(ns * a) + 0.5f) / ns;
+qXZ = make_float2(q.x, q.z);
+qXZ = Rot2D (qXZ, a);
+qXZ.x += r;
+q = make_float3(qXZ.x, q.y, qXZ.y);
+float2 qXY = make_float2(q.x, q.y);
+qXY = Rot2D(qXY, 1.5f * a);
+q = make_float3(qXY.x, qXY.y, q.z);
+d = PrRoundCylDf(make_float3(q.x, q.z, q.y), 0.2f, 0.02f, 1.45f);
+DMINQ(2);
+return 0.4f * dMin;
+}
+
+__DEVICE__ float ObjRay( float3 ro, float3 rd)
+{
+float dHit, d;
+dHit = 0.0f;
+for (int j = 0; j < 200; j++) {
+d = ObjDf(ro + rd * dHit);
+if (d < 0.0002f || dHit > dstFar) break;
+dHit += d;
+}
+return dHit;
+}
+
+__DEVICE__ float3 ObjNf( float3 p)
+{
+float4 v;
+float2 e = make_float2(0.0001f, -0.0001f);
+v = make_float4(ObjDf(p + make_float3(e.x, e.x, e.x)), ObjDf (p + make_float3(e.x, e.y, e.y)), ObjDf (p + make_float3(e.y, e.x, e.y)), ObjDf (p + make_float3(e.y, e.y, e.x)));
+return normalize(make_float3(v.x - v.y - v.z - v.w) + 2.0f * make_float3(v.y, v.z, v.w));
+}
+
+__DEVICE__ float3 BgCol( float3 rd)
+{
+return make_float3(0.6f, 0.6f, 1.0f) * (0.05f + 0.245f * (rd.y + 1.0f) * (rd.y + 1.0f));
+}
+
+__DEVICE__ float3 ShowScene( float3 ro, float3 rd)
+{
+float3 col, vn;
+float dstObj;
+col = BgCol(rd);
+dstObj = ObjRay(ro, rd);
+if (dstObj < dstFar) {
+ro = ro + dstObj * rd;
+vn = ObjNf(ro);
+if (dot(rd, vn) < -0.001f) col = BgCol(reflect(rd, vn));
+if (idObj == 1) col = col * (make_float3(1.0f, 1.0f, 0.9f) * (0.95f + 0.05f * _cosf(8.0f * PI * qHit.z)));
+else if (idObj == 2) col = col * (make_float3(1.0f, 0.9f, 0.9f) * mix(1.0f, 0.95f + 0.05f * _cosf(16.0f * _atan2f(qHit.z, -qHit.x)), step(_fabs(qHit.y), 1.44f)));
+}
+return CLAMP(col, 0.0f, 1.0f);
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+float2 resolution = make_float2(width, height);
+float2 XY = make_float2(X, Y);
+
+mat3 vuMat;
+float2 mPtr;
+float3 ro, rd, col;
+float2 canvas, uv, uvs, ori, ca, sa;
+float el, az, zmFac;
+canvas = resolution;
+uv = 2.0f * XY / canvas - 1.0f;
+uvs = uv;
+uv = uv / (SCALE + 0.1f);
+uv.x *= canvas.x / canvas.y;
+mPtr = make_float2((2.0f - msX)/2.5f, (1.5f - msY)/2.5f);
+az = 0.5f * PI;
+el = -0.3f * PI;
+az += 3.0f * PI * mPtr.x;
+el += PI * mPtr.y;
+el = _clampf(el, -0.5f * PI, 0.5f * PI);
+ori = make_float2(el, az);
+ca = COS(ori);
+sa = SIN(ori);
+vuMat = multi(make_mat3(ca.y, 0.0f, -sa.y, 0.0f, 1.0f, 0.0f, sa.y, 0.0f, ca.y),
+make_mat3 (1.0f, 0.0f, 0.0f, 0.0f, ca.x, -sa.x, 0.0f, sa.x, ca.x));
+ro = multi(vuMat, make_float3 (0.0f, 0.0f, -20.0f));
+zmFac = 4.8f - _fabs(el);
+rd = multi(vuMat, normalize(make_float3(uv.x, uv.y, zmFac)));
+dstFar = 40.0f;
+col = ShowScene(ro, rd);
+uvs = uvs * uvs * uvs;
+col = col * mix(0.8f, 1.0f, _powf(1.0f - 0.5f * length(uvs * uvs), 4.0f));
+return col;
+}
+
+__DEVICE__ float PrBox2Df( float2 p, float2 b)
+{
+float2 d;
+d = ABS(p) - b;
+return _fminf(_fmaxf(d.x, d.y), 0.0f) + length(MAX(d, 0.0f));
+}
+
+__DEVICE__ float PrRoundCylDf( float3 p, float r, float rt, float h)
+{
+float dxy, dz;
+dxy = length(make_float2(p.x, p.y)) - r;
+dz = _fabs(p.z) - h;
+return _fminf(_fminf(_fmaxf(dxy + rt, dz), _fmaxf(dxy, dz + rt)), length(make_float2(dxy, dz) + rt) - rt);
+}
+
+__DEVICE__ float2 Rot2D( float2 q, float a)
+{
+return q * _cosf(a) + make_float2(q.y, q.x) * _sinf(a) * make_float2(-1.0f, 1.0f);
+}

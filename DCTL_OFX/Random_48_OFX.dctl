@@ -8,7 +8,7 @@ DEFINE_UI_PARAMS(ROTATE, Rotate, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
 
 #include "DCTL_Functions.h"
 
-__DEVICE__ float time = 0;
+//__DEVICE__ float time = 0;
 
 __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
 {
@@ -19,7 +19,7 @@ float height = (float)p_Height;
 Y = height - Y;
 float2 resolution = make_float2(width, height);
 float2 XY = make_float2(X, Y);
-time = TIME * 20;
+float time = TIME * 20;
 
 float3 d = normalize( make_float3((XY - resolution * 0.5f) / resolution.x, 0.5f));
 d.x -= msX;

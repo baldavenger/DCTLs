@@ -1,0 +1,288 @@
+// Random 56 OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Animate, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(msX, Wrap, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(msY, Volume, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(ROTATEy, RotateY, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+DEFINE_UI_PARAMS(ROTATEz, RotateZ, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+DEFINE_UI_PARAMS(ROTATEx, RotateX, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+DEFINE_UI_PARAMS(BKG, Background, DCTLUI_SLIDER_INT, 1, 1, 4, 1)
+
+#include "DCTL_Functions.h"
+
+__DEVICE__ float time = 0.0f;
+
+__CONSTANT__ float SAT2MUL = 1.0f;
+__CONSTANT__ float L2MUL = 1.0f;
+__CONSTANT__ float3 wref = {0.950456f, 1.0f, 1.089058f}; 
+//__CONSTANT__ float3 wref = {1.0f, 1.0f, 1.0f}; 
+
+//#define SMOOTH_HSV
+//#define GETSAT
+
+#define ITR 50
+#define FAR 8.0f
+#define DSP_STR 1.5f
+
+__CONSTANT__ float fov = 1.5f;
+__DEVICE__ float2 mo;
+
+__DEVICE__ float sRGB(float t){ return mix(1.055f * _powf(t, 1.0f/2.4f) - 0.055f, 12.92f * t, step(t, 0.0031308f)); }
+__DEVICE__ float3 sRGB(float3 c) { return make_float3(sRGB(c.x), sRGB(c.y), sRGB(c.z)); }
+__DEVICE__ float xyzF(float t){ return mix(_powf(t, 1.0f/3.0f), 7.787037f * t + 0.139731f, step(t, 0.00885645f)); }
+__DEVICE__ float xyzR(float t){ return mix(t * t * t , 0.1284185f * (t - 0.139731f), step(t, 0.20689655f)); }
+
+__DEVICE__ float3 rgb2lch(float3 c)
+{
+c = multi(c, make_mat3(0.4124f, 0.3576f, 0.1805f, 0.2126f, 0.7152f, 0.0722f, 0.0193f, 0.1192f, 0.9505f));
+c.x = xyzF(c.x / wref.x);
+c.y = xyzF(c.y / wref.y);
+c.z = xyzF(c.z / wref.z);
+float3 lab = make_float3(_fmaxf(0.0f, 116.0f * c.y - 16.0f), 500.0f * (c.x - c.y), 200.0f * (c.y - c.z)); 
+return make_float3(lab.x, length(make_float2(lab.y, lab.z)), _atan2f(lab.z, lab.y));
+}
+
+__DEVICE__ float3 lch2rgb(float3 c)
+{
+c = make_float3(c.x, _cosf(c.z) * c.y, _sinf(c.z) * c.y);
+float lg = 1.0f / 116.0f * (c.x + 16.0f);
+float3 xyz = make_float3(wref.x * xyzR(lg + 0.002f * c.y), wref.y * xyzR(lg), wref.z * xyzR(lg - 0.005f * c.z));
+float3 rgb = multi(xyz, make_mat3( 3.2406f, -1.5372f, -0.4986f, -0.9689f, 1.8758f, 0.0415f, 0.0557f, -0.2040f, 1.0570f));
+return rgb;
+}
+
+__DEVICE__ float lerpAng(float a, float b, float x)
+{
+float ang = _fmod(_fmod((a - b), TWO_PI) + PI * 3.0f, TWO_PI) - PI;
+return ang * x + b;
+}
+
+__DEVICE__ float3 lerpLch(float3 a, float3 b, float x)
+{
+float hue = lerpAng(a.z, b.z, x);
+return make_float3(mix(make_float2(b.x, b.y), make_float2(a.x, a.y), x), hue);
+}
+
+#ifdef SMOOTH_HSV
+__DEVICE__ float3 hsv2rgb(float3 c )
+{
+float3 rgb = CLAMP( ABS(MOD(c.x * 6.0f + make_float3(0.0f, 4.0f, 2.0f), 6.0f) - 3.0f) - 1.0f, 0.0f, 1.0f );
+
+rgb = rgb * rgb * (3.0f - 2.0f * rgb); // cubic smoothing	
+
+return c.z * mix( make_float3(1.0f), rgb, c.y);
+}
+#else
+__DEVICE__ float3 hsv2rgb(float3 c )
+{
+float3 rgb = CLAMP( ABS(MOD(c.x * 6.0f + make_float3(0.0f, 4.0f, 2.0f), 6.0f) - 3.0f) - 1.0f, 0.0f, 1.0f );
+
+return c.z * mix( make_float3(1.0f), rgb, c.y);
+}
+#endif
+
+__DEVICE__ float3 rgb2hsv(float3 c)
+{
+float4 K = make_float4(0.0f, -1.0f / 3.0f, 2.0f / 3.0f, -1.0f);
+float4 p = mix(make_float4(c.z, c.y, K.w, K.z), make_float4(c.y, c.z, K.x, K.y), step(c.z, c.y));
+float4 q = mix(make_float4(p.x, p.y, p.w, c.x), make_float4(c.x, p.y, p.z, p.x), step(p.x, c.x));
+
+float d = q.x - _fminf(q.w, q.y);
+float e = 1.0e-10;
+return make_float3(_fabs(q.z + (q.w - q.y) / (6.0f * d + e)), d / (q.x + e), q.x);
+}
+
+__DEVICE__ float3 lerpHSV(float3 a, float3 b, float x)
+{
+float hue = (_fmod(_fmod((b.x - a.x), 1.0f) + 1.5f, 1.0f) - 0.5f) * x + a.x;
+float2 yo = mix(make_float2(a.y, a.z), make_float2(b.y, b.z), x);
+return make_float3(hue, yo.x, yo.y);
+}
+
+#ifdef GETSAT
+__DEVICE__ float getsat(float3 c)
+{
+c = make_float3(1.0f, _fmaxf(c.y, c.z), _fminf(c.y, c.z));
+c = make_float3(_fmaxf(c.x, c.y), _fminf(c.x, c.z), 1.0f);   
+return (c.x - _fminf(c.y, c.z)) / (c.x + 1e-7);
+}
+#else
+
+__DEVICE__ float getsat(float3 c)
+{
+float mi = _fminf(_fminf(c.x, c.y), c.z);
+float ma = _fmaxf(_fmaxf(c.x, c.y), c.z);
+return (ma - mi)/(ma+ 1e-7);
+}
+#endif
+
+__DEVICE__ float3 iLerp(float3 a, float3 b, float x)
+{
+float3 ic = mix(a, b, x) + make_float3(1e-6, 0.0f, 0.0f);
+float sd = _fabs(getsat(ic) - mix(getsat(a), getsat(b), x));
+float3 dir = normalize(make_float3(2.0f * ic.x - ic.y - ic.z, 2.0f * ic.y - ic.x - ic.z, 2.0f * ic.z - ic.y - ic.x));
+float lgt = dot(make_float3(1.0f), ic);
+float ff = dot(dir, normalize(ic));
+ic = ic + DSP_STR * dir * sd * ff * lgt;
+return CLAMP(ic, 0.0f, 1.0f);
+}
+
+__DEVICE__ float sbox( float3 p, float3 b ){
+float3 d = ABS(p) - b;
+return _fminf(_fmaxf(d.x, _fmaxf(d.y, d.z)), 0.0f) + length(MAX(d, 0.0f));
+}
+
+__DEVICE__ float cyl( float3 p, float2 h )
+{
+float2 d = ABS( make_float2( length(make_float2(p.x, p.z)), p.y ) ) - h;
+return _fminf(_fmaxf(d.x, d.y), 0.0f) + length(MAX(d, 0.0f));
+}
+
+__DEVICE__ float map(float3 p)
+{
+float3 p2 = p;
+rotate(&p2.x, &p2.z, time * 0.4f);
+float d = _fmaxf(cyl(p, make_float2(1.0f, 1.0f)), -sbox(p2 - make_float3(1.0f, 1.0f, 0.0f), make_float3(1.1f + mo.x * 0.6f, 0.8f - mo.y * 2.2f, 1.2f)));
+return _fmaxf(d, -cyl(p + make_float3(0.0f, -2.2f - mo.y * 2.2f, 0.0f), make_float2(0.75f + _sinf(time) * 0.2f, 2.0f)));
+}
+
+__DEVICE__ float3 shade( float3 pos, float3 rd)
+{
+float2 plr = make_float2(length(make_float2(pos.x, pos.z)), _atan2f(pos.z, pos.x));
+float3 colLch = lch2rgb(make_float3(pos.y * 50.0f + 50.0f, plr.x * 100.0f , plr.y));
+float3 colHsv = hsv2rgb(make_float3(plr.y / TWO_PI, plr.x, pos.y * 0.5f + 0.5f));
+return mix(colLch, colHsv, smoothstep(0.5f, 0.5f, _sinf(time * 0.5f + 0.1f)));
+}
+
+__DEVICE__ float3 marchAA( float3 ro, float3 rd, float3 bgc, float px, mat3 cam)
+{
+float precis = px * 0.1f;
+float t = map(ro);
+float3 col = make_float3(0.0f, 0.0f, 0.0f);
+float dm = 100.0f, tm = 0.0f, df = 100.0f, tf = 0.0f, od = 1000.0f, d = 0.0f;
+
+for(int i = 0; i < ITR; i++) {
+d = map(ro + rd * t);
+if(df == 50.0f) {
+if(d > od) {
+if(od < px * (t - od)) {
+df = od; tf = t - od;
+}
+}
+od = d;
+}
+if(d < dm){tm = t; dm = d;}
+t += d;
+if(t > FAR || d < precis) break;
+}
+col = bgc;
+
+if(dm < px * tm)
+col = mix(shade((ro + rd * tm) - rd * (px * (tm - dm)), rd), col, _clampf(dm / (px * tm), 0.0f, 1.0f));
+
+float qq = 0.0f;
+
+if((df == 100.0f || tm == tf) && t < FAR) {
+ro = ro + multi( make_float3(0.5f, 0.5f, 0.0f), cam) * px * tm * 1.0f;
+tf = tm;
+df = dm;
+qq = 0.01f;
+}
+return mix(shade((ro + rd * tf) - rd * (px * tf - df), rd), col, _clampf(qq + df / (px * tf), 0.0f, 1.0f));
+}
+
+__DEVICE__ float box(float2 p, float2 b) 
+{
+return length(MAX(ABS(p) - b, 0.0f));
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+float2 resolution = make_float2(width, height);
+float2 XY = make_float2(X, Y);
+time = TIME * 8.0f + 5.2f;
+float3 rgb = make_float3(p_R, p_G, p_B);
+
+float px = 2.0f / (resolution.y * fov);
+float2 q = XY / resolution;
+float2 p = q - 0.5f;
+float2 pp = p;
+p.x *= resolution.x / resolution.y;
+
+mo = make_float2(msX * -0.5f, msY * 0.5f);
+mo.x *= resolution.x / resolution.y;
+
+float3 ro = make_float3(1.1f, 0.0f, 5.0f);
+float3 rd = normalize(make_float3(p.x, p.y, -1.6f)); 
+
+float rx = 0.45f - ROTATEx;
+float ry = time * 0.4f + 1.1f - ROTATEy;
+float rz = ROTATEz;
+
+mat3 cam = cam3D(rx, ry, rz);
+ro = multi(ro, cam);
+rd = multi(rd, cam);
+
+float3 col = make_float3(0.0f, 0.0f, 0.0f);
+col = marchAA(ro, rd, col, px, cam);
+
+float3 col1 = make_float3(0.26f - time * 0.0638f + mo.x * 0.1f, 0.8f + _sinf(time) * 0.2f, _clampf(mo.y + 0.6f, 0.0f, 1.0f));
+float3 col2 = make_float3(0.75f - time * 0.0638f - mo.x * 0.1f, (0.8f + _sinf(time) * 0.2f) * SAT2MUL, _clampf(mo.y + 0.6f, 0.0f, 1.0f) * L2MUL);
+
+float gradient = _clampf((p.y + 0.42f) * 1.25f, 0.0f, 1.0f);
+
+float3 gradHSV = lerpHSV(col2, col1, gradient);
+
+col1 = hsv2rgb(col1);
+col2 = hsv2rgb(col2);
+gradHSV = hsv2rgb(gradHSV);
+
+float3 col1Lch = rgb2lch(col1);
+float3 col2Lch = rgb2lch(col2);
+
+float3 gradLch = lerpLch(col1Lch, col2Lch, gradient);
+gradLch = lch2rgb(gradLch);
+float3 gradRGB = mix(col2, col1, gradient);
+
+float3 gradDSP = iLerp(col2, col1, gradient);
+
+float h = _clampf(mo.y, -0.45f, 0.4f);
+float h2 = _clampf(mo.x, -0.7f, 1.0f);
+float b1 = smoothstep(0.01f, 0.0f, box(p - make_float2(-0.67f - h * 0.15f + _sinf(-h2 * 1.1f - 1.6f) * 0.12f, h * 0.8f + h2 * 0.13f),
+				 make_float2(0.02f, 0.02f)) -0.015f);
+col = col * (1.0f - smoothstep(0.0f, 0.5f, b1)) + col1 * b1;
+
+float b2 = smoothstep(0.01f, 0.0f, box(p - make_float2(-0.16f - h * 0.0f + _sinf(h2 * 1.1f + 1.9f) * 0.2f, 0.15f + h * 0.55f + h2 * 0.13f),
+				 make_float2(0.02f, 0.02f)) -0.015f);
+col = col * (1.0f - smoothstep(0.0f, 0.5f, b2)) + col2 * b2;
+
+float b3 = smoothstep(0.01f, 0.0f, box(p - make_float2(0.18f, 0.0f), make_float2(0.06f, 0.4f)));
+col = col * (1.0f - smoothstep(0.0f, 0.5f, b3)) + gradRGB * b3;
+
+float b4 = smoothstep(0.01f, 0.0f, box(p - make_float2(0.36f, 0.0f), make_float2(0.06f, 0.4f)));
+col = col * (1.0f - smoothstep(0.0f, 0.5f, b4)) + gradHSV * b4;
+
+float b5 = smoothstep(0.01f, 0.0f, box(p - make_float2(0.54f, 0.0f), make_float2(0.06f, 0.4f)));
+col = col * (1.0f - smoothstep(0.0f, 0.5f, b5)) + gradLch * b5;
+
+float b6 = smoothstep(0.01f, 0.0f, box(p - make_float2(0.73f, 0.0f), make_float2(0.06f, 0.4f)));
+col = col * (1.0f - smoothstep(0.0f, 0.5f, b6)) + gradDSP * b6;
+
+float2 pp3 = pp * pp * pp;
+col = col * (_powf(smoothstep(12.0f, 0.05f, dot(pp3 * pp3, pp3 * pp3) * 1000.0f), 1000.0f) * 0.4f + 0.6f);
+
+col = sRGB(col);
+
+float3 back = BKG == 1 ? make_float3(0.9f, 0.9f, 0.9f) : BKG == 2 ? make_float3(0.5f, 0.5f, 0.5f) :
+BKG == 3 ? make_float3(0.0f, 0.0f, 0.0f) : rgb;
+
+if(col.x == 0.0f && col.y == 0.0f && col.z == 0.0f)
+col = back;
+
+return col;
+}
