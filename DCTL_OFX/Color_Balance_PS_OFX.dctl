@@ -9,13 +9,27 @@ DEFINE_UI_PARAMS(MidB, M_Yellow_Blue, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
 DEFINE_UI_PARAMS(HighR, H_Cyan_Red, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
 DEFINE_UI_PARAMS(HighG, H_Magenta_Green, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
 DEFINE_UI_PARAMS(HighB, H_Yellow_Blue, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(SAT, Saturation Limiter, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
 DEFINE_UI_PARAMS(PresLum, Preserve Luma, DCTLUI_CHECK_BOX, 1)
 DEFINE_UI_PARAMS(graph, Graph, DCTLUI_CHECK_BOX, 0)
 
 #ifndef M_PI
-#define M_PI			3.14159265358979323846264338327950288
+#define M_PI			3.14159265358979323846264338327950288f
 #endif
 
+__DEVICE__ float rgb_to_sat( float r, float g, float b);
+__DEVICE__ void Curve( float* COL, float p_Curve[3], float p_ShadP, float p_HighP, float p_ContP);
+
+__DEVICE__ float rgb_to_sat( float r, float g, float b)
+{
+float sat = 0.0f;
+float min = _fminf(_fminf(r, g), b);
+float max = _fmaxf(_fmaxf(r, g), b);
+float delta = max - min;
+if (max != 0.0f)
+sat = delta / max;
+return sat;
+}
 
 __DEVICE__ void Curve( float* COL, float p_Curve[3], float p_ShadP, float p_HighP, float p_ContP)
 {
@@ -34,18 +48,20 @@ COL[c] = COL[c] >= expr1 && COL[c] <= expr2 ? tempA[c] * (expr2 - expr1) + expr1
 
 __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
 {
-
 float X = (float)p_X;
 float Y = (float)p_Y;
 float width = (float)p_Width;
 float height = (float)p_Height;
 Y = height - Y;
+float Sat = rgb_to_sat(p_R, p_G, p_B);
 
 //float lumaIn = p_R * 0.2126f + p_G * 0.7152f + p_B * 0.0722f;
 float lumaIn = (p_R + p_G + p_B) / 3.0f;
-float3 RGB = (graph) ? make_float3(X / width) : make_float3(p_R, p_G, p_B);
+float3 RGB = make_float3(p_R, p_G, p_B);
+float3 RGB1 = make_float3(X / width, X / width, X / width);
 
 float COL[3] = {RGB.x, RGB.y, RGB.z};
+float COL1[3] = {RGB1.x, RGB1.y, RGB1.z};
 
 float p_ShadP1 = 400.0f / 1023.0f;
 float p_HighP1 = 125.0f / 1023.0f;
@@ -71,24 +87,31 @@ Curve( COL, p_Shad, p_ShadP1, p_HighP1, p_ContP1);
 Curve( COL, p_Mid, p_ShadP2, p_HighP2, p_ContP2);
 Curve( COL, p_High, p_ShadP3, p_HighP3, p_ContP3);
 
+Curve( COL1, p_Shad, p_ShadP1, p_HighP1, p_ContP1);
+Curve( COL1, p_Mid, p_ShadP2, p_HighP2, p_ContP2);
+Curve( COL1, p_High, p_ShadP3, p_HighP3, p_ContP3);
+
 RGB = make_float3(COL[0], COL[1], COL[2]);
+RGB1 = make_float3(COL1[0], COL1[1], COL1[2]);
+RGB = Sat <= SAT ? RGB : make_float3(p_R, p_G, p_B);
 
 if(PresLum)
 {
 //float lumaOut = RGB.x * 0.2126f + RGB.y * 0.7152f + RGB.z * 0.0722f;
 float lumaOut = (RGB.x + RGB.y + RGB.z) / 3.0f;
 float lumaDiff = lumaIn / lumaOut;
-if(lumaIn > 0 && lumaOut > 0)
+if(lumaIn > 0.0f && lumaOut > 0.0f)
 RGB = RGB * lumaDiff;
 }
 
-if(graph){
-float overlayR = COL[0] >= (Y - 5)/(height) && COL[0] <= (Y + 5)/(height) ? 1.0f : 0.0f;
-float overlayG = COL[1] >= (Y - 5)/(height) && COL[1] <= (Y + 5)/(height) ? 1.0f : 0.0f;
-float overlayB = COL[2] >= (Y - 5)/(height) && COL[2] <= (Y + 5)/(height) ? 1.0f : 0.0f;
-RGB = make_float3(overlayR, overlayG, overlayB);
-}
+float3 Graph = make_float3(0.0f, 0.0f, 0.0f);
+float overlayR = COL1[0] >= (Y - 5)/(height) && COL1[0] <= (Y + 5)/(height) ? 1.0f : 0.0f;
+float overlayG = COL1[1] >= (Y - 5)/(height) && COL1[1] <= (Y + 5)/(height) ? 1.0f : 0.0f;
+float overlayB = COL1[2] >= (Y - 5)/(height) && COL1[2] <= (Y + 5)/(height) ? 1.0f : 0.0f;
+Graph = make_float3(overlayR, overlayG, overlayB);
 
+if(graph)
+RGB = RGB + Graph;
 
 return RGB;
 }
