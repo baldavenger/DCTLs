@@ -1,0 +1,774 @@
+// LMT Print Film Emulation OFX DCTL
+
+// Input is ACEScct
+// Output is ACEScct
+
+DEFINE_UI_PARAMS(EXPOSURE, Exposure, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+DEFINE_UI_PARAMS(SCALEC, Scale Color, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(SLOPEGLOBAL, Slope, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(SLOPER, Slope R, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(SLOPEG, Slope G, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(SLOPEB, Slope B, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(OFFSETGLOBAL, Offset, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(OFFSETR, Offset R, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(OFFSETG, Offset G, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(OFFSETB, Offset B, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(POWERGLOBAL, Power, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(POWERR, Power R, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(POWERG, Power G, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(POWERB, Power B, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(SATT, Sat, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(GAMMA1, Contrast, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(GAMMA2, Pivot, DCTLUI_SLIDER_FLOAT, 0.18, 0, 1, 0.001)
+DEFINE_UI_PARAMS(ROTATEH11, Hue1, DCTLUI_SLIDER_FLOAT, 0, 0, 360, 0.001)
+DEFINE_UI_PARAMS(ROTATEH12, Range1, DCTLUI_SLIDER_FLOAT, 30, 0, 180, 0.001)
+DEFINE_UI_PARAMS(ROTATEH13, Rotate1, DCTLUI_SLIDER_FLOAT, 0, -90, 90, 0.001)
+DEFINE_UI_PARAMS(ROTATEH21, Hue2, DCTLUI_SLIDER_FLOAT, 80, 0, 360, 0.001)
+DEFINE_UI_PARAMS(ROTATEH22, Range2, DCTLUI_SLIDER_FLOAT, 60, 0, 180, 0.001)
+DEFINE_UI_PARAMS(ROTATEH23, Rotate2, DCTLUI_SLIDER_FLOAT, 0, -90, 90, 0.001)
+DEFINE_UI_PARAMS(ROTATEH31, Hue3, DCTLUI_SLIDER_FLOAT, 52, 0, 360, 0.001)
+DEFINE_UI_PARAMS(ROTATEH32, Range3, DCTLUI_SLIDER_FLOAT, 50, 0, 180, 0.001)
+DEFINE_UI_PARAMS(ROTATEH33, Rotate3, DCTLUI_SLIDER_FLOAT, 0, -90, 90, 0.001)
+DEFINE_UI_PARAMS(SCALECH11, Scale Color Hue1, DCTLUI_SLIDER_FLOAT, 45, 0, 360, 0.001)
+DEFINE_UI_PARAMS(SCALECH12, Scale Color Range1, DCTLUI_SLIDER_FLOAT, 40, 0, 180, 0.001)
+DEFINE_UI_PARAMS(SCALECH13, Scale Color1, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(ROTATEH41, Hue4, DCTLUI_SLIDER_FLOAT, 190, 0, 360, 0.001)
+DEFINE_UI_PARAMS(ROTATEH42, Range4, DCTLUI_SLIDER_FLOAT, 40, 0, 180, 0.001)
+DEFINE_UI_PARAMS(ROTATEH43, Rotate4, DCTLUI_SLIDER_FLOAT, 0, -90, 90, 0.001)
+DEFINE_UI_PARAMS(SCALECH21, Scale Color Hue2, DCTLUI_SLIDER_FLOAT, 240, 0, 360, 0.001)
+DEFINE_UI_PARAMS(SCALECH22, Scale Color Range2, DCTLUI_SLIDER_FLOAT, 120, 0, 180, 0.001)
+DEFINE_UI_PARAMS(SCALECH23, Scale Color2, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(INTENSITY, Grain Intensity, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(TIME, Animate Grain, DCTLUI_SLIDER_FLOAT, 0, 0, 100, 0.001)
+DEFINE_UI_PARAMS(NOISE, Resolution, DCTLUI_SLIDER_INT, 10, 1, 20, 1)
+DEFINE_UI_PARAMS(ACESCCT, ACEScct, DCTLUI_CHECK_BOX, 1)
+DEFINE_UI_PARAMS(BYPASS, Disable Hue Adjustments, DCTLUI_CHECK_BOX, 0)
+DEFINE_UI_PARAMS(ADD_GRAIN, Add Grain, DCTLUI_CHECK_BOX, 0)
+DEFINE_UI_PARAMS(RGB_GRAIN, RGB Grain, DCTLUI_CHECK_BOX, 0)
+
+typedef struct
+{
+float2 red;
+float2 green;
+float2 blue;
+float2 white;
+} Chromaticities;
+
+typedef struct
+{
+float3 c0, c1, c2;
+} mat3;
+
+typedef struct
+{
+float4 c0, c1, c2, c3;
+} mat4;
+
+__CONSTANT__ float X_BRK = 0.0078125f;
+__CONSTANT__ float Y_BRK = 0.155251141552511f;
+__CONSTANT__ float A = 10.5402377416545f;
+__CONSTANT__ float B = 0.0729055341958355f;
+__CONSTANT__ float sqrt3over4 = 0.433012701892219f;
+__CONSTANT__ Chromaticities AP0 = { {0.7347f, 0.2653f}, {0.0f, 1.0f}, {0.0001f, -0.077f}, {0.32168f, 0.33767f} };
+__CONSTANT__ Chromaticities AP1 = { {0.713f, 0.293f}, {0.165f, 0.83f}, {0.128f, 0.044f}, {0.32168f, 0.33767f} };
+__CONSTANT__ Chromaticities REC709_PRI = { {0.64f, 0.33f}, {0.3f, 0.6f}, {0.15f, 0.06f}, {0.3127f, 0.329f} };
+
+#define pi		3.14159265358979323846264338327950288f
+#define HALF_MAX		65504.0f
+#define AP0_2_XYZ_MAT		RGBtoXYZ_m4( AP0, 1.0f)
+#define XYZ_2_AP0_MAT		XYZtoRGB_m4( AP0, 1.0f)
+#define AP1_2_XYZ_MAT		RGBtoXYZ_m4( AP1, 1.0f)
+#define XYZ_2_AP1_MAT		XYZtoRGB_m4( AP1, 1.0f)
+#define AP0_2_AP1_MAT		mult_f44_f44( AP0_2_XYZ_MAT, XYZ_2_AP1_MAT)
+#define AP1_2_AP0_MAT		mult_f44_f44( AP1_2_XYZ_MAT, XYZ_2_AP0_MAT)
+#define AP1_RGB2Y		make_float3(AP1_2_XYZ_MAT.c0.y, AP1_2_XYZ_MAT.c1.y, AP1_2_XYZ_MAT.c2.y)
+#define RGB_2_YAB_MAT		make_mat3(make_float3(1.0f/3.0f, 1.0f/2.0f, 0.0f), make_float3(1.0f/3.0f, -1.0f/4.0f, sqrt3over4), make_float3(1.0f/3.0f, -1.0f/4.0f, -sqrt3over4))
+#define REC709_2_XYZ_MAT		RGBtoXYZ( REC709_PRI, 1.0f)   
+#define REC709_RGB2Y		float3(REC709_2_XYZ_MAT.c0.y, REC709_2_XYZ_MAT.c1.y, REC709_2_XYZ_MAT.c2.y)
+
+__DEVICE__ Chromaticities make_chromaticities(float2 A, float2 B, float2 C, float2 D);
+__DEVICE__ mat3 make_mat3(float3 A, float3 B, float3 C);
+__DEVICE__ float fract_f(float A);
+__DEVICE__ float2 add_f2_f( float2 A, float B);
+__DEVICE__ float dot_f2_f( float2 A, float2 B);
+__DEVICE__ float3 overlay_f3(float3 a, float3 b);
+__DEVICE__ float3 scale_C(float3 rgb, float percentC);
+__DEVICE__ float3 rotate_H_in_H(float3 rgb, float centerH, float widthH, float degreesShift);
+__DEVICE__ float3 ych_2_rgb(float3 ych);
+__DEVICE__ float3 rgb_2_ych(float3 rgb);
+__DEVICE__ float3 ych_2_yab(float3 ych );
+__DEVICE__ float3 yab_2_ych(float3 yab);
+__DEVICE__ float3 yab_2_rgb(float3 yab);
+__DEVICE__ float3 rgb_2_yab(float3 rgb);
+__DEVICE__ float3 sat_adjust(float3 rgbIn, float SAT_FACTOR, float3 RGB2Y);
+__DEVICE__ float3 gamma_adjust_linear(float3 rgbIn, float GAMMA, float PIVOT);
+__DEVICE__ float3 ASCCDL_inACEScct(float3 acesIn, float3 SLOPE, float3 OFFSET, float3 POWER, float SAT);
+__DEVICE__ float3 ACEScct_to_ACES(float3 in);
+__DEVICE__ float3 ACES_to_ACEScct(float3 in);
+__DEVICE__ float ACEScct_to_lin(float in);
+__DEVICE__ float lin_to_ACEScct(float in);
+__DEVICE__ mat4 XYZtoRGB_m4(Chromaticities N, float W);
+__DEVICE__ mat3 XYZtoRGB( Chromaticities N);
+__DEVICE__ mat4 RGBtoXYZ_m4(Chromaticities N, float W);
+__DEVICE__ mat3 RGBtoXYZ(Chromaticities N);
+__DEVICE__ float interpolate1D (float2 table[], int Size, float p);
+__DEVICE__ float uncenter_hue(float hueCentered, float centerH);
+__DEVICE__ mat4 make_mat4(float4 A, float4 B, float4 C, float4 D);
+__DEVICE__ float4 make_float4_f3_f(float3 A, float B);
+__DEVICE__ mat4 make_mat4_f33_f(mat3 A, float B);
+__DEVICE__ float3 mult_f3_f33 (float3 X, mat3 A);
+__DEVICE__ mat3 mult_f33_f33 (mat3 A, mat3 B);
+__DEVICE__ float3 mult_f3_f44 (float3 X, mat4 A);
+__DEVICE__ mat3 mult_f_f33 (float f, mat3 A);
+__DEVICE__ mat4 mult_f44_f44 (mat4 A, mat4 B);
+__DEVICE__ mat3 invert_f33 (mat3 A);
+__DEVICE__ mat3 transpose_f33(mat3 A);
+__DEVICE__ float3 exposure( float3 A, float scale);
+__DEVICE__ mat3 calc_sat_adjust_matrix(float sat, float3 rgb2Y);
+__DEVICE__ float center_hue(float hue, float centerH);
+__DEVICE__ float cubic_basis_shaper(float x, float w);
+__DEVICE__ float3 scale_C_at_H(float3 rgb, float centerH, float widthH, float percentC);
+__DEVICE__ float3 clamp_f3(float3 in, float clampMin, float clampMax);
+__DEVICE__ float3 ACES_to_ACEScc(float3 ACES);
+__DEVICE__ float lin_to_ACEScc(float in);
+__DEVICE__ float ACEScc_to_lin(float in);
+__DEVICE__ float3 ACEScc_to_ACES(float3 ACEScc);
+__DEVICE__ float intensity( float grain, float contrast);
+__DEVICE__ float nrand( float2 n);
+__DEVICE__ float Noise( float input, float2 uv, int size, float intensity);
+
+__DEVICE__ Chromaticities make_chromaticities(float2 A, float2 B, float2 C, float2 D)
+{
+Chromaticities E;
+E.red = A;
+E.green = B;
+E.blue = C;
+E.white = D;
+return E;
+}
+
+__DEVICE__ float3 clamp_f3( float3 in, float clampMin, float clampMax)
+{
+float3 out;
+out.x = _clampf( in.x, clampMin, clampMax);
+out.y = _clampf( in.y, clampMin, clampMax);
+out.z = _clampf( in.z, clampMin, clampMax);
+return out;
+}
+
+__DEVICE__ mat3 make_mat3(float3 A, float3 B, float3 C)
+{
+mat3 D;
+D.c0 = A;
+D.c1 = B;
+D.c2 = C;
+return D;
+}
+
+__DEVICE__ mat4 make_mat4(float4 A, float4 B, float4 C, float4 D)
+{
+mat4 E;
+E.c0 = A;
+E.c1 = B;
+E.c2 = C;
+E.c3 = D;
+return E;
+}
+
+__DEVICE__ float4 make_float4_f3_f( float3 A, float B)
+{
+return make_float4(A.x, A.y, A.z, B);
+}
+
+__DEVICE__ mat4 make_mat4_f33_f(mat3 A, float B)
+{
+mat4 C;
+C.c0 = make_float4_f3_f(A.c0, 0.0f);
+C.c1 = make_float4_f3_f(A.c1, 0.0f);
+C.c2 = make_float4_f3_f(A.c2, 0.0f);
+C.c3 = make_float4(0.0f, 0.0f, 0.0f, B);
+return C;
+}
+
+__DEVICE__ float3 mult_f3_f33 ( float3 X, mat3 A)
+{
+float r[3];
+float x[3] = {X.x, X.y, X.z};
+float a[3][3] =	{{A.c0.x, A.c0.y, A.c0.z}, {A.c1.x, A.c1.y, A.c1.z}, {A.c2.x, A.c2.y, A.c2.z}};
+for( int i = 0; i < 3; ++i)
+{
+r[i] = 0.0f;
+for( int j = 0; j < 3; ++j)
+{
+r[i] = r[i] + x[j] * a[j][i];
+}
+}
+return make_float3(r[0], r[1], r[2]);
+}
+
+__DEVICE__ mat3 mult_f33_f33( mat3 A, mat3 B)
+{
+float r[3][3];
+float a[3][3] =	{{A.c0.x, A.c0.y, A.c0.z}, {A.c1.x, A.c1.y, A.c1.z}, {A.c2.x, A.c2.y, A.c2.z}};
+float b[3][3] =	{{B.c0.x, B.c0.y, B.c0.z}, {B.c1.x, B.c1.y, B.c1.z}, {B.c2.x, B.c2.y, B.c2.z}};
+for( int i = 0; i < 3; ++i)
+{
+for( int j = 0; j < 3; ++j)
+{
+r[i][j] = 0.0f;
+for( int k = 0; k < 3; ++k)
+{
+r[i][j] = r[i][j] + a[i][k] * b[k][j];
+}
+}
+}
+mat3 R = make_mat3(make_float3(r[0][0], r[0][1], r[0][2]), 
+make_float3(r[1][0], r[1][1], r[1][2]), make_float3(r[2][0], r[2][1], r[2][2]));
+return R;
+}
+
+__DEVICE__ float3 mult_f3_f44( float3 X, mat4 A)
+{
+float r[3];
+float x[3] = {X.x, X.y, X.z};
+float a[4][4] =	{{A.c0.x, A.c0.y, A.c0.z, A.c0.w},
+{A.c1.x, A.c1.y, A.c1.z, A.c1.w},
+{A.c2.x, A.c2.y, A.c2.z, A.c2.w},
+{A.c3.x, A.c3.y, A.c3.z, A.c3.w}};
+for( int i = 0; i < 3; ++i)
+{
+r[i] = 0.0f;
+for( int j = 0; j < 3; ++j)
+{
+r[i] = r[i] + x[j] * a[j][i];
+}
+r[i] = r[i] + a[3][i];
+}
+float s = 1.0f / (x[0] * a[0][3] + x[1] * a[1][3] + x[2] * a[2][3] + a[3][3]);
+for( int k = 0; k < 3; ++k)
+{
+r[k] = r[k] * s;
+}
+return make_float3(r[0], r[1], r[2]);
+}
+
+__DEVICE__ mat3 mult_f_f33( float f, mat3 A)
+{
+float r[3][3];
+float a[3][3] =	{{A.c0.x, A.c0.y, A.c0.z}, {A.c1.x, A.c1.y, A.c1.z}, {A.c2.x, A.c2.y, A.c2.z}};
+for( int i = 0; i < 3; ++i )
+{
+for( int j = 0; j < 3; ++j )
+{
+r[i][j] = f * a[i][j];
+}
+}
+mat3 R = make_mat3(make_float3(r[0][0], r[0][1], r[0][2]), 
+make_float3(r[1][0], r[1][1], r[1][2]), make_float3(r[2][0], r[2][1], r[2][2]));
+return R;
+}
+
+__DEVICE__ mat4 mult_f44_f44( mat4 A, mat4 B)
+{
+float r[4][4];
+float a[4][4] =	{{A.c0.x, A.c0.y, A.c0.z, A.c0.w},
+{A.c1.x, A.c1.y, A.c1.z, A.c1.w},
+{A.c2.x, A.c2.y, A.c2.z, A.c2.w},
+{A.c3.x, A.c3.y, A.c3.z, A.c3.w}};
+float b[4][4] =	{{B.c0.x, B.c0.y, B.c0.z, B.c0.w},
+{B.c1.x, B.c1.y, B.c1.z, B.c1.w},
+{B.c2.x, B.c2.y, B.c2.z, B.c2.w},
+{B.c3.x, B.c3.y, B.c3.z, B.c3.w}};
+for( int i = 0; i < 4; ++i)
+{
+for( int j = 0; j < 4; ++j)
+{
+r[i][j] = 0.0f;
+for( int k = 0; k < 4; ++k)
+{
+r[i][j] = r[i][j] + a[i][k] * b[k][j];
+}
+}
+}
+mat4 R = make_mat4(make_float4(r[0][0], r[0][1], r[0][2], r[0][3]), 
+make_float4(r[1][0], r[1][1], r[1][2], r[1][3]), make_float4(r[2][0], r[2][1], r[2][2], r[2][3]),
+make_float4(r[3][0], r[3][1], r[3][2], r[3][3]));
+return R;
+}
+
+__DEVICE__ mat3 invert_f33( mat3 A)
+{
+mat3 R;
+float result[3][3];
+float a[3][3] =	{{A.c0.x, A.c0.y, A.c0.z}, {A.c1.x, A.c1.y, A.c1.z}, {A.c2.x, A.c2.y, A.c2.z}};
+float det = a[0][0] * a[1][1] * a[2][2]
++ a[0][1] * a[1][2] * a[2][0]
++ a[0][2] * a[1][0] * a[2][1]
+- a[2][0] * a[1][1] * a[0][2]
+- a[2][1] * a[1][2] * a[0][0]
+- a[2][2] * a[1][0] * a[0][1];
+if( det != 0.0f )
+{
+result[0][0] = a[1][1] * a[2][2] - a[1][2] * a[2][1];
+result[0][1] = a[2][1] * a[0][2] - a[2][2] * a[0][1];
+result[0][2] = a[0][1] * a[1][2] - a[0][2] * a[1][1];
+result[1][0] = a[2][0] * a[1][2] - a[1][0] * a[2][2];
+result[1][1] = a[0][0] * a[2][2] - a[2][0] * a[0][2];
+result[1][2] = a[1][0] * a[0][2] - a[0][0] * a[1][2];
+result[2][0] = a[1][0] * a[2][1] - a[2][0] * a[1][1];
+result[2][1] = a[2][0] * a[0][1] - a[0][0] * a[2][1];
+result[2][2] = a[0][0] * a[1][1] - a[1][0] * a[0][1];
+R = make_mat3(make_float3(result[0][0], result[0][1], result[0][2]), 
+make_float3(result[1][0], result[1][1], result[1][2]), make_float3(result[2][0], result[2][1], result[2][2]));
+return mult_f_f33( 1.0f / det, R);
+}
+R = make_mat3(make_float3(1.0f, 0.0f, 0.0f), 
+make_float3(0.0f, 1.0f, 0.0f), make_float3(0.0f, 0.0f, 1.0f));
+return R;
+}
+
+__DEVICE__ mat3 transpose_f33( mat3 A)
+{
+mat3 B;
+B.c0 = make_float3(A.c0.x, A.c1.x, A.c2.x);
+B.c1 = make_float3(A.c0.y, A.c1.y, A.c2.y);
+B.c2 = make_float3(A.c0.z, A.c1.z, A.c2.z);
+return B;
+}
+
+__DEVICE__ float3 exposure( float3 A, float scale)
+{
+float3 B;
+B.x = A.x * _exp2f(scale);
+B.y = A.y * _exp2f(scale);
+B.z = A.z * _exp2f(scale);
+return B;
+}
+
+__DEVICE__ mat3 calc_sat_adjust_matrix( float sat, float3 rgb2Y)
+{
+float M[3][3];
+M[0][0] = (1.0f - sat) * rgb2Y.x + sat;
+M[1][0] = (1.0f - sat) * rgb2Y.x;
+M[2][0] = (1.0f - sat) * rgb2Y.x;
+M[0][1] = (1.0f - sat) * rgb2Y.y;
+M[1][1] = (1.0f - sat) * rgb2Y.y + sat;
+M[2][1] = (1.0f - sat) * rgb2Y.y;
+M[0][2] = (1.0f - sat) * rgb2Y.z;
+M[1][2] = (1.0f - sat) * rgb2Y.z;
+M[2][2] = (1.0f - sat) * rgb2Y.z + sat;
+mat3 R = make_mat3(make_float3(M[0][0], M[0][1], M[0][2]), 
+make_float3(M[1][0], M[1][1], M[1][2]), make_float3(M[2][0], M[2][1], M[2][2]));
+R = transpose_f33(R);    
+return R;
+}
+
+__DEVICE__ float cubic_basis_shaper( float x, float w)
+{
+float M[4][4] = { {-1.0f/6.0f, 3.0f/6.0f, -3.0f/6.0f, 1.0f/6.0f}, {3.0f/6.0f, -1.0f, 3.0f/6.0f, 0.0f},
+{-3.0f/6.0f, 0.0f, 3.0f/6.0f, 0.0f}, {1.0f/6.0f, 4.0f/6.0f, 1.0f/6.0f, 0.0f} };
+float knots[5] = {-w/2.0f, -w/4.0f, 0.0f, w/4.0f, w/2.0f};
+float y = 0.0f;
+if ((x > knots[0]) && (x < knots[4])) {  
+float knot_coord = (x - knots[0]) * 4.0f/w;  
+int j = knot_coord;
+float t = knot_coord - j;
+float monomials[4] = { t * t * t, t * t, t, 1.0f };
+if ( j == 3) {
+y = monomials[0] * M[0][0] + monomials[1] * M[1][0] + monomials[2] * M[2][0] + monomials[3] * M[3][0];
+} else if ( j == 2) {
+y = monomials[0] * M[0][1] + monomials[1] * M[1][1] + monomials[2] * M[2][1] + monomials[3] * M[3][1];
+} else if ( j == 1) {
+y = monomials[0] * M[0][2] + monomials[1] * M[1][2] + monomials[2] * M[2][2] + monomials[3] * M[3][2];
+} else if ( j == 0) {
+y = monomials[0] * M[0][3] + monomials[1] * M[1][3] + monomials[2] * M[2][3] + monomials[3] * M[3][3];
+} else {
+y = 0.0f;
+}
+}
+return y * 3.0f/2.0f;
+}
+
+__DEVICE__ float center_hue( float hue, float centerH)
+{
+float hueCentered = hue - centerH;
+if (hueCentered < -180.0f) hueCentered = hueCentered + 360.0f;
+else if (hueCentered > 180.0f) hueCentered = hueCentered - 360.0f;
+return hueCentered;
+}
+
+__DEVICE__ float uncenter_hue( float hueCentered, float centerH)
+{
+float hue = hueCentered + centerH;
+if (hue < 0.0f) hue = hue + 360.0f;
+else if (hue > 360.0f) hue = hue - 360.0f;
+return hue;
+}
+
+__DEVICE__ float interpolate1D (float2 table[], int Size, float p)
+{
+if( p <= table[0].x ) return table[0].y;
+if( p >= table[Size-1].x ) return table[Size-1].y;
+for( int i = 0; i < Size - 1; ++i )
+{
+if( table[i].x <= p && p < table[i+1].x )
+{
+float s = (p - table[i].x) / (table[i+1].x - table[i].x);
+return table[i].y * ( 1 - s ) + table[i+1].y * s;
+}
+}
+return 0.0f;
+}
+
+__DEVICE__ mat3 RGBtoXYZ( Chromaticities N)
+{
+mat3 M = make_mat3(make_float3(N.red.x, N.red.y, 1.0f - (N.red.x + N.red.y)),
+make_float3(N.green.x, N.green.y, 1.0f - (N.green.x + N.green.y)),
+make_float3(N.blue.x, N.blue.y, 1.0f - (N.blue.x + N.blue.y)));
+float3 wh = make_float3(N.white.x / N.white.y, 1.0f, (1.0f - (N.white.x + N.white.y)) / N.white.y);
+wh = mult_f3_f33(wh, invert_f33(M));
+mat3 WH =  make_mat3(make_float3(wh.x, 0.0f, 0.0f), 
+make_float3(0.0f, wh.y, 0.0f), make_float3(0.0f, 0.0f, wh.z));
+M = mult_f33_f33(WH, M);
+return M;
+}
+
+__DEVICE__ mat4 RGBtoXYZ_m4( Chromaticities N, float W)
+{
+mat3 A = RGBtoXYZ(N);
+mat4 M = make_mat4_f33_f(A, W);
+return M;
+}
+
+__DEVICE__ mat3 XYZtoRGB( Chromaticities N)
+{
+mat3 M = invert_f33(RGBtoXYZ(N));
+return M;
+}
+
+__DEVICE__ mat4 XYZtoRGB_m4( Chromaticities N, float W)
+{
+mat3 A = XYZtoRGB(N);
+mat4 M = make_mat4_f33_f(A, W);
+return M;
+}
+
+__DEVICE__ float lin_to_ACEScc( float in)
+{
+if (in <= 0.0f)
+return -0.3584474886f;
+else if (in < _powf(2.0f, -15.0f))
+return (_log2f( _powf(2.0f, -16.0f) + in * 0.5f) + 9.72f) / 17.52f;
+else
+return (_log2f(in) + 9.72f) / 17.52f;
+}
+
+__DEVICE__ float3 ACES_to_ACEScc( float3 ACES)
+{
+ACES = clamp_f3( ACES, 0.0f, HALF_MAX);
+float3 lin_AP1 = mult_f3_f44( ACES, AP0_2_AP1_MAT);
+float3 out;
+out.x = lin_to_ACEScc(lin_AP1.x);
+out.y = lin_to_ACEScc(lin_AP1.y);
+out.z = lin_to_ACEScc(lin_AP1.z);
+return out;
+}
+
+__DEVICE__ float ACEScc_to_lin( float in)
+{
+if (in < -0.3013698630f)
+return (_powf( 2.0f, in * 17.52f - 9.72f) - _powf( 2.0f, -16.0f)) * 2.0f;
+else if ( in < (_log2f(HALF_MAX) + 9.72f) / 17.52f )
+return _powf( 2.0f, in * 17.52f - 9.72f);
+else
+return HALF_MAX;
+}
+
+__DEVICE__ float3 ACEScc_to_ACES( float3 ACEScc)
+{
+float3 lin_AP1;
+lin_AP1.x = ACEScc_to_lin(ACEScc.x);
+lin_AP1.y = ACEScc_to_lin(ACEScc.y);
+lin_AP1.z = ACEScc_to_lin(ACEScc.z);
+float3 ACES = mult_f3_f44(lin_AP1, AP1_2_AP0_MAT);
+return ACES;  
+}
+
+__DEVICE__ float lin_to_ACEScct( float in)
+{
+if (in <= X_BRK)
+return A * in + B;
+else
+return (_log2f(in) + 9.72f) / 17.52f;
+}
+
+__DEVICE__ float ACEScct_to_lin( float in)
+{
+if (in > Y_BRK)
+return _powf( 2.0f, in * 17.52f - 9.72f);
+else
+return (in - B) / A;
+}
+
+__DEVICE__ float3 ACES_to_ACEScct( float3 in)
+{
+float3 ap1_lin = mult_f3_f44(in, AP0_2_AP1_MAT);
+float3 acescct;
+acescct.x = lin_to_ACEScct(ap1_lin.x);
+acescct.y = lin_to_ACEScct(ap1_lin.y);
+acescct.z = lin_to_ACEScct(ap1_lin.z);
+return acescct;
+}
+
+__DEVICE__ float3 ACEScct_to_ACES( float3 in)
+{
+float3 ap1_lin;
+ap1_lin.x = ACEScct_to_lin( in.x);
+ap1_lin.y = ACEScct_to_lin( in.y);
+ap1_lin.z = ACEScct_to_lin( in.z);
+return mult_f3_f44( ap1_lin, AP1_2_AP0_MAT);
+}
+
+__DEVICE__ float3 ASCCDL_inACEScct( float3 acesIn, float3 SLOPE, float3 OFFSET, float3 POWER, float SAT)
+{
+float3 acescct = ACES_to_ACEScct(acesIn);
+acescct.x = _powf( _clampf( (acescct.x * SLOPE.x) + OFFSET.x, 0.0f, 1.0f), 1.0f / POWER.x);
+acescct.y = _powf( _clampf( (acescct.y * SLOPE.y) + OFFSET.y, 0.0f, 1.0f), 1.0f / POWER.y);
+acescct.z = _powf( _clampf( (acescct.z * SLOPE.z) + OFFSET.z, 0.0f, 1.0f), 1.0f / POWER.z);
+float luma = 0.2126f * acescct.x + 0.7152f * acescct.y + 0.0722f * acescct.z;
+float satClamp = _saturatef(SAT);
+acescct.x = luma + satClamp * (acescct.x - luma);
+acescct.y = luma + satClamp * (acescct.y - luma);
+acescct.z = luma + satClamp * (acescct.z - luma);
+return ACEScct_to_ACES( acescct);
+}
+
+__DEVICE__ float3 gamma_adjust_linear( float3 rgbIn, float GAMMA, float PIVOT)
+{
+const float SCALAR = PIVOT / _powf( PIVOT, GAMMA);
+float3 rgbOut = rgbIn;
+if (rgbIn.x > 0.0f) rgbOut.x = _powf( rgbIn.x, GAMMA) * SCALAR;
+if (rgbIn.y > 0.0f) rgbOut.y = _powf( rgbIn.y, GAMMA) * SCALAR;
+if (rgbIn.z > 0.0f) rgbOut.z = _powf( rgbIn.z, GAMMA) * SCALAR;
+return rgbOut;
+}
+							
+__DEVICE__ float3 sat_adjust( float3 rgbIn, float SAT_FACTOR, float3 RGB2Y)
+{
+const mat3 SAT_MAT = calc_sat_adjust_matrix( SAT_FACTOR, RGB2Y);    
+return mult_f3_f33( rgbIn, SAT_MAT);
+}
+
+__DEVICE__ float3 rgb_2_yab( float3 rgb)
+{
+float3 yab = mult_f3_f33( rgb, RGB_2_YAB_MAT);
+return yab;
+}
+
+__DEVICE__ float3 yab_2_rgb( float3 yab)
+{
+float3 rgb = mult_f3_f33( yab, invert_f33(RGB_2_YAB_MAT));
+return rgb;
+}
+
+__DEVICE__ float3 yab_2_ych(float3 yab)
+{
+float3 ych = yab;
+float yo = yab.y * yab.y + yab.z * yab.z;
+ych.y = _sqrtf(yo);
+ych.z = _atan2f(yab.z, yab.y) * (180.0f / pi);
+if (ych.z < 0.0f) ych.z += 360.0f;
+return ych;
+}
+
+__DEVICE__ float3 ych_2_yab( float3 ych ) 
+{
+float3 yab;
+yab.x = ych.x;
+float h = ych.z * (pi / 180.0f);
+yab.y = ych.y * _cosf(h);
+yab.z = ych.y * _sinf(h);
+return yab;
+}
+
+__DEVICE__ float3 rgb_2_ych( float3 rgb) 
+{
+return yab_2_ych(rgb_2_yab(rgb));
+}
+
+__DEVICE__ float3 ych_2_rgb( float3 ych) 
+{
+return yab_2_rgb(ych_2_yab(ych));
+}
+
+__DEVICE__ float3 scale_C_at_H( float3 rgb, float centerH, float widthH, float percentC)
+{
+float3 new_rgb = rgb;
+float3 ych = rgb_2_ych(rgb);
+if (ych.y > 0.0f) { 
+float centeredHue = center_hue(ych.z, centerH);
+float f_H = cubic_basis_shaper(centeredHue, widthH);
+if (f_H > 0.0f) {
+float3 new_ych = ych;
+new_ych.y = ych.y * (f_H * (percentC - 1.0f) + 1.0f);
+new_rgb = ych_2_rgb( new_ych);
+} else { 
+new_rgb = rgb; 
+}
+}
+return new_rgb;
+}
+
+__DEVICE__ float3 rotate_H_in_H( float3 rgb,float centerH,float widthH, float degreesShift)
+{
+float3 ych = rgb_2_ych( rgb);
+float3 new_ych = ych;
+float centeredHue = center_hue( ych.z, centerH);
+float f_H = cubic_basis_shaper( centeredHue, widthH);
+float old_hue = centeredHue;
+float new_hue = centeredHue + degreesShift;
+float2 table[2] = { {0.0f, old_hue}, {1.0f, new_hue} };
+float blended_hue = interpolate1D( table, 2, f_H);
+if (f_H > 0.0f) new_ych.z = uncenter_hue(blended_hue, centerH);
+return ych_2_rgb( new_ych);
+}
+
+__DEVICE__ float3 scale_C( float3 rgb, float percentC)
+{
+float3 ych = rgb_2_ych(rgb);
+ych.y = ych.y * percentC;
+return ych_2_rgb(ych);
+}
+
+__DEVICE__ float3 overlay_f3( float3 a, float3 b)
+{
+const float LUMA_CUT = lin_to_ACEScct(0.5f); 
+float luma = a.x * 0.2722287168f + a.y * 0.6740817658f + a.z * 0.0536895174f;
+float3 out;
+if (luma < LUMA_CUT) {
+out.x = 2.0f * a.x * b.x;
+out.y = 2.0f * a.y * b.y;
+out.z = 2.0f * a.z * b.z;
+} else {
+out.x = 1.0f - (2.0f * (1.0f - a.x) * (1.0f - b.x));
+out.y = 1.0f - (2.0f * (1.0f - a.y) * (1.0f - b.y));
+out.z = 1.0f - (2.0f * (1.0f - a.z) * (1.0f - b.z));
+}
+return out;
+}
+
+__DEVICE__ float fract_f( float A)
+{
+float B;
+B = A - _floor(A);
+return B;
+}
+
+__DEVICE__ float intensity( float grain, float contrast)
+{
+return (grain - 0.5f) * contrast + 0.5f;
+}
+
+__DEVICE__ float2 add_f2_f( float2 A, float B)
+{
+float2 C;
+C.x = A.x + B;
+C.y = A.y + B;
+return C;
+}
+
+__DEVICE__ float dot_f2_f( float2 A, float2 B)
+{
+float C = A.x * B.x + A.y * B.y;
+return C;
+}
+
+__DEVICE__ float nrand( float2 n)
+{
+return fract_f(_sinf(dot_f2_f(n, make_float2(12.9898f, 78.233f))) * 43758.5453f);
+}
+
+__DEVICE__ float Noise( float input, float2 uv, int size, float intensity)
+{
+float t = fract_f(input);
+float nrnd[20];
+nrnd[0] = nrand( add_f2_f(uv, 0.07f * t) );
+nrnd[1] = nrand( add_f2_f(uv, 0.11f * t) );
+nrnd[2] = nrand( add_f2_f(uv, 0.13f * t) );
+nrnd[3] = nrand( add_f2_f(uv, 0.17f * t) );
+nrnd[4] = nrand( add_f2_f(uv, 0.19f * t) );
+nrnd[5] = nrand( add_f2_f(uv, 0.23f * t) );
+nrnd[6] = nrand( add_f2_f(uv, 0.29f * t) );
+nrnd[7] = nrand( add_f2_f(uv, 0.31f * t) );
+nrnd[8] = nrand( add_f2_f(uv, 0.37f * t) );
+nrnd[9] = nrand( add_f2_f(uv, 0.41f * t) );
+nrnd[10] = nrand( add_f2_f(uv, 0.43f * t) );
+nrnd[11] = nrand( add_f2_f(uv, 0.47f * t) );
+nrnd[12] = nrand( add_f2_f(uv, 0.53f * t) );
+nrnd[13] = nrand( add_f2_f(uv, 0.59f * t) );
+nrnd[14] = nrand( add_f2_f(uv, 0.61f * t) );
+nrnd[15] = nrand( add_f2_f(uv, 0.67f * t) );
+nrnd[16] = nrand( add_f2_f(uv, 0.71f * t) );
+nrnd[17] = nrand( add_f2_f(uv, 0.73f * t) );
+nrnd[18] = nrand( add_f2_f(uv, 0.79f * t) );
+nrnd[19] = nrand( add_f2_f(uv, 0.83f * t) );
+float noise = 0.0f;
+for(int N = 0; N < size; N++)
+{
+noise += nrnd[N];
+}
+noise /= (float)size;
+noise = (noise - 0.5f) * intensity + 0.5f;
+return noise;
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float3 aces = make_float3(p_R, p_G, p_B);
+aces = ACESCCT ? ACEScct_to_ACES(aces) : ACEScc_to_ACES(aces);
+if(EXPOSURE != 0.0f) aces = exposure(aces, EXPOSURE);
+if(SCALEC != 1.0f) aces = scale_C( aces, SCALEC);
+float SlopeR = 1.0f + (SLOPER + SLOPEGLOBAL - 2.0f) / 10.0f;
+float SlopeG = 1.0f + (SLOPEG + SLOPEGLOBAL - 2.0f) / 10.0f;
+float SlopeB = 1.0f + (SLOPEB + SLOPEGLOBAL - 2.0f) / 10.0f;
+float OffsetR = (OFFSETR + OFFSETGLOBAL) / 10.0f;
+float OffsetG = (OFFSETG + OFFSETGLOBAL) / 10.0f;
+float OffsetB = (OFFSETB + OFFSETGLOBAL) / 10.0f;
+float PowerR = 1.0f + (POWERR + POWERGLOBAL - 2.0f) / 10.0f;
+float PowerG = 1.0f + (POWERG + POWERGLOBAL - 2.0f) / 10.0f;
+float PowerB = 1.0f + (POWERB + POWERGLOBAL - 2.0f) / 10.0f;
+float3 SLOPE = make_float3(SlopeR, SlopeG, SlopeB);
+float3 OFFSET = make_float3(OffsetR, OffsetG, OffsetB);
+float3 POWER = make_float3(PowerR, PowerG, PowerB);
+aces = ASCCDL_inACEScct(aces, SLOPE, OFFSET, POWER, SATT);
+if(GAMMA1 != 1.0f) aces = gamma_adjust_linear(aces, GAMMA1, GAMMA2);
+if(!BYPASS){
+if(ROTATEH13 != 0.0f) aces = rotate_H_in_H(aces, ROTATEH11, ROTATEH12, ROTATEH13);
+if(ROTATEH23 != 0.0f) aces = rotate_H_in_H(aces, ROTATEH21, ROTATEH22, ROTATEH23);
+if(ROTATEH33 != 0.0f) aces = rotate_H_in_H(aces, ROTATEH31, ROTATEH32, ROTATEH33);
+if(SCALECH13 != 1.0f) aces = scale_C_at_H(aces, SCALECH11, SCALECH12, SCALECH13);
+if(ROTATEH43 != 0.0f) aces = rotate_H_in_H(aces, ROTATEH41, ROTATEH42, ROTATEH43);
+if(SCALECH23 != 1.0f) aces = scale_C_at_H(aces, SCALECH21, SCALECH22, SCALECH23);
+}
+aces = ACESCCT ? ACES_to_ACEScct(aces) : ACES_to_ACEScc(aces);
+if(ADD_GRAIN){
+float2 uv;
+uv.x = (float)p_X / p_Width;
+uv.y = (float)p_Y / p_Height;
+TIME += 1.0f;
+INTENSITY /= 10.0f;
+float3 grain;
+if(!RGB_GRAIN){
+float input = aces.x * 0.2722287168f + aces.y * 0.6740817658f + aces.z * 0.0536895174f * TIME;
+float noise = Noise(input, uv, NOISE, INTENSITY);
+grain = make_float3(noise, noise, noise);
+} else {
+float noiseR = Noise(aces.x * TIME, uv, NOISE, INTENSITY);
+float noiseG = Noise(aces.y * TIME, uv, NOISE, INTENSITY);
+float noiseB = Noise(aces.z * TIME, uv, NOISE, INTENSITY);
+grain = make_float3(noiseR, noiseG, noiseB);
+}
+aces = overlay_f3(aces, grain);
+}
+return aces;
+}
