@@ -147,6 +147,27 @@ E.white = D;
 return E;
 }
 
+__DEVICE__ float fract_f( float A)
+{
+float B;
+B = A - _floor(A);
+return B;
+}
+
+__DEVICE__ float2 add_f2_f( float2 A, float B)
+{
+float2 C;
+C.x = A.x + B;
+C.y = A.y + B;
+return C;
+}
+
+__DEVICE__ float dot_f2_f( float2 A, float2 B)
+{
+float C = A.x * B.x + A.y * B.y;
+return C;
+}
+
 __DEVICE__ float3 clamp_f3( float3 in, float clampMin, float clampMax)
 {
 float3 out;
@@ -536,10 +557,9 @@ acescct.x = _powf( _clampf( (acescct.x * SLOPE.x) + OFFSET.x, 0.0f, 1.0f), 1.0f 
 acescct.y = _powf( _clampf( (acescct.y * SLOPE.y) + OFFSET.y, 0.0f, 1.0f), 1.0f / POWER.y);
 acescct.z = _powf( _clampf( (acescct.z * SLOPE.z) + OFFSET.z, 0.0f, 1.0f), 1.0f / POWER.z);
 float luma = 0.2126f * acescct.x + 0.7152f * acescct.y + 0.0722f * acescct.z;
-float satClamp = _saturatef(SAT);
-acescct.x = luma + satClamp * (acescct.x - luma);
-acescct.y = luma + satClamp * (acescct.y - luma);
-acescct.z = luma + satClamp * (acescct.z - luma);
+acescct.x = luma + SAT * (acescct.x - luma);
+acescct.y = luma + SAT * (acescct.y - luma);
+acescct.z = luma + SAT * (acescct.z - luma);
 return ACEScct_to_ACES( acescct);
 }
 
@@ -655,32 +675,6 @@ out.y = 1.0f - (2.0f * (1.0f - a.y) * (1.0f - b.y));
 out.z = 1.0f - (2.0f * (1.0f - a.z) * (1.0f - b.z));
 }
 return out;
-}
-
-__DEVICE__ float fract_f( float A)
-{
-float B;
-B = A - _floor(A);
-return B;
-}
-
-__DEVICE__ float intensity( float grain, float contrast)
-{
-return (grain - 0.5f) * contrast + 0.5f;
-}
-
-__DEVICE__ float2 add_f2_f( float2 A, float B)
-{
-float2 C;
-C.x = A.x + B;
-C.y = A.y + B;
-return C;
-}
-
-__DEVICE__ float dot_f2_f( float2 A, float2 B)
-{
-float C = A.x * B.x + A.y * B.y;
-return C;
 }
 
 __DEVICE__ float nrand( float2 n)

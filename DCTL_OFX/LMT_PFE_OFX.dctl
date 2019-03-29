@@ -557,10 +557,9 @@ acescct.x = _powf( _clampf( (acescct.x * SLOPE.x) + OFFSET.x, 0.0f, 1.0f), 1.0f 
 acescct.y = _powf( _clampf( (acescct.y * SLOPE.y) + OFFSET.y, 0.0f, 1.0f), 1.0f / POWER.y);
 acescct.z = _powf( _clampf( (acescct.z * SLOPE.z) + OFFSET.z, 0.0f, 1.0f), 1.0f / POWER.z);
 float luma = 0.2126f * acescct.x + 0.7152f * acescct.y + 0.0722f * acescct.z;
-float satClamp = _saturatef(SAT);
-acescct.x = luma + satClamp * (acescct.x - luma);
-acescct.y = luma + satClamp * (acescct.y - luma);
-acescct.z = luma + satClamp * (acescct.z - luma);
+acescct.x = luma + SAT * (acescct.x - luma);
+acescct.y = luma + SAT * (acescct.y - luma);
+acescct.z = luma + SAT * (acescct.z - luma);
 return ACEScct_to_ACES( acescct);
 }
 
@@ -676,11 +675,6 @@ out.y = 1.0f - (2.0f * (1.0f - a.y) * (1.0f - b.y));
 out.z = 1.0f - (2.0f * (1.0f - a.z) * (1.0f - b.z));
 }
 return out;
-}
-
-__DEVICE__ float intensity( float grain, float contrast)
-{
-return (grain - 0.5f) * contrast + 0.5f;
 }
 
 __DEVICE__ float nrand( float2 n)
