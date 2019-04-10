@@ -82,9 +82,8 @@ return make_float4(RGB, A);
 __DEVICE__ float4 texture3DLinear(float3 uvw, float3 vres)
 {
 float3 blend = fract(uvw * vres);
-float4 off = make_float4(1/vres, 0);
+float4 off = make_float4(1.0f/vres, 0.0f);
 
-//2x2x2 sample blending
 float4 b000 = texture3D(uvw + make_float3(off.w, off.w, off.w), vres);
 float4 b100 = texture3D(uvw + make_float3(off.x, off.w, off.w), vres);
 
@@ -130,7 +129,6 @@ if(hit.x > hit.y)
 return make_float4(0);
 }
 
-//Step though the volume and add up the opacity.
 float t = hit.x;   
 float4 dst = make_float4(0);
 float4 src = make_float4(0);
@@ -139,7 +137,6 @@ for(int i = 0; i < MAX_VOLUME_STEPS; i++)
 {
 t += VOLUME_STEP_SIZE;
 
-//Stop marching if the ray leaves the cube.
 if (t > hit.y) break;
 
 float3 pos = orig + dir * t;
@@ -150,7 +147,7 @@ src = texture3DLinear(uvw, vres);
 } else {
 src = texture3D(uvw, vres);
 }
-src = CLAMP(src, 0, 1);
+src = CLAMP(src, 0.0f, 1.0f);
 
 float scale = DENSITY_SCALE < 1 ? _powf(DENSITY_SCALE, 3) : DENSITY_SCALE; 
 src.w *= scale;
@@ -175,7 +172,6 @@ dst.z = dst.z * (1 - xx) + xx1;
 dst.w = dst.w > xx ? dst.w : xx;
 }
 
-//Stop marching if the color is nearly opaque.
 if(dst.w > MAX_ALPHA){break;}
 }
 
@@ -209,7 +205,6 @@ BORDER = Border;
 LINEAR_SAMPLE = multiSample;
 APPLY = apply;
 
-//Checkerboard background
 float2 bguv = uv - res/2;
 float back = _sinf(bguv.x * PI * 8) * _sinf(bguv.y * PI * 8);
 back = step(0, back);
@@ -225,12 +220,13 @@ orig.x -= OffsetX * 4 / Zoom;
 orig.y += OffsetY * 2 / Zoom;
 orig.z /= Zoom;
 
-rotate(&dir.x, &dir.z, RotateY * -4 - PI);
-rotate(&orig.x, &orig.z, RotateY * -4 - PI);
-rotate(&dir.x, &dir.y, RotateZ * 4);
-rotate(&orig.x, &orig.y, RotateZ * 4);
-rotate(&dir.y, &dir.z, RotateX * -4);
-rotate(&orig.y, &orig.z, RotateX * -4);
+float rx = RotateX * -4;
+float ry = RotateY * 4 - PI;
+float rz = RotateZ * 4;
+
+mat3 cam = cam3D(rx, ry, rz);
+orig = multi(orig, cam);
+dir = multi(dir, cam);
 
 float4 volume = MarchVolume(orig, dir);
 color = mix(color, volume, volume.w);

@@ -9,35 +9,45 @@ DEFINE_UI_PARAMS(ROTATE, Rotate, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
 DEFINE_UI_PARAMS(GAIN, Gain, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
 DEFINE_UI_PARAMS(STREAMS, Streams, DCTLUI_SLIDER_INT, 10, 1, 30, 1)
 
-#include "DCTL_Functions.h"
-
-__DEVICE__ float time = 0;
+//#include "DCTL_Functions.h"
 
 #define count STREAMS + 1
 
+__DEVICE__ float2 Rotate( float ax, float ay, float b)
+{
+float c = _cosf(b);
+float s = _sinf(b);
+return make_float2(ax * c - ay * s, ax * s + ay * c);
+}
+
+__DEVICE__ float fract_f( float A)
+{
+return A - _floor(A);
+}
+
 __DEVICE__ float Hash(float2 p, float s)
 {
-float3 p2 = make_float3(p.x, p.y, 10 * _fabs(_sinf(s)));
-return fract(_sinf(dot(p2, make_float3(27.1f, 61.7f, 12.4f))) * 273758.5453123f);
+float3 p2 = make_float3(p.x, p.y, 10.0f * _fabs(_sinf(s)));
+return fract_f(_sinf(dot(p2, make_float3(27.1f, 61.7f, 12.4f))) * 273758.5453123f);
 }
 
 __DEVICE__ float noise(float2 p, float s)
 {
 float2 i = make_float2(_floor(p.x), _floor(p.y));
-float2 f = make_float2(fract(p.x), fract(p.y));
-f = f * f * (3 - 2 * f);
+float2 f = make_float2(fract_f(p.x), fract_f(p.y));
+f = f * f * (3.0f - 2.0f * f);
 
-return mix(mix(Hash(i, s), Hash(i + make_float2(1, 0), s), f.x),
-mix(Hash(i + make_float2(0, 1), s), Hash(i + 1, s), f.x), f.y) * s;
+return mix(mix(Hash(i, s), Hash(i + make_float2(1.0f, 0.0f), s), f.x),
+mix(Hash(i + make_float2(0.0f, 1.0f), s), Hash(i + 1.0f, s), f.x), f.y) * s;
 }
 
 __DEVICE__ float fbm(float2 p)
 {
-float v = 0;
+float v = 0.0f;
 v += noise(p, 0.35f);
-v += noise(p * 2, 0.25f);
-v += noise(p * 4, 0.125f);
-v += noise(p * 8, 0.0625f);
+v += noise(p * 2.0f, 0.25f);
+v += noise(p * 4.0f, 0.125f);
+v += noise(p * 8.0f, 0.0625f);
 return v;
 }
 
@@ -51,34 +61,34 @@ Y = height - Y;
 float aspect = width / height;
 float2 resolution = make_float2(width, height);
 float2 XY = make_float2(X, Y);
-time = TIME * 10 + 10;
-float time2 = time + 30;
-float2 uv = XY / resolution * 2 - 1.1f;
+float time = TIME * 10.0f + 10.0f;
+float time2 = time + 30.0f;
+float2 uv = XY / resolution * 2.0f - 1.1f;
 uv.x *= 1.2f * aspect;
 uv = uv + make_float2(0.5f, 0.5f / aspect);
-rotate(&uv.x, &uv.y, ROTATE);
+uv = Rotate(uv.x, uv.y, ROTATE);
 uv.x /= SCALE2;
 uv = uv / (SCALE + 0.1f);
 uv = uv - make_float2(0.5f, 0.5f / aspect);
-uv.x -= msY * 3;
+uv.x -= msY * 3.0f;
 //uv = uv / (SCALE + 0.1f);
 
 float2 uv1 = uv;
 uv1.x -= msX;
-float3 finalColor = make_float3(0);
+float3 finalColor = make_float3(0.0f, 0.0f, 0.0f);
 for( float i = 1; i < count; ++i )
 {
-float t = _fabs(1 / ((uv1.x + fbm(uv1 + time/i)) * (i * 50)));
-finalColor = finalColor + t * make_float3(i * 0.075f + 0.1f, 0.5f, 2);
+float t = _fabs(1 / ((uv1.x + fbm(uv1 + time/i)) * (i * 50.0f)));
+finalColor = finalColor + t * make_float3(i * 0.075f + 0.1f, 0.5f, 2.0f);
 }
 
 float2 uv2 = uv;
 uv2.x += msX;
-float3 finalColor2 = make_float3(0);
-for( float i = 1; i < count; ++i )
+float3 finalColor2 = make_float3(0.0f, 0.0f, 0.0f);
+for( float i = 1.0f; i < count; ++i )
 {
-float t = _fabs(1 / ((uv2.x + fbm(uv2 + time2/i)) * (i * 50)));
-finalColor2 = finalColor2 + t * make_float3(i * 0.075f + 0.1f, 0.5f, 2);
+float t = _fabs(1 / ((uv2.x + fbm(uv2 + time2/i)) * (i * 50.0f)));
+finalColor2 = finalColor2 + t * make_float3(i * 0.075f + 0.1f, 0.5f, 2.0f);
 }
 
 float3 Color = finalColor + finalColor2;

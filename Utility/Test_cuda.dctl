@@ -1,0 +1,35 @@
+// Black pixels turn Red
+
+
+
+#ifdef HAVE_CUDA
+__DEVICE__ float3 yo( float3 ya)
+{
+float3 YA = ya * 0.5f;
+return YA;
+}
+#else
+__DEVICE__ float3 yo( float3 ya)
+{
+float3 YA = ya * 2;
+return YA;
+}
+#endif
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{	
+	
+	const float r = p_R * 0.4f;
+    const float g = p_G;
+    const float b = p_B;
+
+    float3 RGB =  make_float3(r, g, b);
+    RGB = yo(RGB);
+    return RGB;
+	
+	
+	//float3 Yes = make_float3(p_R, p_G, p_B);
+	//Yes = yo(Yes);
+	//Yes = Yes * 0.4f;
+	//return Yes;	
+}

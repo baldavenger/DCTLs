@@ -1,0 +1,328 @@
+// Fire Volume OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Time, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(ZOOM, Zoom, DCTLUI_SLIDER_FLOAT, 1, 0, 3, 0.001)
+DEFINE_UI_PARAMS(ROTATEy, RotateY, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+DEFINE_UI_PARAMS(SUN, Sun, DCTLUI_SLIDER_FLOAT, 1, 0, 3, 0.001)
+DEFINE_UI_PARAMS(NUDGE, Nudge, DCTLUI_SLIDER_FLOAT, 4, 1, 10, 0.001)
+DEFINE_UI_PARAMS(FREQUENCY, Frequency, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(DITHERING, Dithering, DCTLUI_CHECK_BOX, 1)
+DEFINE_UI_PARAMS(BOTH, Both, DCTLUI_CHECK_BOX, 0)
+DEFINE_UI_PARAMS(LEFT, Left, DCTLUI_CHECK_BOX, 0)
+DEFINE_UI_PARAMS(TONEMAPPING, Tonemapping, DCTLUI_CHECK_BOX, 0)
+DEFINE_UI_PARAMS(LOWQUALITY, Low Quality, DCTLUI_CHECK_BOX, 0)
+
+#include "DCTL_Functions.h"
+
+__DEVICE__ float time = 0.0f;
+__DEVICE__ float nudge = 0.0f;
+__DEVICE__ float frequency = 0.0f;
+__DEVICE__ bool LOW_QUALITY = false;
+
+//#define BOTH
+//#define LEFT
+//#define DITHERING
+
+//#define LOW_QUALITY
+//#define TONEMAPPING
+
+//#define R(p, a) p=cos(a)*p+sin(a)*make_float2(p.y, -p.x)
+
+
+__DEVICE__ float RAND(float x)
+{
+return fract(_sinf(x) * 100000.0f);
+}
+
+__DEVICE__ float FUNC(float x)
+{
+return RAND(_floor(x));
+}
+
+__DEVICE__ float NOISE(float2 pos)
+{
+float x = pos.x * pos.y * 100000.0f;
+float f = fract(x);
+float i = _floor(x);
+x *= 100.0f;
+
+float r = RAND(x);
+return r;
+}
+
+__DEVICE__ float2 R( float2 a, float b)
+{
+float AX = a.x;
+float AY = a.y;
+float c = _cosf(b);
+float s = _sinf(b);
+float ax = AX * c - AY * s;
+float ay = AX * s + AY * c;
+return make_float2(ax, ay);
+}
+
+__DEVICE__ float noise( float3 x )
+{
+float3 p = floor(x);
+float3 f = fract(x);
+f = f * f * (3.0f - 2.0f * f);
+//float2 uv = (p.xy+make_float2(37.0,17.0)*p.z) + f.xy;
+float2 uv;
+uv.x = (p.x + 37.0f * p.z) + f.x;
+uv.y = (p.y + 17.0f * p.z) + f.y;
+float2 rg = make_float2(NOISE(uv)); // textureLod( iChannel0, (uv+ 0.5)/256.0, 0.0 ).yx;
+return 1.0f - 0.82f * mix( rg.x, rg.y, f.z );
+}
+
+__DEVICE__ float fbm( float3 p )
+{
+return noise(p * 0.06125f) * 0.5f + noise(p * 0.125f) * 0.25f + noise(p * 0.25f) * 0.125f + noise(p * 0.4f) * 0.2f;
+}
+
+__DEVICE__ float Sphere( float3 p, float r )
+{
+return length(p) - r ;
+}
+
+
+//#define nudge		3.0f
+//#define normalizer	(1.0f / _sqrtf(1.0f + nudge * nudge))
+
+__DEVICE__ float SpiralNoiseC(float3 p)
+{
+float normalizer = (1.0f / _sqrtf(1.0f + nudge * nudge));
+float n = -_sinf(_fmod(time * 0.2f, 20.0f) + 0.01f);
+float iter = 2.0f;
+for (int i = 0; i < 8; i++)
+{
+n += -_fabs(_sinf(p.y * iter) + _cosf(p.x * iter)) / iter;
+//p.xy += make_float2(p.y, -p.x) * nudge;
+p = p + make_float3(p.y * nudge, -p.x * nudge, 0.0f);
+//p.xy *= normalizer;
+p.x *= normalizer;
+p.y *= normalizer;
+// rotate on other axis
+//p.xz += make_float2(p.z, -p.x) * nudge;
+p = p + make_float3(p.z * nudge, 0.0f, -p.x * nudge);
+//p.xz *= normalizer;
+p.x *= normalizer;
+p.z *= normalizer;
+// increase the frequency
+iter *= 1.733733f * frequency;
+}
+return n;
+}
+
+__DEVICE__ float VolumetricExplosion(float3 p)
+{
+float final = Sphere(p, 4.0f);
+
+if (LOW_QUALITY)
+final += noise(p * 12.5f) * 0.2f;
+else
+final += fbm(p * 50.0f);
+
+final += SpiralNoiseC(make_float3(p.z, p.x, p.y) * 0.4132f + 333.0f) * 1.0f;
+
+return final;
+}
+
+__DEVICE__ float map(float3 p) 
+{
+//float2 yo = R(make_float2(p.x, p.z), 0.008f * PI + time * 0.1f);
+//p.x = yo.x;
+//p.z = yo.y;
+float VolExplosion = VolumetricExplosion(p / 0.5f) * 0.5f;
+
+return VolExplosion;
+}
+
+__DEVICE__ float3 computeColor( float density, float radius )
+{
+float3 result = mix( make_float3(1.0f, 0.9f, 0.8f), make_float3(0.4f, 0.15f, 0.1f), density );
+
+// color added to the media
+float3 colCenter = 7.0f * make_float3(0.8f, 1.0f, 1.0f);
+float3 colEdge = 1.5f * make_float3(0.48f, 0.53f, 0.5f);
+result = result * mix( colCenter, colEdge, _fminf( (radius + 0.05f) / 0.9f, 1.15f) );
+
+return result;
+}
+
+__DEVICE__ bool RaySphereIntersect(float3 org, float3 dir, float* near, float* far)
+{
+float b = dot(dir, org);
+float c = dot(org, org) - 8.0f;
+float delta = b * b - c;
+if( delta < 0.0f) 
+return false;
+float deltasqrt = _sqrtf(delta);
+*near = -b - deltasqrt;
+*far = -b + deltasqrt;
+return *far > 0.0f;
+}
+
+
+
+__DEVICE__ float3 ToneMapFilmicALU( float3 _color)
+{
+_color = MAX(make_float3(0.0f), _color - make_float3(0.004f));
+_color = (_color * (6.2f *_color + make_float3(0.5f))) / (_color * (6.2f * _color + make_float3(1.7f)) + make_float3(0.06f));
+return _color;
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+
+float key = 0.4f;
+nudge = NUDGE;
+frequency = FREQUENCY;
+LOW_QUALITY = LOWQUALITY;
+
+//float2 uv = fragCoord/iResolution.xy;
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+time = TIME * 40;
+
+float2 resolution = make_float2(width, height);
+float2 XY = make_float2(X, Y);
+float2 uv = (XY / resolution);
+float2 Res = (XY - 0.5f * resolution) / resolution.y;
+Res = Res / (ZOOM + 0.1f);
+float3 rd = normalize(make_float3(Res.x, Res.y, 1.0f));
+float3 ro = make_float3(0.0f, 0.0f, -6.0f + key * 1.6f);
+
+rotate(&rd.x, &rd.z, ROTATEy);
+rotate(&ro.x, &ro.z, ROTATEy);
+
+// ld, td: local, total density 
+// w: weighting factor
+float ld=0.0f, td=0.0f, w=0.0f;
+
+// t: length of the ray
+// d: distance function
+float d=1.0f, t=0.0f;
+
+float h = 0.1f;
+
+float4 sum = make_float4(0.0f);
+
+float min_dist = 0.0f;
+float max_dist = 0.0f;
+
+if(RaySphereIntersect(ro, rd, &min_dist, &max_dist))
+{
+
+t = min_dist * step(t, min_dist) * SUN;
+
+// raymarch loop
+int loops = 86;
+if (LOW_QUALITY)
+loops = 56;
+
+for (int i=0; i<loops; i++)
+{
+
+float3 pos = ro + t * rd;
+
+// Loop break conditions.
+if(td > 0.9f || d < 0.12f * t || t > 10.0f || sum.w > 0.99f || t > max_dist) break;
+
+// evaluate distance function
+float d = map(pos);
+
+if (BOTH)
+d = uv.x < 0.5f ? _fabs(d) + 0.07f : d;
+else if (LEFT)
+d = _fabs(d) + 0.07f;
+
+
+// change this string to control density 
+d = _fmaxf(d, 0.03f);
+
+// point light calculations
+float3 ldst = make_float3(0.0f) - pos;
+float lDist = _fmaxf(length(ldst), 0.001f);
+
+// the color of light 
+float3 lightColor = make_float3(1.0f, 0.5f, 0.25f);
+
+//sum.rgb += (lightColor / _expf(lDist * lDist * lDist * 0.08f) / 30.0f); // bloom
+float3 bloom = lightColor / _expf(lDist * lDist * lDist * 0.08f) / 30.0f;
+//sum.x += (lightColor / _expf(lDist * lDist * lDist * 0.08f) / 30.0f).x;
+//sum.y += (lightColor / _expf(lDist * lDist * lDist * 0.08f) / 30.0f).y;
+//sum.z += (lightColor / _expf(lDist * lDist * lDist * 0.08f) / 30.0f).z;
+sum = sum + make_float4(bloom, 0.0f);
+
+if (d < h) 
+{
+// compute local density 
+ld = h - d;
+
+// compute weighting factor 
+w = (1.0f - td) * ld;
+
+// accumulate density
+td += w + 1.0f / 200.0f;
+
+float4 col = make_float4( computeColor(td, lDist), td );
+
+// emission
+sum = sum + (sum.w * make_float4(sum.x, sum.y, sum.z, 0.0f) * 0.2f / lDist);	
+
+// uniform scale density
+col.w *= 0.2f;
+// colour by alpha
+//col.rgb *= col.a;
+col.x *= col.w;
+col.y *= col.w;
+col.z *= col.w;
+// alpha blend in contribution
+sum = sum + col * (1.0f - sum.w);  
+
+}
+
+td += 1.0f / 70.0f;
+
+if (DITHERING)
+{
+float2 uvd = Res;
+//uvd.y *= 0.1f;//120.0f;
+//uvd.x *= 0.1f;//280.0f;
+//d = _fabs(d) * (0.8f + 0.08f * texture(iChannel2, make_float2(uvd.y, -uvd.x + 0.5f * _sinf(4.0f * time + uvd.y * 4.0f))).r);
+d = _fabs(d) * (0.8f + 0.08f * NOISE(make_float2(uvd.y, -uvd.x + 0.5f * _sinf(4.0f * time + uvd.y * 4.0f))));
+} 
+
+// trying to optimize step size
+if (LOW_QUALITY)
+t += _fmaxf(d * 0.25f, 0.01f);
+else
+t += _fmaxf(d * 0.08f * _fmaxf(_fminf(length(ldst), d), 2.0f), 0.01f);
+
+}
+
+// simple scattering
+if (LOW_QUALITY)
+sum = sum * (1.0f / _expf( ld * 0.2f ) * 0.9f);
+else
+sum = sum * (1.0f / _expf( ld * 0.2f ) * 0.8f);
+
+sum = CLAMP( sum, 0.0f, 1.0f );
+
+//sum.xyz = sum.xyz*sum.xyz*(3.0-2.0*sum.xyz);
+sum.x = sum.x * sum.x * (3.0f - 2.0f * sum.x);
+sum.y = sum.y * sum.y * (3.0f - 2.0f * sum.y);
+sum.z = sum.z * sum.z * (3.0f - 2.0f * sum.z);
+
+}
+float3 COL = make_float3(0.0f);
+if (TONEMAPPING)
+COL = ToneMapFilmicALU(make_float3(sum.x, sum.y, sum.z) * 2.2f);
+else
+COL = make_float3(sum.x, sum.y, sum.z);
+
+return COL;
+}

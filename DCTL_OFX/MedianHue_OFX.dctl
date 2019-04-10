@@ -1,0 +1,467 @@
+// Hue Median OFX DCTL
+
+DEFINE_UI_PARAMS(MEDIAN, Hue Median Filter, DCTLUI_SLIDER_INT, 0, 0, 3, 1)
+
+typedef struct
+{
+float3 c0, c1, c2;
+} mat3;
+
+__CONSTANT__ float sqrt3over4 = 0.433012701892219f;
+
+#define pi		3.14159265358979323846264338327950288f
+#define RGB_2_YAB_MAT		make_mat3(make_float3(1.0f/3.0f, 1.0f/2.0f, 0.0f), make_float3(1.0f/3.0f, -1.0f/4.0f, sqrt3over4), make_float3(1.0f/3.0f, -1.0f/4.0f, -sqrt3over4))
+
+__DEVICE__ float median(float p_Table[], int m);
+__DEVICE__ mat3 make_mat3(float3 A, float3 B, float3 C);
+__DEVICE__ float3 mult_f3_f33(float3 X, mat3 A);
+__DEVICE__ mat3 mult_f_f33(float f, mat3 A);
+__DEVICE__ mat3 invert_f33(mat3 A);
+__DEVICE__ float3 rgb_2_yab(float3 rgb);
+__DEVICE__ float3 yab_2_rgb(float3 yab);
+__DEVICE__ float3 yab_2_ych(float3 yab);
+__DEVICE__ float3 ych_2_yab(float3 ych);
+__DEVICE__ float3 rgb_2_ych(float3 rgb);
+__DEVICE__ float3 ych_2_rgb(float3 ych);
+
+__DEVICE__ float median( float p_Table[], int m) {
+float temp;
+int i, j;
+for(i = 0; i < m - 1; i++) {
+for(j = i + 1; j < m; j++) {
+if(p_Table[j] < p_Table[i]) {
+temp = p_Table[i];
+p_Table[i] = p_Table[j];
+p_Table[j] = temp; }}}
+return p_Table[(m - 1) / 2];
+}
+
+__DEVICE__ mat3 make_mat3( float3 A, float3 B, float3 C)
+{
+mat3 D;
+D.c0 = A;
+D.c1 = B;
+D.c2 = C;
+return D;
+}
+
+__DEVICE__ float3 mult_f3_f33 ( float3 X, mat3 A)
+{
+float r[3];
+float x[3] = {X.x, X.y, X.z};
+float a[3][3] =	{{A.c0.x, A.c0.y, A.c0.z}, {A.c1.x, A.c1.y, A.c1.z}, {A.c2.x, A.c2.y, A.c2.z}};
+for( int i = 0; i < 3; ++i)
+{
+r[i] = 0.0f;
+for( int j = 0; j < 3; ++j)
+{
+r[i] = r[i] + x[j] * a[j][i];
+}
+}
+return make_float3(r[0], r[1], r[2]);
+}
+
+__DEVICE__ mat3 mult_f_f33( float f, mat3 A)
+{
+float r[3][3];
+float a[3][3] =	{{A.c0.x, A.c0.y, A.c0.z}, {A.c1.x, A.c1.y, A.c1.z}, {A.c2.x, A.c2.y, A.c2.z}};
+for( int i = 0; i < 3; ++i )
+{
+for( int j = 0; j < 3; ++j )
+{
+r[i][j] = f * a[i][j];
+}
+}
+mat3 R = make_mat3(make_float3(r[0][0], r[0][1], r[0][2]), 
+make_float3(r[1][0], r[1][1], r[1][2]), make_float3(r[2][0], r[2][1], r[2][2]));
+return R;
+}
+
+__DEVICE__ mat3 invert_f33( mat3 A)
+{
+mat3 R;
+float result[3][3];
+float a[3][3] =	{{A.c0.x, A.c0.y, A.c0.z}, {A.c1.x, A.c1.y, A.c1.z}, {A.c2.x, A.c2.y, A.c2.z}};
+float det = a[0][0] * a[1][1] * a[2][2]
++ a[0][1] * a[1][2] * a[2][0]
++ a[0][2] * a[1][0] * a[2][1]
+- a[2][0] * a[1][1] * a[0][2]
+- a[2][1] * a[1][2] * a[0][0]
+- a[2][2] * a[1][0] * a[0][1];
+if( det != 0.0f )
+{
+result[0][0] = a[1][1] * a[2][2] - a[1][2] * a[2][1];
+result[0][1] = a[2][1] * a[0][2] - a[2][2] * a[0][1];
+result[0][2] = a[0][1] * a[1][2] - a[0][2] * a[1][1];
+result[1][0] = a[2][0] * a[1][2] - a[1][0] * a[2][2];
+result[1][1] = a[0][0] * a[2][2] - a[2][0] * a[0][2];
+result[1][2] = a[1][0] * a[0][2] - a[0][0] * a[1][2];
+result[2][0] = a[1][0] * a[2][1] - a[2][0] * a[1][1];
+result[2][1] = a[2][0] * a[0][1] - a[0][0] * a[2][1];
+result[2][2] = a[0][0] * a[1][1] - a[1][0] * a[0][1];
+R = make_mat3(make_float3(result[0][0], result[0][1], result[0][2]), 
+make_float3(result[1][0], result[1][1], result[1][2]), make_float3(result[2][0], result[2][1], result[2][2]));
+return mult_f_f33( 1.0f / det, R);
+}
+R = make_mat3(make_float3(1.0f, 0.0f, 0.0f), 
+make_float3(0.0f, 1.0f, 0.0f), make_float3(0.0f, 0.0f, 1.0f));
+return R;
+}
+
+__DEVICE__ float3 rgb_2_yab( float3 rgb)
+{
+float3 yab = mult_f3_f33( rgb, RGB_2_YAB_MAT);
+return yab;
+}
+
+__DEVICE__ float3 yab_2_rgb( float3 yab)
+{
+float3 rgb = mult_f3_f33( yab, invert_f33(RGB_2_YAB_MAT));
+return rgb;
+}
+
+__DEVICE__ float3 yab_2_ych( float3 yab)
+{
+float3 ych = yab;
+float yo = yab.y * yab.y + yab.z * yab.z;
+ych.y = _sqrtf(yo);
+ych.z = _atan2f(yab.z, yab.y) * (180.0f / pi);
+if (ych.z < 0.0f) ych.z += 360.0f;
+return ych;
+}
+
+__DEVICE__ float3 ych_2_yab( float3 ych ) 
+{
+float3 yab;
+yab.x = ych.x;
+float h = ych.z * (pi / 180.0f);
+yab.y = ych.y * _cosf(h);
+yab.z = ych.y * _sinf(h);
+return yab;
+}
+
+__DEVICE__ float3 rgb_2_ych( float3 rgb) 
+{
+return yab_2_ych(rgb_2_yab(rgb));
+}
+
+__DEVICE__ float3 ych_2_rgb( float3 ych) 
+{
+return yab_2_rgb(ych_2_yab(ych));
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{
+
+float Table3R[9] =
+{
+    _tex2D(p_TexR, p_X - 1, p_Y + 1),
+    _tex2D(p_TexR, p_X, p_Y + 1),
+    _tex2D(p_TexR, p_X + 1, p_Y + 1),
+    _tex2D(p_TexR, p_X - 1, p_Y),
+    _tex2D(p_TexR, p_X, p_Y),
+    _tex2D(p_TexR, p_X + 1, p_Y),
+    _tex2D(p_TexR, p_X - 1, p_Y - 1),
+    _tex2D(p_TexR, p_X, p_Y - 1),
+    _tex2D(p_TexR, p_X + 1, p_Y - 1)
+};
+
+ float Table3G[9] =
+{
+    _tex2D(p_TexG, p_X - 1, p_Y + 1),
+    _tex2D(p_TexG, p_X, p_Y + 1),
+    _tex2D(p_TexG, p_X + 1, p_Y + 1),
+    _tex2D(p_TexG, p_X - 1, p_Y),
+    _tex2D(p_TexG, p_X, p_Y),
+    _tex2D(p_TexG, p_X + 1, p_Y),
+    _tex2D(p_TexG, p_X - 1, p_Y - 1),
+    _tex2D(p_TexG, p_X, p_Y - 1),
+    _tex2D(p_TexG, p_X + 1, p_Y - 1)
+};
+
+ float Table3B[9] =
+{
+    _tex2D(p_TexB, p_X - 1, p_Y + 1),
+    _tex2D(p_TexB, p_X, p_Y + 1),
+    _tex2D(p_TexB, p_X + 1, p_Y + 1),
+    _tex2D(p_TexB, p_X - 1, p_Y),
+    _tex2D(p_TexB, p_X, p_Y),
+    _tex2D(p_TexB, p_X + 1, p_Y),
+    _tex2D(p_TexB, p_X - 1, p_Y - 1),
+    _tex2D(p_TexB, p_X, p_Y - 1),
+    _tex2D(p_TexB, p_X + 1, p_Y - 1)
+};
+
+float Table5R[25] =
+{
+    _tex2D(p_TexR, p_X - 2, p_Y - 2),
+    _tex2D(p_TexR, p_X - 1, p_Y - 2),
+    _tex2D(p_TexR, p_X, p_Y - 2),
+    _tex2D(p_TexR, p_X + 1, p_Y - 2),
+    _tex2D(p_TexR, p_X + 2, p_Y - 2),
+    _tex2D(p_TexR, p_X - 2, p_Y - 1),
+    _tex2D(p_TexR, p_X - 1, p_Y - 1),
+    _tex2D(p_TexR, p_X, p_Y - 1),
+    _tex2D(p_TexR, p_X + 1, p_Y - 1),
+    _tex2D(p_TexR, p_X + 2, p_Y - 1),
+    _tex2D(p_TexR, p_X - 2, p_Y),
+    _tex2D(p_TexR, p_X - 1, p_Y),
+    _tex2D(p_TexR, p_X, p_Y),
+    _tex2D(p_TexR, p_X + 1, p_Y),
+    _tex2D(p_TexR, p_X + 2, p_Y),
+    _tex2D(p_TexR, p_X - 2, p_Y + 1),
+    _tex2D(p_TexR, p_X - 1, p_Y + 1),
+    _tex2D(p_TexR, p_X, p_Y + 1),
+    _tex2D(p_TexR, p_X + 1, p_Y + 1),
+    _tex2D(p_TexR, p_X + 2, p_Y + 1),
+    _tex2D(p_TexR, p_X - 2, p_Y + 2),
+    _tex2D(p_TexR, p_X - 1, p_Y + 2),
+    _tex2D(p_TexR, p_X, p_Y + 2),
+    _tex2D(p_TexR, p_X + 1, p_Y + 2),
+    _tex2D(p_TexR, p_X + 2, p_Y + 2),   
+};
+
+float Table5G[25] =
+{
+    _tex2D(p_TexG, p_X - 2, p_Y - 2),
+    _tex2D(p_TexG, p_X - 1, p_Y - 2),
+    _tex2D(p_TexG, p_X, p_Y - 2),
+    _tex2D(p_TexG, p_X + 1, p_Y - 2),
+    _tex2D(p_TexG, p_X + 2, p_Y - 2),
+    _tex2D(p_TexG, p_X - 2, p_Y - 1),
+    _tex2D(p_TexG, p_X - 1, p_Y - 1),
+    _tex2D(p_TexG, p_X, p_Y - 1),
+    _tex2D(p_TexG, p_X + 1, p_Y - 1),
+    _tex2D(p_TexG, p_X + 2, p_Y - 1),
+    _tex2D(p_TexG, p_X - 2, p_Y),
+    _tex2D(p_TexG, p_X - 1, p_Y),
+    _tex2D(p_TexG, p_X, p_Y),
+    _tex2D(p_TexG, p_X + 1, p_Y),
+    _tex2D(p_TexG, p_X + 2, p_Y),
+    _tex2D(p_TexG, p_X - 2, p_Y + 1),
+    _tex2D(p_TexG, p_X - 1, p_Y + 1),
+    _tex2D(p_TexG, p_X, p_Y + 1),
+    _tex2D(p_TexG, p_X + 1, p_Y + 1),
+    _tex2D(p_TexG, p_X + 2, p_Y + 1),
+    _tex2D(p_TexG, p_X - 2, p_Y + 2),
+    _tex2D(p_TexG, p_X - 1, p_Y + 2),
+    _tex2D(p_TexG, p_X, p_Y + 2),
+    _tex2D(p_TexG, p_X + 1, p_Y + 2),
+    _tex2D(p_TexG, p_X + 2, p_Y + 2),   
+};
+
+float Table5B[25] =
+{
+    _tex2D(p_TexB, p_X - 2, p_Y - 2),
+    _tex2D(p_TexB, p_X - 1, p_Y - 2),
+    _tex2D(p_TexB, p_X, p_Y - 2),
+    _tex2D(p_TexB, p_X + 1, p_Y - 2),
+    _tex2D(p_TexB, p_X + 2, p_Y - 2),
+    _tex2D(p_TexB, p_X - 2, p_Y - 1),
+    _tex2D(p_TexB, p_X - 1, p_Y - 1),
+    _tex2D(p_TexB, p_X, p_Y - 1),
+    _tex2D(p_TexB, p_X + 1, p_Y - 1),
+    _tex2D(p_TexB, p_X + 2, p_Y - 1),
+    _tex2D(p_TexB, p_X - 2, p_Y),
+    _tex2D(p_TexB, p_X - 1, p_Y),
+    _tex2D(p_TexB, p_X, p_Y),
+    _tex2D(p_TexB, p_X + 1, p_Y),
+    _tex2D(p_TexB, p_X + 2, p_Y),
+    _tex2D(p_TexB, p_X - 2, p_Y + 1),
+    _tex2D(p_TexB, p_X - 1, p_Y + 1),
+    _tex2D(p_TexB, p_X, p_Y + 1),
+    _tex2D(p_TexB, p_X + 1, p_Y + 1),
+    _tex2D(p_TexB, p_X + 2, p_Y + 1),
+    _tex2D(p_TexB, p_X - 2, p_Y + 2),
+    _tex2D(p_TexB, p_X - 1, p_Y + 2),
+    _tex2D(p_TexB, p_X, p_Y + 2),
+    _tex2D(p_TexB, p_X + 1, p_Y + 2),
+    _tex2D(p_TexB, p_X + 2, p_Y + 2),   
+};
+ 
+float Table7R[49] =
+{
+    _tex2D(p_TexR, p_X - 3, p_Y - 3),
+    _tex2D(p_TexR, p_X - 2, p_Y - 3),
+    _tex2D(p_TexR, p_X - 1, p_Y - 3),
+    _tex2D(p_TexR, p_X, p_Y - 3),
+    _tex2D(p_TexR, p_X + 1, p_Y - 3),
+    _tex2D(p_TexR, p_X + 2, p_Y - 3),
+    _tex2D(p_TexR, p_X + 3, p_Y - 3),
+    _tex2D(p_TexR, p_X - 3, p_Y - 2),
+    _tex2D(p_TexR, p_X - 2, p_Y - 2),
+    _tex2D(p_TexR, p_X - 1, p_Y - 2),
+    _tex2D(p_TexR, p_X, p_Y - 2),
+    _tex2D(p_TexR, p_X + 1, p_Y - 2),
+    _tex2D(p_TexR, p_X + 2, p_Y - 2),
+    _tex2D(p_TexR, p_X + 3, p_Y - 2),
+    _tex2D(p_TexR, p_X - 3, p_Y - 1),
+    _tex2D(p_TexR, p_X - 2, p_Y - 1),
+    _tex2D(p_TexR, p_X - 1, p_Y - 1),
+    _tex2D(p_TexR, p_X, p_Y - 1),
+    _tex2D(p_TexR, p_X + 1, p_Y - 1),
+    _tex2D(p_TexR, p_X + 2, p_Y - 1),
+    _tex2D(p_TexR, p_X + 3, p_Y - 1),
+    _tex2D(p_TexR, p_X - 3, p_Y),
+    _tex2D(p_TexR, p_X - 2, p_Y),
+    _tex2D(p_TexR, p_X - 1, p_Y),
+    _tex2D(p_TexR, p_X, p_Y),
+    _tex2D(p_TexR, p_X + 1, p_Y),
+    _tex2D(p_TexR, p_X + 2, p_Y),
+    _tex2D(p_TexR, p_X + 3, p_Y),
+    _tex2D(p_TexR, p_X - 3, p_Y + 1),
+    _tex2D(p_TexR, p_X - 2, p_Y + 1),
+    _tex2D(p_TexR, p_X - 1, p_Y + 1),
+    _tex2D(p_TexR, p_X, p_Y + 1),
+    _tex2D(p_TexR, p_X + 1, p_Y + 1),
+    _tex2D(p_TexR, p_X + 2, p_Y + 1),
+    _tex2D(p_TexR, p_X + 3, p_Y + 1),
+    _tex2D(p_TexR, p_X - 3, p_Y + 2),
+    _tex2D(p_TexR, p_X - 2, p_Y + 2),
+    _tex2D(p_TexR, p_X - 1, p_Y + 2),
+    _tex2D(p_TexR, p_X, p_Y + 2),
+    _tex2D(p_TexR, p_X + 1, p_Y + 2),
+    _tex2D(p_TexR, p_X + 2, p_Y + 2),
+    _tex2D(p_TexR, p_X + 3, p_Y + 2),
+    _tex2D(p_TexR, p_X - 3, p_Y + 3),
+    _tex2D(p_TexR, p_X - 2, p_Y + 3),
+    _tex2D(p_TexR, p_X - 1, p_Y + 3),
+    _tex2D(p_TexR, p_X, p_Y + 3),
+    _tex2D(p_TexR, p_X + 1, p_Y + 3),
+    _tex2D(p_TexR, p_X + 2, p_Y + 3),
+    _tex2D(p_TexR, p_X + 3, p_Y + 3), 
+};
+
+float Table7G[49] =
+{
+    _tex2D(p_TexG, p_X - 3, p_Y - 3),
+    _tex2D(p_TexG, p_X - 2, p_Y - 3),
+    _tex2D(p_TexG, p_X - 1, p_Y - 3),
+    _tex2D(p_TexG, p_X, p_Y - 3),
+    _tex2D(p_TexG, p_X + 1, p_Y - 3),
+    _tex2D(p_TexG, p_X + 2, p_Y - 3),
+    _tex2D(p_TexG, p_X + 3, p_Y - 3),
+    _tex2D(p_TexG, p_X - 3, p_Y - 2),
+    _tex2D(p_TexG, p_X - 2, p_Y - 2),
+    _tex2D(p_TexG, p_X - 1, p_Y - 2),
+    _tex2D(p_TexG, p_X, p_Y - 2),
+    _tex2D(p_TexG, p_X + 1, p_Y - 2),
+    _tex2D(p_TexG, p_X + 2, p_Y - 2),
+    _tex2D(p_TexG, p_X + 3, p_Y - 2),
+    _tex2D(p_TexG, p_X - 3, p_Y - 1),
+    _tex2D(p_TexG, p_X - 2, p_Y - 1),
+    _tex2D(p_TexG, p_X - 1, p_Y - 1),
+    _tex2D(p_TexG, p_X, p_Y - 1),
+    _tex2D(p_TexG, p_X + 1, p_Y - 1),
+    _tex2D(p_TexG, p_X + 2, p_Y - 1),
+    _tex2D(p_TexG, p_X + 3, p_Y - 1),
+    _tex2D(p_TexG, p_X - 3, p_Y),
+    _tex2D(p_TexG, p_X - 2, p_Y),
+    _tex2D(p_TexG, p_X - 1, p_Y),
+    _tex2D(p_TexG, p_X, p_Y),
+    _tex2D(p_TexG, p_X + 1, p_Y),
+    _tex2D(p_TexG, p_X + 2, p_Y),
+    _tex2D(p_TexG, p_X + 3, p_Y),
+    _tex2D(p_TexG, p_X - 3, p_Y + 1),
+    _tex2D(p_TexG, p_X - 2, p_Y + 1),
+    _tex2D(p_TexG, p_X - 1, p_Y + 1),
+    _tex2D(p_TexG, p_X, p_Y + 1),
+    _tex2D(p_TexG, p_X + 1, p_Y + 1),
+    _tex2D(p_TexG, p_X + 2, p_Y + 1),
+    _tex2D(p_TexG, p_X + 3, p_Y + 1),
+    _tex2D(p_TexG, p_X - 3, p_Y + 2),
+    _tex2D(p_TexG, p_X - 2, p_Y + 2),
+    _tex2D(p_TexG, p_X - 1, p_Y + 2),
+    _tex2D(p_TexG, p_X, p_Y + 2),
+    _tex2D(p_TexG, p_X + 1, p_Y + 2),
+    _tex2D(p_TexG, p_X + 2, p_Y + 2),
+    _tex2D(p_TexG, p_X + 3, p_Y + 2),
+    _tex2D(p_TexG, p_X - 3, p_Y + 3),
+    _tex2D(p_TexG, p_X - 2, p_Y + 3),
+    _tex2D(p_TexG, p_X - 1, p_Y + 3),
+    _tex2D(p_TexG, p_X, p_Y + 3),
+    _tex2D(p_TexG, p_X + 1, p_Y + 3),
+    _tex2D(p_TexG, p_X + 2, p_Y + 3),
+    _tex2D(p_TexG, p_X + 3, p_Y + 3), 
+};
+
+float Table7B[49] =
+{
+    _tex2D(p_TexB, p_X - 3, p_Y - 3),
+    _tex2D(p_TexB, p_X - 2, p_Y - 3),
+    _tex2D(p_TexB, p_X - 1, p_Y - 3),
+    _tex2D(p_TexB, p_X, p_Y - 3),
+    _tex2D(p_TexB, p_X + 1, p_Y - 3),
+    _tex2D(p_TexB, p_X + 2, p_Y - 3),
+    _tex2D(p_TexB, p_X + 3, p_Y - 3),
+    _tex2D(p_TexB, p_X - 3, p_Y - 2),
+    _tex2D(p_TexB, p_X - 2, p_Y - 2),
+    _tex2D(p_TexB, p_X - 1, p_Y - 2),
+    _tex2D(p_TexB, p_X, p_Y - 2),
+    _tex2D(p_TexB, p_X + 1, p_Y - 2),
+    _tex2D(p_TexB, p_X + 2, p_Y - 2),
+    _tex2D(p_TexB, p_X + 3, p_Y - 2),
+    _tex2D(p_TexB, p_X - 3, p_Y - 1),
+    _tex2D(p_TexB, p_X - 2, p_Y - 1),
+    _tex2D(p_TexB, p_X - 1, p_Y - 1),
+    _tex2D(p_TexB, p_X, p_Y - 1),
+    _tex2D(p_TexB, p_X + 1, p_Y - 1),
+    _tex2D(p_TexB, p_X + 2, p_Y - 1),
+    _tex2D(p_TexB, p_X + 3, p_Y - 1),
+    _tex2D(p_TexB, p_X - 3, p_Y),
+    _tex2D(p_TexB, p_X - 2, p_Y),
+    _tex2D(p_TexB, p_X - 1, p_Y),
+    _tex2D(p_TexB, p_X, p_Y),
+    _tex2D(p_TexB, p_X + 1, p_Y),
+    _tex2D(p_TexB, p_X + 2, p_Y),
+    _tex2D(p_TexB, p_X + 3, p_Y),
+    _tex2D(p_TexB, p_X - 3, p_Y + 1),
+    _tex2D(p_TexB, p_X - 2, p_Y + 1),
+    _tex2D(p_TexB, p_X - 1, p_Y + 1),
+    _tex2D(p_TexB, p_X, p_Y + 1),
+    _tex2D(p_TexB, p_X + 1, p_Y + 1),
+    _tex2D(p_TexB, p_X + 2, p_Y + 1),
+    _tex2D(p_TexB, p_X + 3, p_Y + 1),
+    _tex2D(p_TexB, p_X - 3, p_Y + 2),
+    _tex2D(p_TexB, p_X - 2, p_Y + 2),
+    _tex2D(p_TexB, p_X - 1, p_Y + 2),
+    _tex2D(p_TexB, p_X, p_Y + 2),
+    _tex2D(p_TexB, p_X + 1, p_Y + 2),
+    _tex2D(p_TexB, p_X + 2, p_Y + 2),
+    _tex2D(p_TexB, p_X + 3, p_Y + 2),
+    _tex2D(p_TexB, p_X - 3, p_Y + 3),
+    _tex2D(p_TexB, p_X - 2, p_Y + 3),
+    _tex2D(p_TexB, p_X - 1, p_Y + 3),
+    _tex2D(p_TexB, p_X, p_Y + 3),
+    _tex2D(p_TexB, p_X + 1, p_Y + 3),
+    _tex2D(p_TexB, p_X + 2, p_Y + 3),
+    _tex2D(p_TexB, p_X + 3, p_Y + 3), 
+};
+
+float3 RGB1, RGB2;
+RGB1.x = _tex2D(p_TexR, p_X, p_Y);
+RGB1.y = _tex2D(p_TexG, p_X, p_Y);
+RGB1.z = _tex2D(p_TexB, p_X, p_Y);
+
+if(MEDIAN > 0){
+if(MEDIAN == 1){
+RGB2.x = median(Table3R, 9);
+RGB2.y = median(Table3G, 9);
+RGB2.z = median(Table3B, 9);
+} else if(MEDIAN == 2){
+RGB2.x = median(Table5R, 25);
+RGB2.y = median(Table5G, 25);
+RGB2.z = median(Table5B, 25);
+} else {
+RGB2.x = median(Table7R, 49);
+RGB2.y = median(Table7G, 49);
+RGB2.z = median(Table7B, 49);
+}
+float3 YCH1 = rgb_2_ych(RGB1);
+float3 YCH2 = rgb_2_ych(RGB2);
+YCH1.z = YCH2.z;
+RGB1 = ych_2_rgb(YCH1);
+}
+
+return RGB1;
+}

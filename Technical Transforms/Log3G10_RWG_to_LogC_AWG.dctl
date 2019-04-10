@@ -1,0 +1,47 @@
+// ResolveMathxtra DCTL export
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+
+	float r = p_R;
+	float g = p_G;
+	float b = p_B;
+	float x = p_X;
+	float y = p_Y;
+	int width = p_Width;
+	int height = p_Height;
+
+	float mix = 1.000000f;
+	float param1 = 1.000000f;
+	float param2 = 1.000000f;
+	float param3 = 1.000000f;
+	float param4 = 1.000000f;
+	float param5 = 1.000000f;
+	float param6 = 1.000000f;
+	float param7 = 1.000000f;
+	float param8 = 1.000000f;
+	float param9 = 1.000000f;
+	float param10r = 1.000000f;
+	float param10g = 1.000000f;
+	float param10b = 1.000000f;
+
+	float expr1 = (r < 0.0f ? (r / 15.1927f) : (_powf(10.0f, r / 0.224282f) - 1.0f) / 155.975327f) - 0.01f;
+	float expr2 = (g < 0.0f ? (g / 15.1927f) : (_powf(10.0f, g / 0.224282f) - 1.0f) / 155.975327f) - 0.01f;
+	float expr3 = (b < 0.0f ? (b / 15.1927f) : (_powf(10.0f, b / 0.224282f) - 1.0f) / 155.975327f) - 0.01f;
+	float expr4 = (1.193058f * expr1) + (-0.214524f * expr2) + (0.021466f * expr3);
+	float expr5 = (-0.085618f * expr1) + (1.065702f * expr2) + (0.019916f * expr3);
+	float expr6 = (-0.076961f * expr1) + (-0.238711f * expr2) + (1.315673f * expr3);
+	float expr7 = expr4 > 0.010591f ? 0.24719f * log10(5.555556f * expr4 + 0.052272f) + 0.385537f : 5.367655f * expr4 + 0.092809f;
+	float expr8 = expr5 > 0.010591f ? 0.24719f * log10(5.555556f * expr5 + 0.052272f) + 0.385537f : 5.367655f * expr5 + 0.092809f;
+	float expr9 = expr6 > 0.010591f ? 0.24719f * log10(5.555556f * expr6 + 0.052272f) + 0.385537f : 5.367655f * expr6 + 0.092809f;
+
+	float R1 = expr7;
+	float G1 = expr8;
+	float B1 = expr9;
+
+	float R = R1 * mix + r * (1.0 - mix);
+	float G = G1 * mix + g * (1.0 - mix);
+	float B = B1 * mix + b * (1.0 - mix);
+
+	return make_float3(R, G, B);
+}

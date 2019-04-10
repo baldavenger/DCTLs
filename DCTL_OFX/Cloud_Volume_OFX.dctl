@@ -1,0 +1,291 @@
+// Cloud Volume OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Cloud, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(ZOOM, Zoom, DCTLUI_SLIDER_FLOAT, 1, 0, 3, 0.001)
+DEFINE_UI_PARAMS(ROTATEy, Rotate Cloud, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+DEFINE_UI_PARAMS(ROTATEsun, Rotate Sun, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+DEFINE_UI_PARAMS(SUNHEIGHT, Sun Height, DCTLUI_SLIDER_FLOAT, 0.75, -1, 2, 0.001)
+DEFINE_UI_PARAMS(NUDGE, Nudge, DCTLUI_SLIDER_FLOAT, 2, 1, 3, 0.001)
+DEFINE_UI_PARAMS(CLOUD, Cloud Lightness, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(TWISTED, Twisted, DCTLUI_CHECK_BOX, 1)
+DEFINE_UI_PARAMS(DENSE, Dense, DCTLUI_CHECK_BOX, 0)
+DEFINE_UI_PARAMS(DITHERING, Dithering, DCTLUI_CHECK_BOX, 1)
+
+#include "DCTL_Functions.h"
+
+__DEVICE__ float time = 0.0f;
+__DEVICE__ bool Twisted = false;
+__DEVICE__ float nudge = 0.0f;
+
+__DEVICE__ float3 hash( float3 p )
+{
+p = make_float3( dot(p, make_float3(127.1f, 311.7f, 74.7f)), dot(p, make_float3(269.5f, 183.3f, 246.1f)), dot(p, make_float3(113.5f, 271.9f, 124.6f)));
+return -1.0f + 2.0f * fract(SIN(p) * 43758.5453123f);
+}
+
+__DEVICE__ float noise( float3 p )
+{
+float3 i = floor( p );
+float3 f = fract( p );
+
+float3 u = f * f * (3.0f - 2.0f * f);
+
+return 1.0f - 0.9f * mix( mix( mix( dot( hash( i + make_float3(0.0f) ), f - make_float3(0.0f) ), 
+  dot( hash( i + make_float3(1.0f, 0.0f, 0.0f) ), f - make_float3(1.0f, 0.0f, 0.0f) ), u.x),
+mix( dot( hash( i + make_float3(0.0f, 1.0f, 0.0f) ), f - make_float3(0.0f, 1.0f, 0.0f) ), 
+  dot( hash( i + make_float3(1.0f, 1.0f, 0.0f) ), f - make_float3(1.0f, 1.0f, 0.0f) ), u.x), u.y),
+mix( mix( dot( hash( i + make_float3(0.0f, 0.0f, 1.0f) ), f - make_float3(0.0f, 0.0f, 1.0f) ), 
+  dot( hash( i + make_float3(1.0f, 0.0f, 1.0f) ), f - make_float3(1.0f, 0.0f, 1.0f) ), u.x),
+mix( dot( hash( i + make_float3(0.0, 1.0f, 1.0f) ), f - make_float3(0.0f, 1.0f, 1.0f) ), 
+  dot( hash( i + make_float3(1.0f, 1.0f, 1.0f) ), f - make_float3(1.0f, 1.0f, 1.0f) ), u.x), u.y), u.z );
+}
+
+__DEVICE__ float fbm( float3 p )
+{
+return noise(p * 0.06125f) * 0.75f + noise(p * 0.125f) * 0.325f + noise(p * 0.4f) * 0.2f;
+}
+
+__DEVICE__ float rand(float2 co)
+{
+return fract(_sinf(dot( co * 0.123f, make_float2(12.9898f, 78.233f))) * 43758.5453f);
+}
+
+__DEVICE__ float Sphere( float3 p, float r )
+{
+return length(p) - r;
+}
+
+//#define nudge		2.0f
+#define normalizer	(1.0f / _sqrtf(1.0f + nudge * nudge))
+
+__DEVICE__ float SpiralNoiseC(float3 p)
+{
+float n = -_fmod(time * 0.2f, -2.0f); // noise amount
+float iter = 2.0f;
+for (int i = 0; i < 8; i++)
+{
+// add sin and cos scaled inverse with the frequency
+n += -_fabs(_sinf(p.y * iter) + _cosf(p.x * iter)) / iter;	// abs for a ridged look
+// rotate by adding perpendicular and scaling down
+float2 pXY = make_float2(p.y, -p.x) * nudge;
+p.x = (p.x + pXY.x) * normalizer;
+p.y = (p.y + pXY.y) * normalizer;
+// rotate on other axis
+float2 pXZ = make_float2(p.z, -p.x) * nudge;
+p.x = (p.x + pXZ.x) * normalizer;
+p.z = (p.z + pXZ.y) * normalizer;
+// increase the frequency
+iter *= 1.733733f;
+}
+return n;
+}
+
+__DEVICE__ float VolumetricCloud(float3 p)
+{
+float final = Sphere(p, 4.0f);
+if (Twisted)
+{
+float tnoise = noise(p * 0.5f);
+//final += tnoise * 1.75f;
+final += SpiralNoiseC(make_float3(p.z, p.x, p.y) * 0.4132f * tnoise + 333.0f) * 3.25f;
+} else {
+final += SpiralNoiseC(p * 0.5f + 333.0f) * 3.0f + fbm(p * 80.0f) * 1.25f;
+}
+return final;
+}
+
+__DEVICE__ float map(float3 p) 
+{
+float VolCloud = VolumetricCloud(p / 0.5f) * 0.5f; // scale
+return VolCloud;
+}
+
+__DEVICE__ bool RaySphereIntersect(float3 org, float3 dir, float* near, float* far)
+{
+float b = dot(dir, org);
+float c = dot(org, org) - 26.0f;
+float delta = b*b - c;
+if(delta < 0.0f) 
+return false;
+float deltasqrt = _sqrtf(delta);
+*near = -b - deltasqrt;
+*far = -b + deltasqrt;
+return *far > 0.0f;
+}
+
+__DEVICE__ float HGPhase( float cosAngle, float g)
+{
+float g2 = g * g;
+return (1.0f - g2) / _powf(1.0f + g2 - 2.0f * g * cosAngle, 1.5f);
+}
+
+__DEVICE__ float BeerLaw(float DenSample, float DenCoef)
+{
+return _expf( -DenSample * DenCoef);
+}
+
+__DEVICE__ float PowderEff(float DenSample, float cosAngle, float DenCoef, float PowderCoef)
+{
+float Powder = 1.0f - _expf(-DenSample * DenCoef * 2.0f);
+Powder = _clampf(Powder * PowderCoef, 0.0f, 1.0f);
+return mix(1.0f, Powder, smoothstep(0.5f, -0.5f, cosAngle));
+}
+
+__DEVICE__ float Remap(float original_value, float original_min, float original_max, float new_min, float new_max)
+{
+return new_min + (((original_value - original_min) / (original_max - original_min)) * (new_max - new_min));
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+time = (TIME * 10.0f + 0.01f) - 10.0f;
+Twisted = TWISTED;
+nudge = NUDGE;
+
+float2 resolution = make_float2(width, height);
+float2 XY = make_float2(X, Y);
+float3 rd = normalize(make_float3((XY - 0.5f * resolution)/resolution.y / (ZOOM + 0.1f), 1.0f));
+float3 rd2 = normalize(make_float3((XY - 0.5f * resolution)/resolution.y, 1.0f));
+float3 ro = make_float3(0.0f, 0.0f, -12.0f);
+
+rotate(&rd.y, &rd.z, -PI * 3.93f);
+rotate(&ro.y, &ro.z, -PI * 3.93f);
+
+rotate(&rd.x, &rd.z, -ROTATEy);
+rotate(&ro.x, &ro.z, -ROTATEy);
+rotate(&rd2.x, &rd2.z, -ROTATEy);
+
+// ld, td: local, total density 
+// w: weighting factor
+float ld=0.0f, td=0.0f, w;
+
+// t: length of the ray
+// d: distance function
+float d=1.0f, t=0.0f;
+
+// Distance threshold
+const float h = 0.225f;
+
+float3 sundir = normalize( make_float3(-1.0f, SUNHEIGHT, 1.0f) );
+rotate(&sundir.x, &sundir.z, -ROTATEy - ROTATEsun);
+
+// background sky     
+float3 colSky = make_float3(0.6f, 0.71f, 0.75f) - rd.y * 0.2f * make_float3(1.0f, 0.5f, 1.0f) + 0.15f * 0.5f;
+float sun = _clampf(dot(sundir, rd2), 0.0f, 1.0f);
+colSky = colSky + (0.25f * make_float3(1.0f, 0.6f, 0.1f) * _powf(sun, 8.0f) + 2.0f * make_float3(1.0f, 0.6f, 0.1f) * _powf(sun, 2000.0f));
+
+float4 sum = make_float4(0.0f);
+
+// Cloud color
+const float3 CloudBaseColor = make_float3(0.42f, 0.67f, 0.82f);
+const float3 CloudTopColor = make_float3(1.0f);
+
+float2 seed = make_float2(0.0f);
+if (DITHERING)
+{
+float2 posd = (XY / resolution);
+seed = posd + fract(time);
+t = (1.0f + 0.2f * rand(seed * make_float2(100.0f)));
+}
+
+float d_remaped = 0.0f;
+
+float min_dist = 0.0f, max_dist = 0.0f;
+
+if(RaySphereIntersect(ro, rd, &min_dist, &max_dist))
+{
+
+t = min_dist * step(t, min_dist);    
+
+// rm loop
+for (int i=0; i<64; i++)
+{
+float3 pos = ro + t*rd;
+
+// Loop break conditions.
+if(td > 0.9875f || d<0.0006f * t || t > 12.0f || t > max_dist || sum.w > 0.99f) break;
+
+// evaluate distance function
+d = map(pos);
+
+d_remaped = Remap(_fmaxf(d, -2.0f), -2.0f, h, h, 1.0f);
+
+// check whether we are close enough
+if (d < h) 
+{
+// compute local density and weighting factor 
+ld = h - (1.0f - d_remaped);
+
+w = (1.0f - td) * ld;   
+
+// accumulate density
+if (DENSE)
+td += w + 1.0f/200.0f;
+else
+td += w * 1.0f/200.0f;
+
+const float dShiftStep = 0.2f; 
+float dShift = map(pos + dShiftStep * sundir);
+float fld = _clampf((ld - (h - _fmaxf(dShift, 0.0f))) / (dShiftStep * 2.0f), 0.0f, 1.0f);
+
+float3 lin = mix(CloudTopColor, CloudBaseColor, -fld) * 0.85f;
+
+const float FwdSctG = 0.2f;
+const float BckwdSctG = -0.02f;
+const float HGCoef = 0.1f;
+const float DenCoef = 0.75f;
+const float PowderCoef = 1.3f;
+
+float cosAngle = dot(rd, sundir);
+float FwdSctHG = HGPhase(cosAngle, FwdSctG);
+float BckwdSctHG = HGPhase(cosAngle, BckwdSctG);
+float TotalHGPhase = (HGCoef * FwdSctHG) + ((1.0f - HGCoef) * BckwdSctHG);
+
+float4 col = make_float4(0.0f);
+if (DENSE)
+col = make_float4(lin * TotalHGPhase * BeerLaw(fld*ld, DenCoef) * PowderEff(_expf(-d), cosAngle, DenCoef, PowderCoef) + colSky * 0.05f, d_remaped);
+else
+col = make_float4(lin * TotalHGPhase * BeerLaw(fld*ld, DenCoef) * PowderEff(_expf(-d), cosAngle, DenCoef, PowderCoef) + colSky * 0.05f, _expf(-d_remaped));
+
+// front to back blending
+if (DENSE)
+col.w *= 0.185;
+else
+col.w *= 0.175;
+
+col.x *= col.w;
+col.y *= col.w;
+col.z *= col.w;
+sum = sum + (col * (1.0f - sum.w));
+}
+
+td += 1.0f/150.0f; // 1.0f/80.0f;
+
+// enforce minimum stepsize
+d = _fmaxf(d, 0.1f);
+
+if (DITHERING)
+// add in noise to reduce banding and create fuzz
+d = _fabs(d) * (0.8f + 0.2f * rand(seed * make_float2(i)));
+
+// step forward
+t +=  _fmaxf(d * 0.19f, 0.02f);
+}
+sum = CLAMP( sum, 0.0f, 1.0f );
+}
+
+float3 SUM = make_float3(sum.x, sum.y, sum.z);
+SUM = SUM * CLOUD;
+SUM = colSky * (1.0f - sum.w) + SUM;
+
+// small color adjustment
+SUM = SUM * (1.0f / _expf( ld * 0.05f ) * 0.85f);
+SUM = SUM * SUM * (3.0f - 2.0f * CLAMP(SUM, 0.0f, 1.0f));
+
+return SUM;
+}

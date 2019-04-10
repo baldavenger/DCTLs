@@ -92,6 +92,11 @@ __DEVICE__ inline float3 floor( float3 A)
 return make_float3(_floor(A.x), _floor(A.y), _floor(A.z));
 }
 
+__DEVICE__ inline float4 floor( float4 A)
+{
+return make_float4(_floor(A.x), _floor(A.y), _floor(A.z), _floor(A.w));
+}
+
 __DEVICE__ inline float fract( float A)
 {
 return A - _floor(A);
@@ -632,4 +637,13 @@ float c = _cosf(b);
 float s = _sinf(b);
 *ax = AX * c - AY * s;
 *ay = AX * s + AY * c;
+}
+
+__DEVICE__ inline mat3 cam3D( float rotateX, float rotateY, float rotateZ)
+{
+mat3 rot_x = make_mat3(1.0f, 0.0f, 0.0f, 0.0f, _cosf(rotateX), _sinf(rotateX), 0.0f, -_sinf(rotateX), _cosf(rotateX));
+mat3 rot_y = make_mat3(_cosf(rotateY), 0.0f, _sinf(rotateY), 0.0f, 1.0f, 0.0f, -_sinf(rotateY), 0.0f, _cosf(rotateY));
+mat3 rot_z = make_mat3(_cosf(rotateZ), _sinf(rotateZ), 0.0f, -_sinf(rotateZ), _cosf(rotateZ), 0.0f, 0.0f, 0.0f, 1.0f);
+mat3 Cam = multi(multi(rot_y, rot_x), rot_z);
+return Cam;
 }

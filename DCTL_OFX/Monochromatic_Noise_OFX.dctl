@@ -1,0 +1,130 @@
+// Noise OFX DCTL
+
+DEFINE_UI_PARAMS(NOISE, Resolution, DCTLUI_SLIDER_INT, 10, 1, 20, 1)
+DEFINE_UI_PARAMS(INTENSITY, Intensity, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(TIME, Animate, DCTLUI_SLIDER_FLOAT, 0, 0, 100, 0.001)
+DEFINE_UI_PARAMS(MONO, Monochromatic, DCTLUI_CHECK_BOX, 1)
+DEFINE_UI_PARAMS(OVERLAY, Overlay Blend, DCTLUI_CHECK_BOX, 1)
+
+__DEVICE__ float2 ADD( float2 A, float B)
+{
+float2 C;
+C.x = A.x + B;
+C.y = A.y + B;
+return C;
+}
+
+__DEVICE__ float DOT( float2 A, float2 B)
+{
+float C = A.x * B.x + A.y * B.y;
+return C;
+}
+
+__DEVICE__ float FRACT( float A)
+{
+float B;
+B = A - floor(A);
+return B;
+}
+
+__DEVICE__ float nrand( float2 n)
+{
+return FRACT(_sinf(DOT(n, make_float2(12.9898f, 78.233f))) * 43758.5453f);
+}
+
+__DEVICE__ float Noise( float input, float2 uv, int size, float intensity)
+{
+float t = FRACT(input);
+float nrnd[20];
+nrnd[0] = nrand( ADD(uv, 0.07f * t) );
+nrnd[1] = nrand( ADD(uv, 0.11f * t) );
+nrnd[2] = nrand( ADD(uv, 0.13f * t) );
+nrnd[3] = nrand( ADD(uv, 0.17f * t) );
+nrnd[4] = nrand( ADD(uv, 0.19f * t) );
+nrnd[5] = nrand( ADD(uv, 0.23f * t) );
+nrnd[6] = nrand( ADD(uv, 0.29f * t) );
+nrnd[7] = nrand( ADD(uv, 0.31f * t) );
+nrnd[8] = nrand( ADD(uv, 0.37f * t) );
+nrnd[9] = nrand( ADD(uv, 0.41f * t) );
+nrnd[10] = nrand( ADD(uv, 0.43f * t) );
+nrnd[11] = nrand( ADD(uv, 0.47f * t) );
+nrnd[12] = nrand( ADD(uv, 0.53f * t) );
+nrnd[13] = nrand( ADD(uv, 0.59f * t) );
+nrnd[14] = nrand( ADD(uv, 0.61f * t) );
+nrnd[15] = nrand( ADD(uv, 0.67f * t) );
+nrnd[16] = nrand( ADD(uv, 0.71f * t) );
+nrnd[17] = nrand( ADD(uv, 0.73f * t) );
+nrnd[18] = nrand( ADD(uv, 0.79f * t) );
+nrnd[19] = nrand( ADD(uv, 0.83f * t) );
+float noise = 0.0f;
+for(int N = 0; N < size; N++)
+{
+noise += nrnd[N];
+}
+noise /= (float)size;
+noise = (noise - 0.5f) * intensity + 0.5f;
+return noise;
+}
+
+__DEVICE__ float3 overlay( float3 col, float3 grain)
+{
+float3 out;
+out.x =  col.x < 0.5f ? (2.0f * col.x * grain.x) : (1.0f - 2.0f * (1.0f - col.x) * (1.0f - grain.x));
+out.y =  col.y < 0.5f ? (2.0f * col.y * grain.y) : (1.0f - 2.0f * (1.0f - col.y) * (1.0f - grain.y));
+out.z =  col.z < 0.5f ? (2.0f * col.z * grain.z) : (1.0f - 2.0f * (1.0f - col.z) * (1.0f - grain.z));
+return out;
+}
+
+__DEVICE__ float lin_to_ACEScct( float in)
+{
+float X_BRK = 0.0078125f;
+float A = 10.5402377416545f;
+float B = 0.0729055341958355f;
+if (in <= X_BRK)
+return A * in + B;
+else
+return (_log2f(in) + 9.72f) / 17.52f;
+}
+
+__DEVICE__ float3 overlay_f3( float3 a, float3 b)
+{
+float LUMA_CUT = lin_to_ACEScct( 0.5f); 
+float luma = a.x * 0.2722287168f + a.y * 0.6740817658f + a.z * 0.0536895174f;
+float3 out;
+if (luma < LUMA_CUT) {
+out.x = 2.0f * a.x * b.x;
+out.y = 2.0f * a.y * b.y;
+out.z = 2.0f * a.z * b.z;
+} else {
+out.x = 1.0f - (2.0f * (1.0f - a.x) * (1.0f - b.x));
+out.y = 1.0f - (2.0f * (1.0f - a.y) * (1.0f - b.y));
+out.z = 1.0f - (2.0f * (1.0f - a.z) * (1.0f - b.z));
+}
+return out;
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float3 RGB = make_float3(p_R, p_G, p_B);
+float2 uv;
+uv.x = (float)p_X / p_Width;
+uv.y = (float)p_Y / p_Height;
+TIME += 1.0f;
+INTENSITY /= 10.0f;
+float3 out;
+if(MONO){
+float input = (p_R + p_G + p_B) / 3.0f * TIME;
+float noise = Noise(input, uv, NOISE, INTENSITY);
+out = make_float3(noise, noise, noise);
+} else {
+float noiseR = Noise(p_R * TIME, uv, NOISE, INTENSITY);
+float noiseG = Noise(p_G * TIME, uv, NOISE, INTENSITY);
+float noiseB = Noise(p_B * TIME, uv, NOISE, INTENSITY);
+out = make_float3(noiseR, noiseG, noiseB);
+}
+
+if(OVERLAY)
+out = overlay_f3(RGB, out);
+
+return out;
+}

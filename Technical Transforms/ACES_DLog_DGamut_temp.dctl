@@ -1,0 +1,100 @@
+// D-Log D-Gamut to ACES AP0 DCTL
+
+typedef struct
+{
+float3 r0, r1, r2;
+} mat3;
+
+__DEVICE__ mat3 make_mat3( float3 A, float3 B, float3 C);
+__DEVICE__ float3 mult_f3_f33 (float3 In, mat3 A);
+__DEVICE__ mat3 mult_f33_f33(mat3 A, mat3 B);
+__DEVICE__ float dlog_to_lin(float in);
+__DEVICE__ float3 dlog_to_lin3(float3 in);
+
+__DEVICE__ mat3 make_mat3( float3 A, float3 B, float3 C)
+{
+mat3 D;
+D.r0 = A;
+D.r1 = B;
+D.r2 = C;
+return D;
+}
+
+__DEVICE__ float3 mult_f3_f33 (float3 In, mat3 A)
+{
+float out[3];
+float in[3] = {In.x, In.y, In.z};
+float a[3][3] =    {{A.r0.x, A.r0.y, A.r0.z},
+	  {A.r1.x, A.r1.y, A.r1.z},
+	  {A.r2.x, A.r2.y, A.r2.z}};
+for( int i = 0; i < 3; ++i)
+{
+out[i] = 0.0f;
+for( int j = 0; j < 3; ++j)
+{
+out[i] = out[i] + in[j] * a[i][j];
+}
+}
+return make_float3(out[0], out[1], out[2]);
+}
+
+__DEVICE__ mat3 mult_f33_f33( mat3 A, mat3 B)
+{
+float m[3][3];
+float a[3][3] =    {{A.r0.x, A.r0.y, A.r0.z},
+{A.r1.x, A.r1.y, A.r1.z},
+{A.r2.x, A.r2.y, A.r2.z}};
+float b[3][3] =    {{B.r0.x, B.r0.y, B.r0.z},
+{B.r1.x, B.r1.y, B.r1.z},
+{B.r2.x, B.r2.y, B.r2.z}};
+
+for( int i = 0; i < 3; ++i)
+{
+for( int j = 0; j < 3; ++j)
+{
+m[i][j] = 0.0f;
+for( int k = 0; k < 3; ++k)
+{
+m[i][j] = m[i][j] + a[i][k] * b[k][j];
+}
+}
+}
+mat3 M = make_mat3(make_float3(m[0][0], m[0][1], m[0][2]),
+make_float3(m[1][0], m[1][1], m[1][2]), make_float3(m[2][0], m[2][1], m[2][2]));
+return M;
+}
+
+#define dgamut_to_xyz        	make_mat3(make_float3(0.6482f, 0.1940f, 0.1082f), make_float3(0.2830f, 0.8132f, -0.0962f), make_float3(-0.0183f, -0.0832f, 1.1903f))
+						  																  
+#define d65_to_ACES_brad        make_mat3(make_float3(0.971639f, 0.0243368f, 0.00402471f), make_float3(-0.00122107f, 0.999735f, 0.00148612f), make_float3(-0.00209541f, -0.00742945f, 1.00952f))
+
+#define xyz_to_acesAP0       	make_mat3(make_float3(1.0498110175f, 0.0f, -0.0000974845f), make_float3(-0.4959030231f, 1.3733130458f, 0.0982400361f), make_float3(0.0f, 0.0f, 0.9912520182f))
+						  
+#define dgamut_to_AP0        	mult_f33_f33(mult_f33_f33(dgamut_to_xyz, d65_to_ACES_brad), xyz_to_acesAP0)
+
+
+__DEVICE__ float dlog_to_lin( float in)
+{
+float out = in <= 0.14f ? (in - 0.0929f) / 6.025f : (_exp10f(3.89616 * in - 2.27752f) - 0.0108f) / 0.9892f;
+return out;
+}
+
+__DEVICE__ float3 dlog_to_lin3( float3 in)
+{
+float3 out;
+out.x = dlog_to_lin(in.x);
+out.y = dlog_to_lin(in.y);
+out.z = dlog_to_lin(in.z);
+return out;
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float3 rgb = make_float3(p_R, p_G, p_B);
+
+rgb = dlog_to_lin3(rgb);
+
+rgb = mult_f3_f33(rgb, dgamut_to_AP0);
+
+return rgb;
+}

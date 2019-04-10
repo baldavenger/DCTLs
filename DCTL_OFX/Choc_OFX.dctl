@@ -88,10 +88,8 @@ t += _clampf(h, 0.01f, 0.5f);
 return _saturatef(res);
 }
 
-__DEVICE__ float3 render( float3 ro, float3 rd, float4 c )
+__DEVICE__ float3 render( float3 ro, float3 rd, float4 c, float3 light1, float3 light2)
 {
-float3 light1 = make_float3(0.577f, 0.577f,  0.577f);
-float3 light2 = make_float3(-0.707f, 0, -0.707f);
 float3 choc = make_float3(0.6087f, 0.3043f, 0.087f);
 float4 tra;
 float3 col;
@@ -99,7 +97,7 @@ float t = intersect(ro, rd, &tra, c);
 if( t < 0 )
 {
 col = choc * (0.7f + 0.3f * rd.y) * 0.15f;
-col = col + choc * _powf(_saturatef(dot(rd, light1)), 48);
+col = col + choc * _powf(_saturatef(dot(rd, light1)), 48.0f);
 }
 else
 {
@@ -138,6 +136,9 @@ float2 resolution = make_float2(width, height);
 float2 XY = make_float2(X, Y);
 float time = TIME * 10;
 
+float3 light1 = make_float3(0.577f, 0.577f,  0.577f);
+float3 light2 = make_float3(-0.707f, 0, -0.707f);
+
 float4 c = COS(make_float4(0.5f, 3.9f, 1.4f, 1.1f) + time * make_float4(1.2f, 1.7f, 1.3f, 2.5f));
 c = c * 0.4f;
 c.x -= 0.3f; 
@@ -145,11 +146,20 @@ c.x -= 0.3f;
 time = ANIMATE * 20;
 float r = 1.4f + 0.15f * _cosf(0.0f + 0.29f * time);
 float3 ro = make_float3(r * _cosf(0.3f + 0.37f * time), 0.3f + 0.8f * r * _cosf(1 + 0.33f * time), r * _cosf(2.2f + 0.31f * time) );
-float3 ta = make_float3(0);
+float3 ta = make_float3(0.0f);
 float cr = 0.1f * _cosf(0.1f);
 
+float rx = ROTATEx;
+float ry = ROTATEy;
+float rz = ROTATEz;
+
+mat3 cam = cam3D(rx, ry, rz);
+ro = multi(ro, cam);
+light1 = multi(light1, cam);
+light2 = multi(light2, cam);
+
 float3 col = make_float3(0);
-for( int j=0; j<AA; j++ )
+for( int j=0; j<AA; j++ ){
 for( int i=0; i<AA; i++ )
 {    
 float2 p = (-1 * resolution + 2 * (XY + make_float2(i, j) / (float)AA)) / resolution.y;
@@ -161,13 +171,9 @@ float3 cp = make_float3(_sinf(cr), _cosf(cr), 0);
 float3 cu = normalize(cross(cw,cp));
 float3 cv = normalize(cross(cu,cw));
 float3 rd = normalize(p.x * cu + p.y * cv + 2 * cw);
-rotate(&ro.x, &ro.z, ROTATEy + 2);
-rotate(&rd.x, &rd.z, ROTATEy + 2);
-rotate(&ro.x, &ro.y, ROTATEz);
-rotate(&rd.x, &rd.y, ROTATEz);
-rotate(&ro.y, &ro.z, ROTATEx);
-rotate(&rd.y, &rd.z, ROTATEx);
-col = col + render(ro, rd, c);
+
+col = col + render(ro, rd, c, light1, light2);
+}
 }
 col = col / (float)(AA * AA);
 

@@ -1,0 +1,371 @@
+// Matrix OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Animate, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(msX, Horizontal, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(msY, Vertical, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+
+#include "DCTL_Functions.h"
+
+#define ITERATIONS				40
+#define SPEED					1.0f
+
+#define STRIP_CHARS_MIN			7.0f
+#define STRIP_CHARS_MAX			40.0f
+#define STRIP_CHAR_HEIGHT		0.15f
+#define STRIP_CHAR_WIDTH		0.1f
+#define ZCELL_SIZE				1.0f * (STRIP_CHAR_HEIGHT * STRIP_CHARS_MAX)
+#define XYCELL_SIZE				12.0f * STRIP_CHAR_WIDTH
+
+#define BLOCK_SIZE				10
+#define BLOCK_GAP				2
+
+#define WALK_SPEED				1.0f * XYCELL_SIZE
+#define BLOCKS_BEFORE_TURN		3.0f
+
+__DEVICE__ float hash( float v)
+{
+return fract(_sinf(v) * 43758.5453123f);
+}
+
+__DEVICE__ float hash( float2 v)
+{
+return hash(dot(v, make_float2(5.3983f, 5.4427f)));
+}
+
+__DEVICE__ float2 hash2( float2 v)
+{
+v = multi(v, make_mat2(127.1f, 311.7f, 269.5f, 183.3f));
+return fract(SIN(v) * 43758.5453123f);
+}
+
+__DEVICE__ float4 hash4( float2 v)
+{
+float4 p = make_float4( 127.1f * v.x + 311.7f * v.y, 269.5f * v.x + 183.3f * v.y, 113.5f * v.x + 271.9f * v.y, 246.1f * v.x + 124.6f * v.y);
+return fract(SIN(p) * 43758.5453123f);
+}
+
+__DEVICE__ float4 hash4( float3 v)
+{
+float4 p = make_float4(127.1f * v.x + 311.7f * v.y + 74.7f * v.z,
+269.5f * v.x + 183.3f * v.y + 246.1f * v.z,
+113.5f * v.x + 271.9f * v.y + 124.6f * v.z,
+271.9f * v.x + 269.5f * v.y + 311.7f * v.z);
+return fract(SIN(p) * 43758.5453123f);
+}
+
+__DEVICE__ float rune_line( float2 p, float2 a, float2 b)
+{
+p = p - a;
+b = b - a;
+float h = _clampf(dot(p, b) / dot(b, b), 0.0f, 1.0f);
+return length(p - b * h);
+}
+
+__DEVICE__ float rune( float2 U, float2 seed, float highlight)
+{
+float d = 1e5 * 1.0f;
+for (int i = 0; i < 4; i++)
+{
+float4 pos = hash4(seed);
+seed = seed + 1.0f;
+
+if (i == 0) pos.y = 0.0f;
+if (i == 1) pos.x = 0.999f;
+if (i == 2) pos.x = 0.0f;
+if (i == 3) pos.y = 0.999f;
+float4 snaps = make_float4(2.0f, 3.0f, 2.0f, 3.0f);
+pos = ( floor(pos * snaps) + 0.5f) / snaps;
+
+if (pos.x != pos.z && pos.y != pos.w)
+d = _fminf(d, rune_line(U, make_float2(pos.x, pos.y), make_float2(pos.z, pos.w) + 0.001f) );
+}
+return smoothstep(0.1f, 0.0f, d) + highlight * smoothstep(0.4f, 0.0f, d);
+}
+
+__DEVICE__ float random_char( float2 outer, float2 inner, float highlight)
+{
+float2 seed = make_float2(dot(outer, make_float2(269.5f, 183.3f)), dot(outer, make_float2(113.5f, 271.9f)));
+return rune(inner, seed, highlight);
+}
+
+__DEVICE__ float3 rain( float3 ro3, float3 rd3, float time)
+{
+float3 result = make_float3(0.0f);
+float resultA = 0.0f;
+
+float2 ro2 = make_float2(ro3.x, ro3.y);
+float2 rd2 = normalize(make_float2(rd3.x, rd3.y));
+
+bool prefer_dx = _fabs(rd2.x) > _fabs(rd2.y);
+float t3_to_t2 = prefer_dx ? rd3.x / rd2.x : rd3.y / rd2.y;
+
+float3 cell_side = step(make_float3(0.0f), rd3);
+float3 cell_shift = sign(rd3);
+
+float t2 = 0.0f;
+float2 next_cell = floor(ro2 / XYCELL_SIZE);
+for (int i = 0; i < ITERATIONS; i++) {
+float2 cell = next_cell;
+float t2s = t2;
+
+
+float2 side = (next_cell + make_float2(cell_side.x, cell_side.y)) * XYCELL_SIZE;
+float2 t2_side = (side - ro2) / rd2;
+if (t2_side.x < t2_side.y) {
+t2 = t2_side.x;
+next_cell.x += cell_shift.x;
+} else {
+t2 = t2_side.y;
+next_cell.y += cell_shift.y;
+}
+
+float2 cell_in_block = fract(cell / BLOCK_SIZE);
+float gap = (float)BLOCK_GAP / BLOCK_SIZE;
+//if (cell_in_block.x < gap || cell_in_block.y < gap || (cell_in_block.x < (gap + 0.1f) && cell_in_block.y < (gap + 0.1f))) {
+//continue;
+//}
+
+float t3s = t2s / t3_to_t2;
+
+float pos_z = ro3.z + rd3.z * t3s;
+float xycell_hash = hash(cell);
+float z_shift = xycell_hash * 11.0f - time * (0.5f + xycell_hash * 1.0f + xycell_hash * xycell_hash * 1.0f + _powf(xycell_hash, 16.0f) * 3.0f);
+float char_z_shift = _floor(z_shift / STRIP_CHAR_HEIGHT);
+z_shift = char_z_shift * STRIP_CHAR_HEIGHT;
+int zcell = (int)(_floor((pos_z - z_shift) / ZCELL_SIZE));
+for (int j=0; j<2; j++) {
+float4 cell_hash = hash4(make_float3(cell.x, cell.y, zcell));
+float4 cell_hash2 = fract(cell_hash * make_float4(127.1f, 311.7f, 271.9f, 124.6f));
+
+float chars_count = cell_hash.w * (STRIP_CHARS_MAX - STRIP_CHARS_MIN) + STRIP_CHARS_MIN;
+float target_length = chars_count * STRIP_CHAR_HEIGHT;
+float target_rad = STRIP_CHAR_WIDTH / 2.0f;
+float target_z = ((float)zcell * ZCELL_SIZE + z_shift) + cell_hash.z * (ZCELL_SIZE - target_length);
+float2 target = cell * XYCELL_SIZE + target_rad + make_float2(cell_hash.x, cell_hash.y) * (XYCELL_SIZE - target_rad * 2.0f);
+
+float2 s = target - ro2;
+float tmin = dot(s, rd2);
+if (tmin >= t2s && tmin <= t2) {
+float u = s.x * rd2.y - s.y * rd2.x;
+if (_fabs(u) < target_rad) {
+u = (u / target_rad + 1.0f) / 2.0f;
+float z = ro3.z + rd3.z * tmin / t3_to_t2;
+float v = (z - target_z) / target_length;
+if (v >= 0.0f && v < 1.0f) {
+float c = _floor(v * chars_count);
+float q = fract(v * chars_count);
+float2 char_hash = hash2(make_float2(c + char_z_shift, cell_hash2.x));
+if (char_hash.x >= 0.1f || c == 0.0f) {
+float time_factor = _floor(c == 0.0f ? time * 5.0f :  
+time * (1.0f * cell_hash2.z + 
+cell_hash2.w * cell_hash2.w * 4.0f * _powf(char_hash.y, 4.0f)));
+float a = random_char(make_float2(char_hash.x, time_factor), make_float2(u, q), _fmaxf(1.0f, 3.0f - c/2.0f) * 0.2f);
+a *= _clampf((chars_count - 0.5f - c) / 2.0f, 0.0f, 1.0f);
+if (a > 0.0f) {
+float attenuation = 1.0f + _powf(0.06f * tmin / t3_to_t2, 2.0f);
+float3 col = (c == 0.0f ? make_float3(0.67f, 1.0f, 0.82f) : make_float3(0.25f, 0.8f, 0.4f)) / attenuation;
+float a1 = resultA;
+resultA = a1 + (1.0f - a1) * a;
+result = (result * a1 + col * (1.0f - a1) * a) / resultA;
+if (resultA > 0.98f)  return result;
+}
+}
+}
+}
+}
+zcell += (int)cell_shift.z;
+}
+}
+
+return result * resultA;
+}
+
+__DEVICE__ float2 rotate( float2 v, float a)
+{
+float s = _sinf(a);
+float c = _cosf(a);
+mat2 m = make_mat2(c, -s, s, c);
+return multi(v, m);
+}
+
+__DEVICE__ float3 rotateX( float3 v, float a)
+{
+float s = _sinf(a);
+float c = _cosf(a);
+return multi(v, make_mat3(1.0f, 0.0f, 0.0f, 0.0f, c, -s, 0.0f, s, c));
+}
+
+__DEVICE__ float3 rotateY( float3 v, float a)
+{
+float s = _sinf(a);
+float c = _cosf(a);
+return multi(v, make_mat3(c, 0.0f, -s, 0.0f, 1.0f, 0.0f, s, 0.0f, c));
+}
+
+__DEVICE__ float3 rotateZ( float3 v, float a)
+{
+float s = _sinf(a);
+float c = _cosf(a);
+return multi(v, make_mat3(c, -s, 0.0f, s, c, 0.0f, 0.0f, 0.0f, 1.0f));
+}
+
+__DEVICE__ float smoothstep1(float x) {
+return smoothstep(0.0f, 1.0f, x);
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+float2 resolution = make_float2(width, height);
+float2 XY = make_float2(X, Y);
+//float3 rgb = make_float3(p_R, p_G, p_B);
+
+float3 col = make_float3(0.0f);
+
+float2 uv = (XY * 2.0f - resolution) / resolution.y;
+
+float time = TIME * 10.0f * SPEED;
+
+const float turn_rad = 0.25f / BLOCKS_BEFORE_TURN;
+const float turn_abs_time = (PI / 2.0f * turn_rad) * 1.5f;
+const float turn_time = turn_abs_time / (1.0f - 2.0f * turn_rad + turn_abs_time);
+
+float level1_size = (float)BLOCK_SIZE * BLOCKS_BEFORE_TURN * XYCELL_SIZE;
+float level2_size = 4.0f * level1_size;
+float gap_size = (float)BLOCK_GAP * XYCELL_SIZE;
+
+float3 ro = make_float3(gap_size/2.0f, gap_size/2.0f, 0.0f);
+float3 rd = make_float3(uv.x, 2.0f, uv.y);
+
+float tq = fract(time / (level2_size * 4.0f) * WALK_SPEED);
+float t8 = fract(tq * 4.0f);
+float t1 = fract(t8 * 8.0f);
+
+float2 prev;
+float2 dir;
+if (tq < 0.25f) {
+prev = make_float2(0.0f, 0.0f);
+dir = make_float2(0.0f, 1.0f);
+} else if (tq < 0.5f) {
+prev = make_float2(0.0f, 1.0f);
+dir = make_float2(1.0f, 0.0f);
+} else if (tq < 0.75f) {
+prev = make_float2(1.0f, 1.0f);
+dir = make_float2(0.0f, -1.0f);
+} else {
+prev = make_float2(1.0f, 0.0f);
+dir = make_float2(-1.0f, 0.0f);
+}
+float angle = _floor(tq * 4.0f);
+
+prev = prev * 4.0f;
+
+float first_turn_look_angle = 0.4f;
+float second_turn_drift_angle = 0.5f;
+float fifth_turn_drift_angle = 0.25f;
+
+float2 turn;
+float turn_sign = 0.0f;
+float2 dirL = rotate(dir, -PI / 2.0f);
+float2 dirR = dirL * -1.0f;
+float up_down = 0.0f;
+float rotate_on_turns = 1.0f;
+float roll_on_turns = 1.0f;
+float add_angel = 0.0f;
+if (t8 < 0.125f) {
+turn = dirL;
+turn_sign = -1.0f;
+angle -= first_turn_look_angle * (_fmaxf(0.0f, t1 - (1.0f - turn_time * 2.0f)) / turn_time - _fmaxf(0.0f, t1 - (1.0f - turn_time)) / turn_time * 2.5f);
+roll_on_turns = 0.0f;
+} else if (t8 < 0.25f) {
+prev = prev + dir;
+turn = dir;
+dir = dirL;
+angle -= 1.0f;
+turn_sign = 1.0f;
+add_angel += first_turn_look_angle * 0.5f + (-first_turn_look_angle * 0.5f + 1.0f + second_turn_drift_angle) * t1;
+rotate_on_turns = 0.0f;
+roll_on_turns = 0.0f;
+} else if (t8 < 0.375f) {
+prev = prev + dir + dirL;
+turn = dirR;
+turn_sign = 1.0f;
+add_angel += second_turn_drift_angle * _sqrtf(1.0f - t1);
+} else if (t8 < 0.5f) {
+prev = prev + dir + dir + dirL;
+turn = dirR;
+dir = dirR;
+angle += 1.0f;
+turn_sign = 0.0f;
+up_down = _sinf(t1 * PI) * 0.37f;
+} else if (t8 < 0.625f) {
+prev = prev + dir + dir;
+turn = dir;
+dir = dirR;
+angle += 1.0f;
+turn_sign = -1.0f;
+up_down = _sinf(-_fminf(1.0f, t1 / (1.0f - turn_time)) * PI) * 0.37f;
+} else if (t8 < 0.75f) {
+prev = prev + dir + dir + dirR;
+turn = dirL;
+turn_sign = -1.0f;
+add_angel -= (fifth_turn_drift_angle + 1.0f) * smoothstep1(t1);
+rotate_on_turns = 0.0f;
+roll_on_turns = 0.0f;
+} else if (t8 < 0.875f) {
+prev = prev + dir + dir + dir + dirR;
+turn = dir;
+dir = dirL;
+angle -= 1.0f;
+turn_sign = 1.0f;
+add_angel -= fifth_turn_drift_angle - smoothstep1(t1) * (fifth_turn_drift_angle * 2.0f + 1.0f);
+rotate_on_turns = 0.0f;
+roll_on_turns = 0.0f;
+} else {
+prev = prev + dir + dir + dir;
+turn = dirR;
+turn_sign = 1.0f;
+angle += fifth_turn_drift_angle * (1.5f * _fminf(1.0f, (1.0f - t1) / turn_time) - 0.5f * smoothstep1(1.0f - _fminf(1.0f, t1 / (1.0f - turn_time))));
+}
+
+//float2 mouse = make_float2(msX, msY) * 2.0f - 1.0f;
+//up_down = -0.7f * mouse.y;
+//angle += mouse.x;
+//rotate_on_turns = 1.0f;
+//roll_on_turns = 0.0f;
+
+angle += add_angel;
+
+rd = rotateX(rd, up_down);
+
+float2 p;
+if (turn_sign == 0.0f) {
+p = prev + dir * (turn_rad + 1.0f * t1);
+}
+else if (t1 > (1.0f - turn_time)) {
+float tr = (t1 - (1.0f - turn_time)) / turn_time;
+float2 c = prev + dir * (1.0f - turn_rad) + turn * turn_rad;
+p = c + turn_rad * rotate(dir, (tr - 1.0f) * turn_sign * PI / 2.0f);
+angle += tr * turn_sign * rotate_on_turns;
+rd = rotateY(rd, _sinf(tr * turn_sign * PI) * 0.2f * roll_on_turns);
+}  else  {
+t1 /= (1.0f - turn_time);
+p = prev + dir * (turn_rad + (1.0f - turn_rad * 2.0f) * t1);
+}
+
+rd = rotateZ(rd, angle * PI / 2.0f);
+
+ro.x += level1_size * p.x;
+ro.y += level1_size * p.y;
+
+ro = ro + rd * 0.2f;
+rd = normalize(rd);
+
+col = rain(ro, rd, time);
+
+return col;
+}

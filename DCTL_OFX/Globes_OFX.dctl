@@ -34,7 +34,7 @@ u.x = _fabs(2 * X - r.x) / r.y;
 u.y = _fabs(2 * Y - r.y) / r.y;
 float3 e = make_float3(2, 2, t);
 float3 d = make_float3(u.x, u.y, -1);
-float3 p = make_float3(0);
+float3 p = make_float3(0.0f);
 for (int i = 0; i < 32; i++) {
 p = MOD((e + d * k) + 2, 4) - 2;
 k += 0.8f * m(p);
@@ -47,6 +47,12 @@ float3 n = normalize( make_float3(m(make_float3(p.x + E, p.y, p.z)) - m(make_flo
 float s = dot(normalize(make_float3(0.6f, 0.6f, 0.6f) - p), n);
 float yo = k < E ? 0.0f : (1.0f / k) + _fmaxf(s, 0);
 float3 RGB = make_float3(yo);
+
+//#ifdef __METAL_MACOS__
+//#ifdef __METAL_VERSION__ || __METAL_MACOS__
+//#ifdef __OPENCL_VERSION__
+//RGB = 1 - RGB;
+//#endif
 
 return RGB;
 }

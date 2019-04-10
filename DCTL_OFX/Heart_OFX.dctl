@@ -1,0 +1,236 @@
+// Heart OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Animate, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(SCALE, Scale, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(msX, Horizontal, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(msY, Vertical, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(ROTATEy, Rotate, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+DEFINE_UI_PARAMS(AA, Anti-alias, DCTLUI_SLIDER_INT, 0, 0, 2, 1)
+
+#define PI 			3.14159265359f
+#define PHI			1.61803398875f
+
+__DEVICE__ float3 Reflect(float3 A, float3 B);
+__DEVICE__ float Fract(float A);
+__DEVICE__ float3 POW(float3 A, float B);
+__DEVICE__ float3 CLAMP(float3 in, float clampMin, float clampMax);
+__DEVICE__ float Sign(float A);
+__DEVICE__ float2 Rotate(float ax, float ay, float b);
+__DEVICE__ float hash1(float n);
+__DEVICE__ float3 forwardSF(float i, float n);
+__DEVICE__ float almostIdentity(float x, float m, float n);
+__DEVICE__ float2 map(float3 q, float time);
+__DEVICE__ float2 intersect(float3 ro, float3 rd, float time);
+__DEVICE__ float3 calcNormal(float3 pos, float time);
+__DEVICE__ float calcAO(float3 pos, float3 nor, float time);
+__DEVICE__ float3 render(float2 p, float time, float rotateY);
+
+__DEVICE__ float3 Reflect(float3 A, float3 B)
+{
+float3 C;
+C.x = A.x - 2.0f * dot(B, A) * B.x;
+C.y = A.y - 2.0f * dot(B, A) * B.y;
+C.z = A.z - 2.0f * dot(B, A) * B.z;
+return C;
+}
+
+__DEVICE__ float Fract(float A)
+{
+return A - _floor(A);
+}
+
+__DEVICE__ float3 POW(float3 A, float B)
+{
+return make_float3(_powf(A.x, B), _powf(A.y, B), _powf(A.z, B));
+}
+
+__DEVICE__ float3 CLAMP(float3 in, float clampMin, float clampMax)
+{
+float3 out;
+out.x = _clampf( in.x, clampMin, clampMax);
+out.y = _clampf( in.y, clampMin, clampMax);
+out.z = _clampf( in.z, clampMin, clampMax);   
+return out;
+}
+
+__DEVICE__ float Sign(float A)
+{
+return (A < 0.0f ? -1.0f : A > 0.0f ? 1.0f : 0.0f);
+}
+
+__DEVICE__ float2 Rotate(float ax, float ay, float b)
+{
+float AX = ax;
+float AY = ay;
+float c = _cosf(b);
+float s = _sinf(b);
+ax = AX * c - AY * s;
+ay = AX * s + AY * c;
+return make_float2(ax, ay);
+}
+
+__DEVICE__ float hash1(float n)
+{
+return Fract(_sinf(n) * 43758.5453123f);
+}
+
+__DEVICE__ float3 forwardSF(float i, float n)
+{
+float phi = 2.0f * PI * Fract(i / PHI);
+float zi = 1.0f - (2.0f * i + 1.0f) / n;
+float sinTheta = _sqrtf( 1.0f - zi * zi);
+return make_float3( _cosf(phi) * sinTheta, _sinf(phi) * sinTheta, zi);
+}
+
+__DEVICE__ float almostIdentity(float x, float m, float n)
+{
+if(x > m) return x;
+float a = 2.0f * n - m;
+float b = 2.0f * m - 3.0f * n;
+float t = x / m;
+return (a * t + b) * t * t + n;
+}
+
+__DEVICE__ float2 map(float3 q, float time)
+{
+q = q * 100.0f;
+float2 res = make_float2(q.y, 2.0f);
+float r = 15.0f;
+q.y -= r;
+float temp = 0.5f + 0.5f * _sinf(6.28318f * time + q.y / 25.0f);
+float ani = _powf(temp, 4.0f);
+q = q * (1.0f - 0.2f * make_float3(1.0f, 0.5f, 1.0f) * ani);
+q.y -= 1.5f * ani;
+float x = _fabs(q.x);
+x = almostIdentity(x, 1.0f, 0.5f);
+float y = q.y;
+float z = q.z;
+y = 4.0f + y * 1.2f - x * _sqrtf(_fmaxf((20.0f - x) / 15.0f, 0.0f));
+z *= 2.0f - y / 15.0f;
+float d = _sqrtf(x * x + y * y + z * z) - r;
+d /= 3.0f;
+if( d < res.x ) res = make_float2(d, 1.0f);
+res.x /= 100.0f;
+return res;
+}
+
+__DEVICE__ float2 intersect(float3 ro, float3 rd, float time)
+{
+float maxd = 1.0f;
+float2 res = make_float2(0.0f, 0.0f);
+float t = 0.2f;
+for( int i = 0; i < 300; i++ )
+{
+float2 h = map(ro + rd * t, time);
+if( (h.x < 0.0f) || (t > maxd) ) break;
+t += h.x;
+res = make_float2(t, h.y);
+}
+if( t > maxd ) res = make_float2(-1.0f, -1.0f);
+return res;
+}
+
+__DEVICE__ float3 calcNormal(float3 pos, float time)
+{
+float3 eps1 = make_float3(0.005f, 0.0f, 0.0f);
+float3 eps2 = make_float3(0.0f, 0.005f, 0.0f);
+float3 eps3 = make_float3(0.0f, 0.0f, 0.005f);
+return normalize( make_float3(
+map(pos + eps1, time).x - map(pos - eps1, time).x,
+map(pos + eps2, time).x - map(pos - eps2, time).x,
+map(pos + eps3, time).x - map(pos - eps3, time).x ) );
+}
+
+__DEVICE__ float calcAO(float3 pos, float3 nor, float time)
+{
+float ao = 0.0f;
+for( int i = 0; i < 64; i++ )
+{
+float3 ap = forwardSF( (float)i, 64.0f );
+ap = ap * (Sign( dot(ap, nor) ) * hash1((float)i));
+ao += _clampf( map( pos + nor * 0.01f + ap * 0.2f, time ).x * 20.0f, 0.0f, 1.0f);
+}
+ao /= 64.0f;
+return _clampf(ao, 0.0f, 1.0f);
+}
+
+__DEVICE__ float3 render(float2 p, float time, float rotateY)
+{
+float an = 0.5f * (time + 2.0f);
+float3 ro = make_float3(0.4f * _sinf(an), 0.25f, 0.4f * _cosf(an));
+float3 ta = make_float3(0.0f, 0.15f, 0.0f);
+float3 ww = normalize( ta - ro );
+float3 uu = normalize( cross(ww, make_float3(0.0f, 1.0f, 0.0f) ) );
+float3 vv = normalize( cross(uu, ww) );
+float3 rd = normalize( p.x * uu + p.y * vv + 1.7f * ww );
+float3 col = make_float3(1.0f, 0.82f, 0.9f);
+float2 RD = Rotate(rd.x, rd.z, rotateY);
+rd.x = RD.x;
+rd.z = RD.y;
+float2 RO = Rotate(ro.x, ro.z, rotateY);
+ro.x = RO.x;
+ro.z = RO.y;
+float2 res = intersect(ro, rd, time);
+float t = res.x;
+if( t > 0.0f )
+{
+float3 pos = ro + t * rd;
+float3 nor = calcNormal(pos, time);
+float3 ref = Reflect(rd, nor);
+float fre = _clampf(1.0f + dot(nor, rd), 0.0f, 1.0f);
+float occ = calcAO(pos, nor, time); occ = occ * occ;
+if( res.y < 1.5f )
+{
+col = make_float3(0.9f, 0.02f, 0.01f);
+col = col * 0.72f + 0.2f * fre * make_float3(1.0f, 0.8f, 0.2f);
+float3 lin = 4.0f * make_float3(0.7f, 0.8f, 1.0f) * (0.5f + 0.5f * nor.y) * occ;
+lin = lin + (0.5f * fre * make_float3(1.0f, 1.0f, 1.0f) * (0.6f + 0.4f * occ));
+col = col * lin;
+col = col + (4.0f * make_float3(0.7f, 0.8f, 1.0f) * smoothstep(0.0f, 0.4f, ref.y) * (0.06f + 0.94f * _powf(fre, 5.0f)) * occ);
+col = POW(col, 0.4545f);
+}
+else
+{
+col = col * (_clampf(_sqrtf(occ * 1.8f), 0.0f, 1.0f));
+}
+}
+col = CLAMP(col, 0.0f, 1.0f);
+return col;
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+float2 resolution = make_float2(width, height);
+float2 XY = make_float2(X, Y);
+float time = TIME * 20.0f + 4.0f;
+float rotateY = ROTATEy;
+AA += 1;
+float3 col = make_float3(0.0f, 0.0f, 0.0f);
+float2 p = (-1.0f * resolution + 2.0f * XY) / resolution.y;
+p.x -= msX;
+p.y -= msY;
+p = p / SCALE;
+if (AA > 1){
+for( int m = 0; m < AA; m++ )
+for( int n = 0; n < AA; n++ )
+{
+float2 px = XY + make_float2(m, n) / (float)AA;
+p = (-1.0f * resolution + 2.0f * px) / resolution.y;
+p.x -= msX;
+p.y -= msY;
+p = p / SCALE;
+col = col + render(p, time, rotateY);    
+}
+col = col / (float)(AA*AA);
+} else {
+col = render(p, time, rotateY);
+}   
+float2 q = XY / resolution;
+col = col * (0.2f + 0.8f * _powf(16.0f * q.x * q.y * (1.0f - q.x) * (1.0f - q.y), 0.2f));
+return col;
+}

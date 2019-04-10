@@ -1,44 +1,44 @@
 // Cube Map OFX DCTL
 
-DEFINE_UI_PARAMS(LENGTH, Size, DCTLUI_SLIDER_INT, 8, 1, 64, 1)
+DEFINE_UI_PARAMS(LENGTH, Size, DCTLUI_SLIDER_INT, 1, 1, 64, 1)
 DEFINE_UI_PARAMS(spaces, Spaces, DCTLUI_CHECK_BOX, 0)
 
 __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
 {
-    
-    float width = (float)p_Width;
-    float height = (float)p_Height;
-    float vres = _powf(width * height, 1.0f/3.0f);
-    vres = _floor(vres);
-    
-    float2 uv;
-    uv.x = _floor((float)p_X + 0.5f);
-    uv.y = _floor((float)p_Y + 0.5f);
-    
-    float idx = uv.y * width + uv.x;
-    
-    float3 uvw;
-    uvw.x = _fmod(idx, vres);
-    uvw.y = _fmod(_floor(idx / vres), vres);
-    uvw.z = _fmod(_floor(idx / (vres * vres)), vres);
-    
-    float SECTION = vres / LENGTH;
-    float SECTIONB = vres / (LENGTH * 2);
-    
-    if(LENGTH > 1){
-    float UVW1 = uvw.x - _fmod(uvw.x, SECTION) + _floor(SECTION/2.0f);
-    float UVW2 = uvw.x - _fmod(uvw.x, SECTIONB) + _floor(SECTIONB/2.0f);
-    uvw.x = (spaces) ? ((uvw.x < vres/2) ? (UVW1 < UVW2 ? 0 : UVW1) : (UVW1 < UVW2 ? UVW1 : 0)) : UVW1;
-    
-    float UVW3 = uvw.y - _fmod(uvw.y, SECTION) + _floor(SECTION/2.0f);
-    float UVW4 = uvw.y - _fmod(uvw.y, SECTIONB) + _floor(SECTIONB/2.0f);
-    uvw.y = (spaces) ? ((uvw.y < vres/2) ? (UVW3 < UVW4 ? 0 : UVW3) : (UVW3 < UVW4 ? UVW3 : 0)) : UVW3;
-    
-    float UVW5 = uvw.z - _fmod(uvw.z, SECTION) + _floor(SECTION/2.0f);
-    float UVW6 = uvw.z - _fmod(uvw.z, SECTIONB) + _floor(SECTIONB/2.0f);
-    uvw.z = (spaces) ? ((uvw.z < vres/2) ? (UVW5 < UVW6 ? 0 : UVW5) : (UVW5 < UVW6 ? UVW5 : 0)) : UVW5;
-    }
-    uvw = uvw / vres;
-    
-    return uvw;
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+float2 resolution = make_float2(width, height);
+float2 XY = make_float2(X, Y);
+float vres = _powf(width * height, 1.0f/3.0f);
+vres = _floor(vres);
+
+float2 uv = XY;
+float idx = uv.y * width + uv.x;
+
+float3 uvw;
+uvw.x = _fmod(idx, vres);
+uvw.y = _fmod(_floor(idx / vres), vres);
+uvw.z = _fmod(_floor(idx / (vres * vres)), vres);
+
+float SECTION = vres / LENGTH;
+float SECTIONB = vres / (LENGTH * 2);
+
+if(LENGTH > 1){
+float UVW1 = uvw.x - _fmod(uvw.x, SECTION) + _floor(SECTION/2.0f);
+float UVW2 = uvw.x - _fmod(uvw.x, SECTIONB) + _floor(SECTIONB/2.0f);
+uvw.x = (spaces) ? ((uvw.x < vres/2) ? (UVW1 < UVW2 ? 0 : UVW1) : (UVW1 < UVW2 ? UVW1 : 0)) : UVW1;
+
+float UVW3 = uvw.y - _fmod(uvw.y, SECTION) + _floor(SECTION/2.0f);
+float UVW4 = uvw.y - _fmod(uvw.y, SECTIONB) + _floor(SECTIONB/2.0f);
+uvw.y = (spaces) ? ((uvw.y < vres/2) ? (UVW3 < UVW4 ? 0 : UVW3) : (UVW3 < UVW4 ? UVW3 : 0)) : UVW3;
+
+float UVW5 = uvw.z - _fmod(uvw.z, SECTION) + _floor(SECTION/2.0f);
+float UVW6 = uvw.z - _fmod(uvw.z, SECTIONB) + _floor(SECTIONB/2.0f);
+uvw.z = (spaces) ? ((uvw.z < vres/2) ? (UVW5 < UVW6 ? 0 : UVW5) : (UVW5 < UVW6 ? UVW5 : 0)) : UVW5;
+}
+uvw = uvw / vres;
+
+return uvw;
 }

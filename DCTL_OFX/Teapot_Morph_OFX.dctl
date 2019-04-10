@@ -1,0 +1,190 @@
+// Teapot Morph OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Morph, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(ZOOM, Scale, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(msX, Rotate, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+
+#define U(a,b)	(a.x * b.y - b.x * a.y)
+#define L	normalize(make_float3(1.0f, 0.72f, 1.0f))
+#define Y	make_float3(0.0f, 1.0f, 0.0f)
+#define E	Y * 0.01f
+
+__DEVICE__ float2 Rotate(float ax, float ay, float b);
+__DEVICE__ float3 ABS(float3 A);
+__DEVICE__ float3 CLAMP(float3 in, float clampMin, float clampMax);
+__DEVICE__ float3 MAX(float3 in, float Min);
+__DEVICE__ float3 Make_float3(float A);
+__DEVICE__ float Mix_111( float A, float B, float C);
+__DEVICE__ float3 Mix_331(float3 A, float3 B, float C);
+__DEVICE__ float3 MOD(float3 A, float B);
+__DEVICE__ float3 SQRT(float3 A);
+__DEVICE__ float2 B(float2 m, float2 n, float2 o, float3 p);
+__DEVICE__ float smin(float a, float b, float k);
+__DEVICE__ float M(float3 p, float time, float2 A[15], float2 T1[5], float2 T2[5], float tMorph);
+__DEVICE__ float3 hsv2rgb_smooth(float x, float y, float z);
+__DEVICE__ float3 normal(float3 p, float3 ray, float t, float width, float time, float2 A[15], float2 T1[5], float2 T2[5], float tMorph);
+
+__DEVICE__ float2 Rotate( float ax, float ay, float b)
+{
+return make_float2(ax * _cosf(b) - ay * _sinf(b), ax * _sinf(b) + ay * _cosf(b));
+}
+
+__DEVICE__ float3 ABS( float3 A)
+{
+return make_float3(_fabs(A.x), _fabs(A.y), _fabs(A.z));
+}
+
+__DEVICE__ float3 CLAMP( float3 in, float clampMin, float clampMax)
+{
+float3 out;
+out.x = _clampf( in.x, clampMin, clampMax);
+out.y = _clampf( in.y, clampMin, clampMax);
+out.z = _clampf( in.z, clampMin, clampMax);   
+return out;
+}
+
+__DEVICE__ float3 MAX( float3 in, float Min)
+{
+float3 out;
+out.x = _fmaxf(in.x, Min);
+out.y = _fmaxf(in.y, Min);
+out.z = _fmaxf(in.z, Min);
+return out;
+}
+
+__DEVICE__ float3 Make_float3( float A)
+{
+return make_float3(A, A, A);
+}
+
+__DEVICE__ float Mix_111( float A, float B, float C)
+{
+return A * (1.0f - C) + B * C;
+}
+
+__DEVICE__ float3 Mix_331( float3 A, float3 B, float C)
+{
+return A * (1.0f - C) + B * C;
+}
+
+__DEVICE__ float3 MOD( float3 A, float B)
+{
+float3 C;
+C.x = _fmod(A.x, B);
+C.y = _fmod(A.y, B);
+C.z = _fmod(A.z, B);
+return C;
+}
+
+__DEVICE__ float3 SQRT( float3 A)
+{
+return make_float3(_sqrtf(A.x), _sqrtf(A.y), _sqrtf(A.z));
+}
+
+__DEVICE__ float2 B( float2 m, float2 n, float2 o, float3 p) {
+float2 q = make_float2(p.x, p.y);
+m = m - q; n = n - q; o = o - q;
+float x = U(m, o), y = 2.0f * U(n, m), z = 2.0f * U(o, n);
+float2 i = o - m, j = o - n, k = n - m, 
+s = 2.0f * (x * i + y * j + z * k), 
+r = m + (y * z - x * x) * make_float2(s.y, -s.x) / dot(s, s);
+float t = _clampf((U(r, i) + 2.0f * U(k, r)) / (x + x + y + z), 0.0f, 1.0f);
+r = m + t * (k + k + t * (j - k));
+return make_float2(_sqrtf(dot(r, r) + p.z * p.z), t);
+}
+
+__DEVICE__ float smin( float a, float b, float k) {
+float h = _clampf(0.5f + 0.5f * (b - a) / k, 0.0f, 1.0f);
+return Mix_111(b, a, h) - k * h * (1.0f - h);
+}
+
+__DEVICE__ float M( float3 p, float time, float2 A[15], float2 T1[5], float2 T2[5], float tMorph) {
+float2 h = B(T1[2], T1[3], T1[4], p);
+float a = 99.0f, 
+b = _fminf(_fminf(B(T2[0],T2[1],T2[2], p).x, B(T2[2],T2[3],T2[4], p).x) - 0.06f, 
+_fmaxf(p.y - 0.9f, _fminf(_fabs(B(T1[0],T1[1],T1[2], p).x - 0.07f) - 0.01f, 
+h.x * (1.0f - 0.75f * h.y) - 0.08f)));
+float3 qq= make_float3(_sqrtf(dot(p,p) - p.y * p.y), p.y, 0.0f);
+for(int i=0; i<13; i+=2) 
+a = _fminf(a, (B(A[i], A[i + 1], A[i + 2], qq).x - 0.015f) * 0.7f); 
+float dTeapot = smin(a, b, 0.02f);
+float dShape;
+int idMorph = int(_fmod(_floor(0.5f + time / (2.0f * 3.141592658f)), 3.0f));
+if (idMorph == 1) {
+float2 pXZ = Rotate(p.x, p.z, 3.14159f / 4.0f); p.x = pXZ.x; p.z = pXZ.y;
+float3 d = ABS(p - make_float3(0.0f, 0.5f, 0.0f)) - make_float3(0.8f, 0.7f, 0.8f);
+dShape = _fminf(_fmaxf(d.x, _fmaxf(d.y, d.z)), 0.0f) + length(MAX(d, 0.0f));
+} else if (idMorph == 2) { 
+p -= make_float3(0.0f, 0.55f, 0.0f);
+float3 d1 = ABS(p) - make_float3(0.67f, 0.67f, 0.67f * 1.618f),
+d3 = ABS(p) - make_float3(0.67f * 1.618f, 0.67f, 0.67f);
+dShape = _fminf(_fmaxf(d1.x, _fmaxf(d1.y, d1.z)), 0.0f) + length(MAX(d1, 0.0f));
+dShape = _fminf(dShape, _fminf(_fmaxf(d3.x, _fmaxf(d3.y, d3.z)), 0.0f) + length(MAX(d3, 0.0f)));
+} else {
+dShape = length(p - make_float3(0.0f, 0.45f, 0.0f)) - 1.1f;
+}
+return Mix_111(dTeapot, dShape, _fabs(tMorph));
+}
+
+__DEVICE__ float3 hsv2rgb_smooth( float x, float y, float z) {
+float3 rgb = CLAMP( ABS(MOD(x * 6.0f + make_float3(0.0f, 4.0f, 2.0f), 6.0f) - 3.0f) - 1.0f, 0.0f, 1.0f);
+rgb = rgb * rgb * (3.0f - 2.0f * rgb);
+return z * Mix_331(make_float3(1.0f, 1.0f, 1.0f), rgb, y);
+}
+
+__DEVICE__ float3 normal( float3 p, float3 ray, float t, float width, float time, float2 A[15], float2 T1[5], float2 T2[5], float tMorph) {
+float pitch = 0.4f * t / width;
+float2 d = make_float2(-1.0f, 1.0f) * pitch;
+float3 p0 = p + make_float3(d.x,d.x,d.x), p1 = p + make_float3(d.x,d.y,d.y), p2 = p + make_float3(d.y,d.x,d.y), p3 = p + make_float3(d.y,d.y,d.x);
+float f0 = M(p0,time,A,T1,T2,tMorph), f1 = M(p1,time,A,T1,T2,tMorph), f2 = M(p2,time,A,T1,T2,tMorph), f3 = M(p3,time,A,T1,T2,tMorph);
+float3 grad = p0 * f0 + p1 * f1 + p2 * f2 + p3 * f3 - p * (f0 + f1 + f2 + f3);
+return normalize(grad - _fmaxf(0.0f, dot(grad, ray)) * ray);
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float X = (float)p_X;
+float YY = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+YY = height - YY;
+float2 resolution = make_float2(width, height);
+float2 XY = make_float2(X, YY);
+float time = 4.0f + TIME * 50.0f;
+float2 A[15];
+float2 T1[5];
+float2 T2[5];
+float tMorph = _cosf(time * 0.5f);
+tMorph *= tMorph * tMorph * tMorph * tMorph;
+A[0]=make_float2(0.0f, 0.0f); A[1]=make_float2(0.64f,0.0f);A[2]=make_float2(0.64f,0.03f);A[3]=make_float2(0.8f,0.12f);A[4]=make_float2(0.8f,0.3f);A[5]=make_float2(0.8f,0.48f);A[6]=make_float2(0.64f,0.9f);A[7]=make_float2(0.6f,0.93f);
+A[8]=make_float2(0.56f,0.9f);A[9]=make_float2(0.56f,0.96f);A[10]=make_float2(0.12f,1.02f);A[11]=make_float2(0.0f,1.05f);A[12]=make_float2(0.16f,1.14f);A[13]=make_float2(0.2f,1.2f);A[14]=make_float2(0.0f,1.2f);
+T1[0]=make_float2(1.16f,0.96f);T1[1]=make_float2(1.04f,0.9f);T1[2]=make_float2(1.0f,0.72f);T1[3]=make_float2(0.92f,0.48f);T1[4]=make_float2(0.72f,0.42f);
+T2[0]=make_float2(-0.6f,0.78f);T2[1]=make_float2(-1.16f,0.84f);T2[2]=make_float2(-1.16f,0.63f);T2[3]=make_float2(-1.2f,0.42f);T2[4]=make_float2(-0.72f,0.24f);
+float2 r = resolution;
+float2 q = XY / r, p = q + q - 1.0f;
+p.x *= r.x / r.y;
+p = p / (ZOOM + 0.1f);
+float j = 0.0f, s = 1.0f, h = 0.1f, t = 5.0f + 6.0f * msX;
+float3 o = 2.9f * make_float3(_cosf(t), 0.7f, _sinf(t)), w = normalize(Y * 0.4f - o),
+u = normalize(cross(w, Y)), v = cross(u, w), d = normalize(p.x * u + p.y * v + w + w), n, x;
+t = 0.0f;
+for(int i=0; i<48; i++) { 
+if (h < 0.0001f || t > 4.7f) break;
+t += h = M(o + d * t, time,A,T1,T2,tMorph);
+}
+float3 c = Mix_331(hsv2rgb_smooth(0.5f + time * 0.02f, 0.35f, 0.4f), 
+hsv2rgb_smooth(-0.5f + time * 0.02f, 0.35f, 0.7f), q.y);
+if (h < 0.001f) {
+x = o + t * d;
+n = normal(x, d, t, width, time,A,T1,T2,tMorph);
+for(int i=0; i<20; i++){
+j += 0.02f;
+s = _fminf(s, M(x + L * j, time,A,T1,T2,tMorph) / j);
+}
+float3 c1 = hsv2rgb_smooth(0.9f + time * 0.02f, 1.0f, 1.0f); 
+c = Mix_331(c, Mix_331(SQRT((_clampf(3.0f * s, 0.0f, 1.0f) + 0.3f) * c1),
+Make_float3(_powf(_fmaxf(dot(reflect(L, n), d), 0.0f), 99.0f)), 0.4f), 2.0f * dot(n, -d));
+} 
+c = c * _powf(16.0f * q.x * q.y * (1.0f - q.x) * (1.0f - q.y), 0.16f);
+return make_float3(c.x, c.y, c.z);
+}

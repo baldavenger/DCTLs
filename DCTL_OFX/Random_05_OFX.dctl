@@ -4,8 +4,9 @@ DEFINE_UI_PARAMS(TIME, Time, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
 
 #define angle 60.0f
 #define PI 3.14159265f
+//#define make_float3 float3
 
-__DEVICE__ float time = 0;
+//__DEVICE__ float time = 0;
 
 __CONSTANT__ float fov = angle * 0.5f * PI / 180.0f;
 __CONSTANT__ float3 lightDir = {0.3f, 0.5f, 0.0f};
@@ -65,10 +66,10 @@ float Y = (float)p_Y;
 float width = (float)p_Width;
 float height = (float)p_Height;
 Y = height - Y;
-time =  TIME * 10;
+float time =  TIME * 10;
 
 float2 r = make_float2(width, height);
-float2 XY = make_float2(X, Y);
+//float2 XY = make_float2(X, Y);
 float2 p;
 p.x = _fabs(2 * X - r.x) / r.y;
 p.y = _fabs(2 * Y - r.y) / r.y;
@@ -83,12 +84,12 @@ rLen += distance;
 rPos = cPos + ray * rLen;
 }
 
-float3 RGB = make_float3(0.0f);
+float3 RGB = make_float3(0.0f, 0.0f, 0.0f);
 
 if(_fabs(distance) < 0.001){
 float3 normal = getNormal(rPos);
 float diff = _clampf(dot(normalize(lightDir), normal), 0.1f, 1.0f);
-RGB = make_float3(diff);
+RGB = make_float3(diff, diff, diff);
 }
 
 return RGB;
