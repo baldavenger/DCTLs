@@ -4,9 +4,6 @@ DEFINE_UI_PARAMS(TIME, Time, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
 
 #define angle 60.0f
 #define PI 3.14159265f
-//#define make_float3 float3
-
-//__DEVICE__ float time = 0;
 
 __CONSTANT__ float fov = angle * 0.5f * PI / 180.0f;
 __CONSTANT__ float3 lightDir = {0.3f, 0.5f, 0.0f};
