@@ -1,0 +1,243 @@
+// LMT Color Balance OFX DCTL
+
+// Input is ACEScct
+// Output is ACEScct
+
+DEFINE_UI_PARAMS(ShadR, Low Cyan Red, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(MidR, Mid Cyan Red, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(HighR, High Cyan Red, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(ShadG, Low Magenta Green, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(MidG,  Mid Magenta Green, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(HighG, Low Magenta Green, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(ShadB, Low Yellow Blue, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(MidB, Mid Yellow Blue, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(HighB, High Yellow Blue, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(LUMM, Luma Limiter, DCTLUI_SLIDER_FLOAT, 0, -2, 2, 0.001)
+DEFINE_UI_PARAMS(SATT, Saturation Limiter, DCTLUI_SLIDER_FLOAT, 0, -2, 2, 0.001)
+DEFINE_UI_PARAMS(PresLum, Preserve Luma, DCTLUI_CHECK_BOX, 1)
+DEFINE_UI_PARAMS(ALPHA, View Alpha, DCTLUI_CHECK_BOX, 0)
+DEFINE_UI_PARAMS(graph, Graph, DCTLUI_CHECK_BOX, 0)
+DEFINE_UI_PARAMS(ACESCCT, ACEScct, DCTLUI_CHECK_BOX, 1)
+
+#ifndef M_PI
+#define M_PI		3.14159265358979323846264338327950288f
+#endif
+__CONSTANT__ float X_BRK = 0.0078125f;
+__CONSTANT__ float Y_BRK = 0.155251141552511f;
+__CONSTANT__ float A = 10.5402377416545f;
+__CONSTANT__ float B = 0.0729055341958355f;
+
+__DEVICE__ float ACEScct_to_lin( float in) {
+if (in > Y_BRK)
+return _powf( 2.0f, in * 17.52f - 9.72f);
+else
+return (in - B) / A;
+}
+
+__DEVICE__ float3 ACEScct_to_lin_f3( float3 in) {
+float3 ap1_lin;
+ap1_lin.x = ACEScct_to_lin( in.x);ap1_lin.y = ACEScct_to_lin( in.y);ap1_lin.z = ACEScct_to_lin( in.z);
+return ap1_lin;
+}
+
+__DEVICE__ float ACEScc_to_lin( float in) {
+if (in < -0.3013698630f)
+return (_powf( 2.0f, in * 17.52f - 9.72f) - _powf( 2.0f, -16.0f)) * 2.0f;
+else
+return _powf( 2.0f, in * 17.52f - 9.72f);
+}
+
+__DEVICE__ float3 ACEScc_to_lin_f3( float3 in) {
+float3 ap1_lin;
+ap1_lin.x = ACEScc_to_lin( in.x);ap1_lin.y = ACEScc_to_lin( in.y);ap1_lin.z = ACEScc_to_lin( in.z);
+return ap1_lin;
+}
+
+__DEVICE__ float lin_to_ACEScct( float in) {
+if (in <= X_BRK)
+return A * in + B;
+else
+return (_log2f(in) + 9.72f) / 17.52f;
+}
+
+__DEVICE__ float3 lin_to_ACEScct_f3( float3 in) {
+float3 ap1_lin;
+ap1_lin.x = lin_to_ACEScct( in.x);ap1_lin.y = lin_to_ACEScct( in.y);ap1_lin.z = lin_to_ACEScct( in.z);
+return ap1_lin;
+}
+
+__DEVICE__ float lin_to_ACEScc( float in) {
+if (in <= 0.0f)
+return -0.3584474886f;
+else if (in < _powf(2.0f, -15.0f))
+return (_log2f( _powf(2.0f, -16.0f) + in * 0.5f) + 9.72f) / 17.52f;
+else
+return (_log2f(in) + 9.72f) / 17.52f;
+}
+
+__DEVICE__ float3 lin_to_ACEScc_f3( float3 in) {
+float3 ap1_lin;
+ap1_lin.x = lin_to_ACEScc( in.x);ap1_lin.y = lin_to_ACEScc( in.y);ap1_lin.z = lin_to_ACEScc( in.z);
+return ap1_lin;
+}
+
+__DEVICE__ float bt1886_f( float V, float gamma, float Lw, float Lb) {
+float a = _powf( _powf( Lw, 1.0f/gamma) - _powf( Lb, 1.0f/gamma), gamma);
+float b = _powf( Lb, 1.0f/gamma) / ( _powf( Lw, 1.0f/gamma) - _powf( Lb, 1.0f/gamma));
+float L = a * _powf( _fmaxf( V + b, 0.0f), gamma);
+return L;
+}
+
+__DEVICE__ float3 bt1886_f_f3( float3 V, float gamma, float Lw, float Lb) {
+float3 L;
+L.x = bt1886_f( V.x, gamma, Lw, Lb);L.y = bt1886_f( V.y, gamma, Lw, Lb);L.z = bt1886_f( V.z, gamma, Lw, Lb);
+return L;
+}
+
+__DEVICE__ float bt1886_r( float L, float gamma, float Lw, float Lb) {
+float a = _powf( _powf( Lw, 1.0f/gamma) - _powf( Lb, 1.0f/gamma), gamma);
+float b = _powf( Lb, 1.0f/gamma) / ( _powf( Lw, 1.0f/gamma) - _powf( Lb, 1.0f/gamma));
+float V = _powf( _fmaxf( L / a, 0.0f), 1.0f/gamma) - b;
+return V;
+}
+
+__DEVICE__ float3 bt1886_r_f3( float3 L, float gamma, float Lw, float Lb) {
+float3 V;
+V.x = bt1886_r( L.x, gamma, Lw, Lb);V.y = bt1886_r( L.y, gamma, Lw, Lb);V.z = bt1886_r( L.z, gamma, Lw, Lb);
+return V;
+}
+
+__DEVICE__ float3 ACEScct_to_Rec709( float3 aces) {
+float3 rgb;
+aces = ACEScct_to_lin_f3(aces);
+rgb.x = aces.x * 1.70508f - aces.y * 0.624233f - aces.z * 0.080846f;
+rgb.y = aces.x * (-0.129701f) + aces.y * 1.138469f - aces.z * 0.008768f;
+rgb.z = aces.x * (-0.024166f) - aces.y * 0.124614 + aces.z * 1.148781f;
+rgb = bt1886_r_f3(rgb, 2.4f, 1.0f, 0.0f);
+return rgb;
+}
+
+__DEVICE__ float3 ACEScc_to_Rec709( float3 aces) {
+float3 rgb;
+aces = ACEScc_to_lin_f3(aces);
+rgb.x = aces.x * 1.70508f - aces.y * 0.624233f - aces.z * 0.080846f;
+rgb.y = aces.x * (-0.129701f) + aces.y * 1.138469f - aces.z * 0.008768f;
+rgb.z = aces.x * (-0.024166f) - aces.y * 0.124614 + aces.z * 1.148781f;
+rgb = bt1886_r_f3(rgb, 2.4f, 1.0f, 0.0f);
+return rgb;
+}
+
+__DEVICE__ float3 Rec709_to_ACEScct( float3 rgb) {
+float3 aces;
+rgb = bt1886_f_f3(rgb, 2.4f, 1.0f, 0.0f);
+aces.x = rgb.x * 0.613083f + rgb.y * 0.341167f + rgb.z * 0.04575f;
+aces.y = rgb.x * 0.070004f + rgb.y * 0.918063f + rgb.z * 0.011934f;
+aces.z = rgb.x * 0.020491f + rgb.y * 0.106764f + rgb.z * 0.872745f;
+aces = lin_to_ACEScct_f3(aces);
+return aces;
+}
+
+__DEVICE__ float3 Rec709_to_ACEScc( float3 rgb) {
+float3 aces;
+rgb = bt1886_f_f3(rgb, 2.4f, 1.0f, 0.0f);
+aces.x = rgb.x * 0.613083f + rgb.y * 0.341167f + rgb.z * 0.04575f;
+aces.y = rgb.x * 0.070004f + rgb.y * 0.918063f + rgb.z * 0.011934f;
+aces.z = rgb.x * 0.020491f + rgb.y * 0.106764f + rgb.z * 0.872745f;
+aces = lin_to_ACEScc_f3(aces);
+return aces;
+}
+
+__DEVICE__ float rgb_to_sat( float3 rgb) {
+float sat = 0.0f;
+float min = _fminf(_fminf(rgb.x, rgb.y), rgb.z);
+float max = _fmaxf(_fmaxf(rgb.x, rgb.y), rgb.z);
+float delta = max - min;
+if (max != 0.0f)
+sat = delta / max;
+return sat;
+}
+
+__DEVICE__ float3 Curve( float3 col, float p_Curve[3], float p_ShadP, float p_HighP, float p_ContP) {
+float tempA[3], tempB[3], COL[3];
+COL[0] = col.x; COL[1] = col.y; COL[2] = col.z;
+float expr1 = (p_ShadP / 2.0f) - (1.0f - p_HighP)/4.0f;
+float expr2 = (1.0f - (1.0f - p_HighP)/2.0f) + (p_ShadP / 4.0f);
+float expr3 =  p_ContP < 0.5f ? 0.5f - (0.5f - p_ContP)/2.0f : 0.5f + (p_ContP - 0.5f) / 2.0f;
+for( int c = 0; c < 3; ++c){
+if(p_Curve[c] != 0){
+tempA[c] = (COL[c] - expr1) / (expr2 - expr1);
+tempB[c] = tempA[c] > expr3 ? (tempA[c] - expr3) / (2.0f - 2.0f * expr3) + 0.5f : tempA[c] / (2.0f * expr3);
+tempA[c] = (((_sinf(2.0f * M_PI * (tempB[c] -1.0f / 4.0f)) + 1.0f) / 20.0f) * p_Curve[c] * 4.0f) + tempA[c];
+COL[c] = COL[c] >= expr1 && COL[c] <= expr2 ? tempA[c] * (expr2 - expr1) + expr1 : COL[c];
+}}
+return make_float3(COL[0], COL[1], COL[2]);
+}
+
+__DEVICE__ float Limiter(float val, float limiter) {
+float Alpha = limiter > 1.0f ? val + (1.0f - limiter) * (1.0f - val) : limiter >= 0.0f ? (val >= limiter ? 1.0f : 
+val / limiter) : limiter < -1.0f ? (1.0f - val) + (limiter + 1.0f) * val : val <= (1.0f + limiter) ? 1.0f : 
+(1.0 - val) / (1.0f - (limiter + 1.0f));
+Alpha = _clampf(Alpha, 0.0f, 1.0f);
+return Alpha;
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+float3 RGB = make_float3(p_R, p_G, p_B);
+float3 RGB1 = make_float3(X / width, X / width, X / width);
+RGB = ACESCCT ? ACEScct_to_Rec709(RGB) : ACEScc_to_Rec709(RGB);
+float3 Orig = RGB;
+float lumaIn = RGB.x * 0.2126f + RGB.y * 0.7152f + RGB.z * 0.0722f;
+float SAT = rgb_to_sat(RGB);
+//float COL[3] = {RGB.x, RGB.y, RGB.z};
+//float COL1[3] = {RGB1.x, RGB1.y, RGB1.z};
+float p_ShadP1 = 400.0f / 1023.0f;
+float p_HighP1 = 125.0f / 1023.0f;
+float p_ContP1 = 100.0f / 1023.0f;
+float p_ShadP2 = 400.0f / 1023.0f;
+float p_HighP2 = 500.0f / 1023.0f;
+float p_ContP2 = 445.0f / 1023.0f;
+float p_ShadP3 = 940.0f / 1023.0f;
+float p_HighP3 = 600.0f / 1023.0f;
+float p_ContP3 = 890.0f / 1023.0f;
+float p_Shad[3] = {ShadR, ShadG, ShadB};
+float p_Mid[3] = {MidR, MidG, MidB};
+float p_High[3] = {HighR, HighG, HighB};
+for( int c = 0; c < 3; ++c){
+p_Shad[c] *= 0.5f;p_Mid[c] *= 0.5f;p_High[c] *= 0.5f;
+}
+RGB = Curve( RGB, p_Shad, p_ShadP1, p_HighP1, p_ContP1);
+RGB = Curve( RGB, p_Mid, p_ShadP2, p_HighP2, p_ContP2);
+RGB = Curve( RGB, p_High, p_ShadP3, p_HighP3, p_ContP3);
+RGB1 = Curve( RGB1, p_Shad, p_ShadP1, p_HighP1, p_ContP1);
+RGB1 = Curve( RGB1, p_Mid, p_ShadP2, p_HighP2, p_ContP2);
+RGB1 = Curve( RGB1, p_High, p_ShadP3, p_HighP3, p_ContP3);
+//RGB = make_float3(COL[0], COL[1], COL[2]);
+//RGB1 = make_float3(COL1[0], COL1[1], COL1[2]);
+SAT = _powf(SAT, 0.5f);
+float alpha = Limiter(lumaIn, LUMM) * Limiter(SAT, SATT);
+RGB.x = RGB.x * alpha + Orig.x * (1.0f - alpha);
+RGB.y = RGB.y * alpha + Orig.y * (1.0f - alpha);
+RGB.z = RGB.z * alpha + Orig.z * (1.0f - alpha);
+if(PresLum){
+float lumaOut = RGB.x * 0.2126f + RGB.y * 0.7152f + RGB.z * 0.0722f;
+float lumaDiff = lumaIn / lumaOut;
+if(lumaIn > 0.0f && lumaOut > 0.0f)
+RGB = RGB * lumaDiff;
+}
+float3 Graph = make_float3(0.0f, 0.0f, 0.0f);
+float overlayR = RGB1.x >= (Y - 5)/(height) && RGB1.x <= (Y + 5)/(height) ? 1.0f : 0.0f;
+float overlayG = RGB1.y >= (Y - 5)/(height) && RGB1.y <= (Y + 5)/(height) ? 1.0f : 0.0f;
+float overlayB = RGB1.z >= (Y - 5)/(height) && RGB1.z <= (Y + 5)/(height) ? 1.0f : 0.0f;
+Graph = make_float3(overlayR, overlayG, overlayB);
+if(graph)
+RGB = RGB + Graph;
+if(ALPHA) RGB = make_float3(alpha, alpha, alpha);
+RGB = ACESCCT ? Rec709_to_ACEScct(RGB) : Rec709_to_ACEScc(RGB);
+return RGB;
+}
