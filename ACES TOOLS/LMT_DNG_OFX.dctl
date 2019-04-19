@@ -17,10 +17,6 @@ float3 c0, c1, c2;
 } mat3;
 
 typedef struct {
-float4 c0, c1, c2, c3;
-} mat4;
-
-typedef struct {
 float x; float y;
 } SplineMapPoint;
 
@@ -36,13 +32,12 @@ SplineMapPoint minPoint;SplineMapPoint midPoint;SplineMapPoint maxPoint;
 float slopeLow;float slopeHigh;
 } SegmentedSplineParams_c9;
 
-#define AP0_2_XYZ_MAT		RGBtoXYZ_m4( AP0, 1.0f)
-#define XYZ_2_AP0_MAT		XYZtoRGB_m4( AP0, 1.0f)
-#define AP1_2_XYZ_MAT		RGBtoXYZ_m4( AP1, 1.0f)
-#define XYZ_2_AP1_MAT		XYZtoRGB_m4( AP1, 1.0f)
-#define AP0_2_AP1_MAT		mult_f44_f44( AP0_2_XYZ_MAT, XYZ_2_AP1_MAT)
-#define AP1_2_AP0_MAT		mult_f44_f44( AP1_2_XYZ_MAT, XYZ_2_AP0_MAT)
-#define AP1_RGB2Y			make_float3( AP1_2_XYZ_MAT.c0.y, AP1_2_XYZ_MAT.c1.y, AP1_2_XYZ_MAT.c2.y)
+#define AP0_2_XYZ_MAT		RGBtoXYZ( AP0)
+#define XYZ_2_AP0_MAT		XYZtoRGB( AP0)
+#define AP1_2_XYZ_MAT		RGBtoXYZ( AP1)
+#define XYZ_2_AP1_MAT		XYZtoRGB( AP1)
+#define AP0_2_AP1_MAT		mult_f33_f33( AP0_2_XYZ_MAT, XYZ_2_AP1_MAT)
+#define AP1_2_AP0_MAT		mult_f33_f33( AP1_2_XYZ_MAT, XYZ_2_AP0_MAT)
 #define CINEMA_WHITE		48.0f
 #define CINEMA_BLACK		_powf(10.0f, _log10f(0.02f))
 
@@ -59,21 +54,6 @@ __CONSTANT__ mat3 bluefix = {{0.9404372683f, 0.0083786969f, 0.0005471261f},
 __DEVICE__ mat3 make_mat3( float3 A, float3 B, float3 C) {
 mat3 D; D.c0 = A; D.c1 = B; D.c2 = C;
 return D;
-}
-
-__DEVICE__ mat4 make_mat4( float4 A, float4 B, float4 C, float4 D) {
-mat4 E; E.c0 = A; E.c1 = B; E.c2 = C; E.c3 = D;
-return E;
-}
-
-__DEVICE__ float4 make_float4_f3_f( float3 A, float B) {
-return make_float4(A.x, A.y, A.z, B);
-}
-
-__DEVICE__ mat4 make_mat4_f33_f(mat3 A, float B) {
-mat4 C; C.c0 = make_float4_f3_f(A.c0, 0.0f); C.c1 = make_float4_f3_f(A.c1, 0.0f);
-C.c2 = make_float4_f3_f(A.c2, 0.0f); C.c3 = make_float4(0.0f, 0.0f, 0.0f, B);
-return C;
 }
 
 __DEVICE__ float3 max_f3_f( float3 rgb, float max)
@@ -114,24 +94,6 @@ make_float3(r[1][0], r[1][1], r[1][2]), make_float3(r[2][0], r[2][1], r[2][2]));
 return R;
 }
 
-__DEVICE__ float3 mult_f3_f44( float3 X, mat4 A) {
-float r[3];
-float x[3] = {X.x, X.y, X.z};
-float a[4][4] =	{{A.c0.x, A.c0.y, A.c0.z, A.c0.w},
-{A.c1.x, A.c1.y, A.c1.z, A.c1.w},
-{A.c2.x, A.c2.y, A.c2.z, A.c2.w},
-{A.c3.x, A.c3.y, A.c3.z, A.c3.w}};
-for( int i = 0; i < 3; ++i){
-r[i] = 0.0f;
-for( int j = 0; j < 3; ++j){
-r[i] = r[i] + x[j] * a[j][i];}
-r[i] = r[i] + a[3][i];}
-float s = 1.0f / (x[0] * a[0][3] + x[1] * a[1][3] + x[2] * a[2][3] + a[3][3]);
-for( int k = 0; k < 3; ++k){
-r[k] = r[k] * s;}
-return make_float3(r[0], r[1], r[2]);
-}
-
 __DEVICE__ mat3 mult_f_f33( float f, mat3 A) {
 float r[3][3];
 float a[3][3] =	{{A.c0.x, A.c0.y, A.c0.z}, {A.c1.x, A.c1.y, A.c1.z}, {A.c2.x, A.c2.y, A.c2.z}};
@@ -140,23 +102,6 @@ for( int j = 0; j < 3; ++j ){
 r[i][j] = f * a[i][j];}}
 mat3 R = make_mat3(make_float3(r[0][0], r[0][1], r[0][2]), 
 make_float3(r[1][0], r[1][1], r[1][2]), make_float3(r[2][0], r[2][1], r[2][2]));
-return R;
-}
-
-__DEVICE__ mat4 mult_f44_f44(mat4 A, mat4 B) {
-float r[4][4];
-float a[4][4] = {{A.c0.x, A.c0.y, A.c0.z, A.c0.w},{A.c1.x, A.c1.y, A.c1.z, A.c1.w},
-{A.c2.x, A.c2.y, A.c2.z, A.c2.w},{A.c3.x, A.c3.y, A.c3.z, A.c3.w}};
-float b[4][4] =	{{B.c0.x, B.c0.y, B.c0.z, B.c0.w},{B.c1.x, B.c1.y, B.c1.z, B.c1.w},
-{B.c2.x, B.c2.y, B.c2.z, B.c2.w},{B.c3.x, B.c3.y, B.c3.z, B.c3.w}};
-for( int i = 0; i < 4; ++i){
-for( int j = 0; j < 4; ++j){
-r[i][j] = 0.0f;
-for( int k = 0; k < 4; ++k){
-r[i][j] = r[i][j] + a[i][k] * b[k][j];}}}
-mat4 R = make_mat4(make_float4(r[0][0], r[0][1], r[0][2], r[0][3]), 
-make_float4(r[1][0], r[1][1], r[1][2], r[1][3]), make_float4(r[2][0], r[2][1], r[2][2], r[2][3]),
-make_float4(r[3][0], r[3][1], r[3][2], r[3][3]));
 return R;
 }
 
@@ -212,25 +157,12 @@ M = mult_f33_f33(WH, M);
 return M;
 }
 
-__DEVICE__ mat4 RGBtoXYZ_m4( Chromaticities N, float W) {
-mat3 A = RGBtoXYZ(N);
-mat4 M = make_mat4_f33_f(A, W);
-return M;
-}
-
 __DEVICE__ mat3 XYZtoRGB( Chromaticities N) {
 mat3 M = invert_f33(RGBtoXYZ(N));
 return M;
 }
 
-__DEVICE__ mat4 XYZtoRGB_m4( Chromaticities N, float W) {
-mat3 A = XYZtoRGB(N);
-mat4 M = make_mat4_f33_f(A, W);
-return M;
-}
-
-__DEVICE__ float lin_to_ACEScc( float in)
-{
+__DEVICE__ float lin_to_ACEScc( float in) {
 if (in <= 0.0f)
 return -0.3584474886f;
 else if (in < _powf(2.0f, -15.0f))
@@ -239,60 +171,53 @@ else
 return (_log2f(in) + 9.72f) / 17.52f;
 }
 
-__DEVICE__ float3 ACES_to_ACEScc( float3 ACES)
-{
+__DEVICE__ float3 ACES_to_ACEScc( float3 ACES) {
 ACES = max_f3_f( ACES, 0.0f);
-float3 lin_AP1 = mult_f3_f44( ACES, AP0_2_AP1_MAT);
+float3 lin_AP1 = mult_f3_f33( ACES, AP0_2_AP1_MAT);
 float3 out;
 out.x = lin_to_ACEScc(lin_AP1.x);out.y = lin_to_ACEScc(lin_AP1.y);out.z = lin_to_ACEScc(lin_AP1.z);
 return out;
 }
 
-__DEVICE__ float ACEScc_to_lin( float in)
-{
+__DEVICE__ float ACEScc_to_lin( float in) {
 if (in < -0.3013698630f)
 return (_powf( 2.0f, in * 17.52f - 9.72f) - _powf( 2.0f, -16.0f)) * 2.0f;
 else
 return _powf( 2.0f, in * 17.52f - 9.72f);
 }
 
-__DEVICE__ float3 ACEScc_to_ACES( float3 ACEScc)
-{
+__DEVICE__ float3 ACEScc_to_ACES( float3 ACEScc) {
 float3 lin_AP1;
 lin_AP1.x = ACEScc_to_lin(ACEScc.x);lin_AP1.y = ACEScc_to_lin(ACEScc.y);lin_AP1.z = ACEScc_to_lin(ACEScc.z);
-float3 ACES = mult_f3_f44(lin_AP1, AP1_2_AP0_MAT);
+float3 ACES = mult_f3_f33(lin_AP1, AP1_2_AP0_MAT);
 return ACES;  
 }
 
-__DEVICE__ float lin_to_ACEScct( float in)
-{
+__DEVICE__ float lin_to_ACEScct( float in) {
 if (in <= X_BRK)
 return A * in + B;
 else
 return (_log2f(in) + 9.72f) / 17.52f;
 }
 
-__DEVICE__ float ACEScct_to_lin( float in)
-{
+__DEVICE__ float ACEScct_to_lin( float in) {
 if (in > Y_BRK)
 return _powf( 2.0f, in * 17.52f - 9.72f);
 else
 return (in - B) / A;
 }
 
-__DEVICE__ float3 ACES_to_ACEScct( float3 in)
-{
-float3 ap1_lin = mult_f3_f44(in, AP0_2_AP1_MAT);
+__DEVICE__ float3 ACES_to_ACEScct( float3 in) {
+float3 ap1_lin = mult_f3_f33(in, AP0_2_AP1_MAT);
 float3 acescct;
 acescct.x = lin_to_ACEScct(ap1_lin.x);acescct.y = lin_to_ACEScct(ap1_lin.y);acescct.z = lin_to_ACEScct(ap1_lin.z);
 return acescct;
 }
 
-__DEVICE__ float3 ACEScct_to_ACES( float3 in)
-{
+__DEVICE__ float3 ACEScct_to_ACES( float3 in) {
 float3 ap1_lin;
 ap1_lin.x = ACEScct_to_lin( in.x);ap1_lin.y = ACEScct_to_lin( in.y);ap1_lin.z = ACEScct_to_lin( in.z);
-return mult_f3_f44( ap1_lin, AP1_2_AP0_MAT);
+return mult_f3_f33( ap1_lin, AP1_2_AP0_MAT);
 }
 
 __DEVICE__ float3 XYZ_2_xyY( float3 XYZ) {  
@@ -477,8 +402,7 @@ rgb.x = segmented_spline_c9_rev( rgb.x);rgb.y = segmented_spline_c9_rev( rgb.y);
 return rgb;
 }
 
-__DEVICE__ float3 softclip(float3 rgb, float soft)
-{
+__DEVICE__ float3 softclip(float3 rgb, float soft) {
 float scale = 11.0f - soft * 10.0f;
 float SOFTMIN = (1.0f - soft) * scale;
 float SOFTMAX = scale;
@@ -494,11 +418,11 @@ SCALE += 1.0f;
 float3 aces = make_float3(p_R, p_G, p_B);
 aces = ACESCCT ? ACEScct_to_ACES(aces) : ACEScc_to_ACES(aces);
 if(BLUEFIX) aces = mult_f3_f33(aces, bluefix);
-float3 acesB = mult_f3_f44( aces, AP0_2_AP1_MAT);
+float3 acesB = mult_f3_f33( aces, AP0_2_AP1_MAT);
 acesB = linCV_2_Y_f3( acesB, CINEMA_WHITE, CINEMA_BLACK);
 acesB = segmented_spline_c9_rev_f3( acesB);
 acesB = segmented_spline_c5_rev_f3( acesB);
-acesB = mult_f3_f44( acesB, AP1_2_AP0_MAT);
+acesB = mult_f3_f33( acesB, AP1_2_AP0_MAT);
 aces = acesB * SCALE + aces * _fmaxf(1.0f - SCALE, 0.0f);
 aces = max_f3_f(aces, 0.0f);
 if(SOFTCLIP != 0.0f) aces = softclip(aces, SOFTCLIP);
