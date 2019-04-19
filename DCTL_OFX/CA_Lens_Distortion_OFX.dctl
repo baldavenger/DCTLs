@@ -1,0 +1,66 @@
+// Lens Distortion Chromatic Aberration OFX DCTL
+
+DEFINE_UI_PARAMS(DISTORTION, Lens Distortion, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(CUBIC, Cubic Distortion, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(SCALE, Image Scale, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(RADJUST, CA Red Adjust, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(GADJUST, CA Green Adjust, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(BADJUST, CA Blue Adjust, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+
+__DEVICE__ float dot_f2_f2( float2 A, float2 B) {
+return A.x * B.x + A.y * B.y;
+}
+
+__DEVICE__ float dot_f3_f3( float3 A, float3 B) {
+return A.x * B.x + A.y * B.y + A.z * B.z;
+}
+
+__DEVICE__ float3 lerp_f3_f3_f( float3 v0, float3 v1, float t) {
+float3 rgb;
+rgb.x = (1.0f - t) * v0.x + t * v1.x;
+rgb.y = (1.0f - t) * v0.y + t * v1.y;
+rgb.z = (1.0f - t) * v0.z + t * v1.z;
+return rgb;
+}
+
+__DEVICE__ bool illegal( float2 uv) {
+return (uv.x < 0.0f) || (uv.y < 0.0f) || (uv.x > 1.0f) || (uv.y > 1.0f);
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+float _OutputAspectRatio = width / height;
+float2 uv = make_float2(X / width, Y / height);;
+uv.x = (uv.x - 0.5f) * 2.0f;
+uv.y = (uv.y - 0.5f) * 2.0f;
+SCALE = SCALE * 0.1f + 1.0f;
+float scaleFactor = 1.0f / SCALE;
+CUBIC *= -0.1f;
+DISTORTION *= -0.1f;
+float r2 = dot_f2_f2(uv, make_float2(_OutputAspectRatio * _OutputAspectRatio * uv.x, uv.y));
+float f = CUBIC == 0.0f ? 1.0f + (r2 * DISTORTION) : 1.0f + (r2 * (DISTORTION + CUBIC * _sqrtf(r2)));
+uv.x = (uv.x * f * scaleFactor * 0.5f) + 0.5f;
+uv.y = (uv.y * f * scaleFactor * 0.5f) + 0.5f;
+float2 xy = uv;
+float rad = ((RADJUST * 2.0f + 4.0f) / 100.0f) + 0.96f;
+float gad = ((GADJUST * 2.0f + 4.0f) / 100.0f) + 0.96f;
+float bad = ((BADJUST * 2.0f + 4.0f) / 100.0f) + 0.96f;
+int rX = (int)((((xy.x - 0.5f) / (rad * _OutputAspectRatio / _OutputAspectRatio) ) + 0.5f) * width);
+int rY = (int)((((xy.y - 0.5f) / rad) + 0.5f) * height);
+int gX = (int)((((xy.x - 0.5f) / (gad * _OutputAspectRatio / _OutputAspectRatio) ) + 0.5f) * width);
+int gY = (int)((((xy.y - 0.5f) / gad) + 0.5f) * height);
+int bX = (int)((((xy.x - 0.5f) / (bad * _OutputAspectRatio / _OutputAspectRatio) ) + 0.5f) * width);
+int bY = (int)((((xy.y - 0.5f) / bad) + 0.5f) * height);
+float3 RGB;
+RGB.x = _tex2D(p_TexR, rX, rY);
+RGB.y = _tex2D(p_TexG, gX, gY);
+RGB.z = _tex2D(p_TexB, bX, bY);
+if(illegal(uv))
+RGB = make_float3(0.0f, 0.0f, 0.0f);
+
+return RGB;
+}
