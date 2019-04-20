@@ -84,7 +84,7 @@ __DEVICE__ Chromaticities make_chromaticities(float2 A, float2 B, float2 C, floa
 __DEVICE__ mat3 make_mat3(float3 A, float3 B, float3 C);
 __DEVICE__ float fract_f(float A);
 __DEVICE__ float2 add_f2_f(float2 A, float B);
-__DEVICE__ float dot_f2_f(float2 A, float2 B);
+__DEVICE__ float dot_f2_f2(float2 A, float2 B);
 __DEVICE__ float3 overlay_f3(float3 a, float3 b);
 __DEVICE__ float3 scale_C(float3 rgb, float percentC);
 __DEVICE__ float3 rotate_H_in_H(float3 rgb, float centerH, float widthH, float degreesShift);
@@ -147,7 +147,7 @@ C.y = A.y + B;
 return C;
 }
 
-__DEVICE__ float dot_f2_f( float2 A, float2 B) {
+__DEVICE__ float dot_f2_f2( float2 A, float2 B) {
 float C = A.x * B.x + A.y * B.y;
 return C;
 }
@@ -526,7 +526,7 @@ return out;
 }
 
 __DEVICE__ float nrand( float2 n) {
-return fract_f( _sinf( dot_f2_f( n, make_float2(12.9898f, 78.233f) ) ) * 43758.5453f);
+return fract_f( _sinf( dot_f2_f2( n, make_float2(12.9898f, 78.233f) ) ) * 43758.5453f);
 }
 
 __DEVICE__ float Noise( float input, float2 uv, int size, float intensity) {

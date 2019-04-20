@@ -79,11 +79,6 @@ C.y = A.y + B;
 return C;
 }
 
-__DEVICE__ float dot_f2_f( float2 A, float2 B) {
-float C = A.x * B.x + A.y * B.y;
-return C;
-}
-
 __DEVICE__ float3 clamp_f3( float3 in, float Min, float Max) {
 float3 out;
 out.x = _clampf(in.x, Min, Max);
