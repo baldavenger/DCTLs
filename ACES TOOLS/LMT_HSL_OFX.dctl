@@ -1,0 +1,274 @@
+// LMT HSL Adjustments OFX DCTL
+
+// Input is ACEScct
+// Output is ACEScct
+
+DEFINE_UI_PARAMS(REDHUE, Red Hue, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(REDSAT, Red Sat, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(REDLUMA, Red Luma, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(YELLOWHUE, Yellow Hue, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(YELLOWSAT, Yellow Sat, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(YELLOWLUMA, Yellow Luma, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(GREENHUE, Green Hue, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(GREENSAT, Green Sat, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(GREENLUMA, Green Luma, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(CYANHUE, Cyan Hue, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(CYANSAT, Cyan Sat, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(CYANLUMA, Cyan Luma, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(BLUEHUE, Blue Hue, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(BLUESAT, Blue Sat, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(BLUELUMA, Blue Luma, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(MAGENTAHUE, Magenta Hue, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(MAGENTASAT, Magenta Sat, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(MAGENTALUMA, Magenta Luma, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(ACESCCT, ACEScct, DCTLUI_CHECK_BOX, 1)
+
+typedef struct {
+float3 c0, c1, c2;
+} mat3;
+
+__CONSTANT__ float pie = 3.14159265358979323f;
+__CONSTANT__ mat3 RGB_2_YAB_MAT = {{0.333333f, 0.5f, 0.0f}, 
+{0.333333f, -0.25f, 0.433013f}, {0.333333f, -0.25f, -0.433013f}};
+__CONSTANT__ mat3 YAB_2_RGB_MAT = {{1.0f, 1.0f, 1.0f}, 
+{1.333333f, -0.666666f, -0.666666f}, {0.0f, 1.154701f, -1.154701f}};
+__CONSTANT__ mat3 AP0_2_AP1_MAT = {{1.4514393161f, -0.0765537734f, 0.0083161484f}, 
+{-0.2365107469f, 1.1762296998f, -0.0060324498f}, {-0.2149285693f, -0.0996759264f, 0.9977163014f}};
+__CONSTANT__ mat3 AP1_2_AP0_MAT = {{0.6954522414f, 0.0447945634f, -0.0055258826f}, 
+{0.1406786965f, 0.8596711185f, 0.0040252103f}, {0.1638690622f, 0.0955343182f, 1.0015006723f}};
+
+__DEVICE__ float3 max_f3_f(float3 in, float Max);
+__DEVICE__ float3 mult_f3_f33(float3 X, mat3 A);
+__DEVICE__ float ACEScc_to_lin(float in);
+__DEVICE__ float lin_to_ACEScc(float in);
+__DEVICE__ float ACEScct_to_lin(float in);
+__DEVICE__ float lin_to_ACEScct(float in);
+__DEVICE__ float3 ACEScc_to_ACES(float3 ACEScc);
+__DEVICE__ float3 ACES_to_ACEScc(float3 ACES);
+__DEVICE__ float3 ACEScct_to_ACES(float3 in);
+__DEVICE__ float3 ACES_to_ACEScct(float3 in);
+__DEVICE__ float3 ych_2_rgb(float3 ych);
+__DEVICE__ float3 rgb_2_ych(float3 rgb);
+__DEVICE__ float3 ych_2_yab(float3 ych);
+__DEVICE__ float3 yab_2_ych(float3 yab);
+__DEVICE__ float3 yab_2_rgb(float3 yab);
+__DEVICE__ float3 rgb_2_yab(float3 rgb);
+__DEVICE__ float center_hue(float hue, float centerH);
+__DEVICE__ float uncenter_hue(float hueCentered, float centerH);
+__DEVICE__ float cubic_basis_shaper(float x, float w);
+__DEVICE__ float interpolate1D(float2 table[], int Size, float p);
+__DEVICE__ float3 HSL(float3 ych, float centerH, float widthH, float hueShift, float satShift, float lumShift);
+
+__DEVICE__ float3 max_f3_f( float3 in, float Max) {
+float3 out;
+out.x = _fmaxf(in.x, Max); out.y = _fmaxf(in.y, Max); out.z = _fmaxf(in.z, Max);
+return out;
+}
+
+__DEVICE__ mat3 make_mat3( float3 A, float3 B, float3 C) {
+mat3 D;
+D.c0 = A; D.c1 = B; D.c2 = C;
+return D;
+}
+
+__DEVICE__ float3 mult_f3_f33( float3 X, mat3 A) {
+float r[3];
+float x[3] = {X.x, X.y, X.z};
+float a[3][3] =	{{A.c0.x, A.c0.y, A.c0.z}, {A.c1.x, A.c1.y, A.c1.z}, {A.c2.x, A.c2.y, A.c2.z}};
+for( int i = 0; i < 3; ++i){
+r[i] = 0.0f;
+for( int j = 0; j < 3; ++j){
+r[i] = r[i] + x[j] * a[j][i];
+}}
+return make_float3(r[0], r[1], r[2]);
+}
+
+__DEVICE__ float ACEScc_to_lin( float in) {
+if (in < -0.3013698630f)
+return (_powf( 2.0f, in * 17.52f - 9.72f) - _powf( 2.0f, -16.0f)) * 2.0f;
+else
+return _powf( 2.0f, in * 17.52f - 9.72f);
+}
+
+__DEVICE__ float lin_to_ACEScc( float in) {
+if (in <= 0.0f)
+return -0.3584474886f;
+else if (in < _powf(2.0f, -15.0f))
+return (_log2f( _powf(2.0f, -16.0f) + in * 0.5f) + 9.72f) / 17.52f;
+else
+return (_log2f(in) + 9.72f) / 17.52f;
+}
+
+__DEVICE__ float3 ACEScc_to_ACES( float3 ACEScc) {
+float3 lin_AP1;
+lin_AP1.x = ACEScc_to_lin(ACEScc.x); lin_AP1.y = ACEScc_to_lin(ACEScc.y); lin_AP1.z = ACEScc_to_lin(ACEScc.z);
+float3 ACES = mult_f3_f33(lin_AP1, AP1_2_AP0_MAT);
+return ACES;  
+}
+
+__DEVICE__ float3 ACES_to_ACEScc( float3 ACES) {
+ACES = max_f3_f( ACES, 0.0f);
+float3 lin_AP1 = mult_f3_f33( ACES, AP0_2_AP1_MAT);
+float3 out;
+out.x = lin_to_ACEScc(lin_AP1.x);out.y = lin_to_ACEScc(lin_AP1.y);out.z = lin_to_ACEScc(lin_AP1.z);
+return out;
+}
+
+__DEVICE__ float ACEScct_to_lin( float in) {
+float Y_BRK = 0.155251141552511f;
+float A = 10.5402377416545f;
+float B = 0.0729055341958355f;
+if (in > Y_BRK)
+return _powf( 2.0f, in * 17.52f - 9.72f);
+else
+return (in - B) / A;
+}
+
+__DEVICE__ float lin_to_ACEScct( float in) {
+float X_BRK = 0.0078125f;
+float A = 10.5402377416545f;
+float B = 0.0729055341958355f;
+if (in <= X_BRK)
+return A * in + B;
+else
+return (_log2f(in) + 9.72f) / 17.52f;
+}
+
+__DEVICE__ float3 ACEScct_to_ACES( float3 in) {
+float3 ap1_lin;
+ap1_lin.x = ACEScct_to_lin( in.x); ap1_lin.y = ACEScct_to_lin( in.y); ap1_lin.z = ACEScct_to_lin( in.z);
+return mult_f3_f33( ap1_lin, AP1_2_AP0_MAT);
+}
+
+__DEVICE__ float3 ACES_to_ACEScct( float3 in) {
+float3 ap1_lin = mult_f3_f33(in, AP0_2_AP1_MAT);
+float3 acescct;
+acescct.x = lin_to_ACEScct(ap1_lin.x); acescct.y = lin_to_ACEScct(ap1_lin.y); acescct.z = lin_to_ACEScct(ap1_lin.z);
+return acescct;
+}
+
+__DEVICE__ float3 rgb_2_yab( float3 rgb) {
+float3 yab = mult_f3_f33( rgb, RGB_2_YAB_MAT);
+return yab;
+}
+
+__DEVICE__ float3 yab_2_rgb( float3 yab) {
+float3 rgb = mult_f3_f33( yab, YAB_2_RGB_MAT);
+return rgb;
+}
+
+__DEVICE__ float3 yab_2_ych( float3 yab) {
+float3 ych = yab;
+float yo = yab.y * yab.y + yab.z * yab.z;
+ych.y = _sqrtf(yo);
+ych.z = _atan2f(yab.z, yab.y) * (180.0f / pie);
+if (ych.z < 0.0f) ych.z += 360.0f;
+return ych;
+}
+
+__DEVICE__ float3 ych_2_yab( float3 ych ) {
+float3 yab;
+yab.x = ych.x;
+float h = ych.z * (pie / 180.0f);
+yab.y = ych.y * _cosf(h);
+yab.z = ych.y * _sinf(h);
+return yab;
+}
+
+__DEVICE__ float3 rgb_2_ych( float3 rgb) {
+return yab_2_ych(rgb_2_yab(rgb));
+}
+
+__DEVICE__ float3 ych_2_rgb( float3 ych) {
+return yab_2_rgb(ych_2_yab(ych));
+}
+
+__DEVICE__ float center_hue( float hue, float centerH) {
+float hueCentered = hue - centerH;
+if (hueCentered < -180.0f) hueCentered = hueCentered + 360.0f;
+else if (hueCentered > 180.0f) hueCentered = hueCentered - 360.0f;
+return hueCentered;
+}
+
+__DEVICE__ float uncenter_hue( float hueCentered, float centerH) {
+float hue = hueCentered + centerH;
+if (hue < 0.0f) hue = hue + 360.0f;
+else if (hue > 360.0f) hue = hue - 360.0f;
+return hue;
+}
+
+__DEVICE__ float cubic_basis_shaper( float x, float w) {
+float M[4][4] = { {-1.0f/6.0f, 3.0f/6.0f, -3.0f/6.0f, 1.0f/6.0f}, {3.0f/6.0f, -1.0f, 3.0f/6.0f, 0.0f},
+{-3.0f/6.0f, 0.0f, 3.0f/6.0f, 0.0f}, {1.0f/6.0f, 4.0f/6.0f, 1.0f/6.0f, 0.0f} };
+float knots[5] = {-w/2.0f, -w/4.0f, 0.0f, w/4.0f, w/2.0f};
+float y = 0.0f;
+if ((x > knots[0]) && (x < knots[4])) {  
+float knot_coord = (x - knots[0]) * 4.0f/w;  
+int j = knot_coord;
+float t = knot_coord - j;
+float monomials[4] = { t * t * t, t * t, t, 1.0f };
+if ( j == 3) {
+y = monomials[0] * M[0][0] + monomials[1] * M[1][0] + monomials[2] * M[2][0] + monomials[3] * M[3][0];
+} else if ( j == 2) {
+y = monomials[0] * M[0][1] + monomials[1] * M[1][1] + monomials[2] * M[2][1] + monomials[3] * M[3][1];
+} else if ( j == 1) {
+y = monomials[0] * M[0][2] + monomials[1] * M[1][2] + monomials[2] * M[2][2] + monomials[3] * M[3][2];
+} else if ( j == 0) {
+y = monomials[0] * M[0][3] + monomials[1] * M[1][3] + monomials[2] * M[2][3] + monomials[3] * M[3][3];
+} else {
+y = 0.0f;
+}}
+return y * 3.0f/2.0f;
+}
+
+__DEVICE__ float interpolate1D (float2 table[], int Size, float p) {
+if( p <= table[0].x ) return table[0].y;
+if( p >= table[Size-1].x ) return table[Size-1].y;
+for( int i = 0; i < Size - 1; ++i ){
+if( table[i].x <= p && p < table[i+1].x ){
+float s = (p - table[i].x) / (table[i+1].x - table[i].x);
+return table[i].y * ( 1 - s ) + table[i+1].y * s;
+}}
+return 0.0f;
+}
+
+__DEVICE__ float3 HSL( float3 ych, float centerH, float widthH, float hueShift, float satShift, float lumShift) {
+if(ych.y < 0.02f) return ych;
+float3 new_ych = ych;
+float centeredHue = center_hue( ych.z, centerH);
+float f_H = cubic_basis_shaper( centeredHue, widthH);
+float old_hue = centeredHue;
+float new_hue = centeredHue + hueShift * 45.0f;
+float2 table[2] = { {0.0f, old_hue}, {1.0f, new_hue} };
+float blended_hue = interpolate1D( table, 2, f_H);
+if (f_H > 0.0f){
+new_ych.z = uncenter_hue( blended_hue, centerH);
+satShift = satShift * 0.5f + 1.0f;
+new_ych.y = ych.y * satShift;
+lumShift = lumShift * 0.1f + 1.0f;
+new_ych.x = _powf(ych.x, 1.0f/lumShift);
+}
+return new_ych;
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float3 aces = make_float3(p_R, p_G, p_B);
+bool ON = REDHUE != 0.0f || REDSAT != 0.0f || REDLUMA != 0.0f || YELLOWHUE != 0.0f || YELLOWSAT != 0.0f || YELLOWLUMA != 0.0f || 
+GREENHUE != 0.0f || GREENSAT != 0.0f || GREENLUMA != 0.0f || CYANHUE != 0.0f || CYANSAT != 0.0f || CYANLUMA != 0.0f || 
+BLUEHUE != 0.0f || BLUESAT != 0.0f || BLUELUMA != 0.0f || MAGENTAHUE != 0.0f || MAGENTASAT != 0.0f || MAGENTALUMA != 0.0f;
+if(ON){
+aces = ACESCCT ? ACEScct_to_ACES(aces) : ACEScc_to_ACES(aces);
+aces = max_f3_f(aces, 0.0f);
+float3 ych = rgb_2_ych(aces);
+if(REDHUE != 0.0f || REDSAT != 0.0f || REDLUMA != 0.0f) ych = HSL(ych, 0.0f, 90.0f, REDHUE, REDSAT, REDLUMA);
+if(YELLOWHUE != 0.0f || YELLOWSAT != 0.0f || YELLOWLUMA != 0.0f) ych = HSL(ych, 90.0f, 60.0f, YELLOWHUE, YELLOWSAT, YELLOWLUMA);
+if(GREENHUE != 0.0f || GREENSAT != 0.0f || GREENLUMA != 0.0f) ych = HSL(ych, 120.0f, 90.0f, GREENHUE, GREENSAT, GREENLUMA);
+if(CYANHUE != 0.0f || CYANSAT != 0.0f || CYANLUMA != 0.0f) ych = HSL(ych, 180.0f, 90.0f, CYANHUE, CYANSAT, CYANLUMA);
+if(BLUEHUE != 0.0f || BLUESAT != 0.0f || BLUELUMA != 0.0f) ych = HSL(ych, 240.0f, 90.0f, BLUEHUE, BLUESAT, BLUELUMA);
+if(MAGENTAHUE != 0.0f || MAGENTASAT != 0.0f || MAGENTALUMA != 0.0f) ych = HSL(ych, 300.0f, 90.0f, MAGENTAHUE, MAGENTASAT, MAGENTALUMA);
+aces = ych_2_rgb(ych);
+aces = ACESCCT ? ACES_to_ACEScct(aces) : ACES_to_ACEScc(aces);
+}
+return aces;
+}
