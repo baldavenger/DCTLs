@@ -21,6 +21,7 @@ DEFINE_UI_PARAMS(BLUELUMA, Blue Luma, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
 DEFINE_UI_PARAMS(MAGENTAHUE, Magenta Hue, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
 DEFINE_UI_PARAMS(MAGENTASAT, Magenta Sat, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
 DEFINE_UI_PARAMS(MAGENTALUMA, Magenta Luma, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(CHART, Display Hue Chart, DCTLUI_CHECK_BOX, 0)
 DEFINE_UI_PARAMS(ACESCCT, ACEScct, DCTLUI_CHECK_BOX, 1)
 
 typedef struct {
@@ -58,6 +59,10 @@ __DEVICE__ float uncenter_hue(float hueCentered, float centerH);
 __DEVICE__ float cubic_basis_shaper(float x, float w);
 __DEVICE__ float interpolate1D(float2 table[], int Size, float p);
 __DEVICE__ float3 HSL(float3 ych, float centerH, float widthH, float hueShift, float satShift, float lumShift);
+__DEVICE__ float3 HSV_to_RGB(float H, float S, float V);
+__DEVICE__ float3 Hue_Chart(int width, int height, int X, int Y);
+__DEVICE__ float bt1886_f(float V, float gamma, float Lw, float Lb);
+__DEVICE__ float3 Rec709_to_ACEScct(float3 rgb);
 
 __DEVICE__ float3 max_f3_f( float3 in, float Max) {
 float3 out;
@@ -251,13 +256,66 @@ new_ych.x = _powf(ych.x, 1.0f/lumShift);
 return new_ych;
 }
 
+__DEVICE__ float3 HSV_to_RGB(float H, float S, float V) {
+float r, g, b;
+if (S == 0.0f){
+r = g = b = V;
+} else {
+H *= 6.0f;
+int i = _floor(H);
+float f = H - i;
+i = (i >= 0) ? (i % 6) : (i % 6) + 6;
+float p = V * (1.0f - S);
+float q = V * (1.0f - S * f);
+float t = V * (1.0f - S * (1.0f - f));
+r = i == 0 ? V : i == 1 ? q : i == 2 ? p : i == 3 ? p : i == 4 ? t : V;
+g = i == 0 ? t : i == 1 ? V : i == 2 ? V : i == 3 ? q : i == 4 ? p : p;
+b = i == 0 ? p : i == 1 ? p : i == 2 ? t : i == 3 ? V : i == 4 ? V : q;}
+return make_float3(r, g, b);
+}
+
+__DEVICE__ float3 Hue_Chart( int width, int height, int X, int Y) {
+float H, S, V;
+H = (float)X / (width - 1.0f);
+S = (float)Y / (height - 1.0f);
+S = _powf(S, 0.3f);
+V = 0.8f;
+float3 rgb = HSV_to_RGB(H, S, V);
+return rgb;
+}
+
+__DEVICE__ float bt1886_f( float V, float gamma, float Lw, float Lb) {
+float a = _powf( _powf( Lw, 1.0f/gamma) - _powf( Lb, 1.0f/gamma), gamma);
+float b = _powf( Lb, 1.0f/gamma) / ( _powf( Lw, 1.0f/gamma) - _powf( Lb, 1.0f/gamma));
+float L = a * _powf( _fmaxf( V + b, 0.0f), gamma);
+return L;
+}
+
+__DEVICE__ float3 Rec709_to_ACEScct( float3 rgb) {
+float3 aces;
+rgb.x = bt1886_f(rgb.x, 2.4f, 1.0f, 0.0f);
+rgb.y = bt1886_f(rgb.y, 2.4f, 1.0f, 0.0f);
+rgb.z = bt1886_f(rgb.z, 2.4f, 1.0f, 0.0f);
+aces.x = rgb.x * 0.613083f + rgb.y * 0.341167f + rgb.z * 0.04575f;
+aces.y = rgb.x * 0.070004f + rgb.y * 0.918063f + rgb.z * 0.011934f;
+aces.z = rgb.x * 0.020491f + rgb.y * 0.106764f + rgb.z * 0.872745f;
+aces.x = lin_to_ACEScct(aces.x);
+aces.y = lin_to_ACEScct(aces.y);
+aces.z = lin_to_ACEScct(aces.z);
+return aces;
+}
+
 __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
 {
 float3 aces = make_float3(p_R, p_G, p_B);
 bool ON = REDHUE != 0.0f || REDSAT != 0.0f || REDLUMA != 0.0f || YELLOWHUE != 0.0f || YELLOWSAT != 0.0f || YELLOWLUMA != 0.0f || 
 GREENHUE != 0.0f || GREENSAT != 0.0f || GREENLUMA != 0.0f || CYANHUE != 0.0f || CYANSAT != 0.0f || CYANLUMA != 0.0f || 
-BLUEHUE != 0.0f || BLUESAT != 0.0f || BLUELUMA != 0.0f || MAGENTAHUE != 0.0f || MAGENTASAT != 0.0f || MAGENTALUMA != 0.0f;
+BLUEHUE != 0.0f || BLUESAT != 0.0f || BLUELUMA != 0.0f || MAGENTAHUE != 0.0f || MAGENTASAT != 0.0f || MAGENTALUMA != 0.0f || CHART;
 if(ON){
+if(CHART){
+aces = Hue_Chart(p_Width, p_Height, p_X, p_Y);
+aces = Rec709_to_ACEScct(aces);
+}
 aces = ACESCCT ? ACEScct_to_ACES(aces) : ACEScc_to_ACES(aces);
 aces = max_f3_f(aces, 0.0f);
 float3 ych = rgb_2_ych(aces);

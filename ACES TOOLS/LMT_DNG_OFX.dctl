@@ -10,7 +10,7 @@ DEFINE_UI_PARAMS(DISTORTION, Lens Distortion, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.0
 DEFINE_UI_PARAMS(ZOOM, Zoom, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
 DEFINE_UI_PARAMS(HORIZONTAL, Pan, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
 DEFINE_UI_PARAMS(VERTICAL, Tilt, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
-DEFINE_UI_PARAMS(THRESH, Blanking Threshold, DCTLUI_SLIDER_FLOAT, 0.02, 0, 1, 0.01)
+DEFINE_UI_PARAMS(THRESH, Blanking Threshold, DCTLUI_SLIDER_FLOAT, 0.25, 0, 1, 0.01)
 DEFINE_UI_PARAMS(ACESCCT, ACEScct, DCTLUI_CHECK_BOX, 1)
 DEFINE_UI_PARAMS(BLUEFIX, Blue Fix, DCTLUI_CHECK_BOX, 0)
 DEFINE_UI_PARAMS(BLANKING, Blanking Warning, DCTLUI_CHECK_BOX, 0)
@@ -418,7 +418,7 @@ uv.y *= f;
 if(HORIZONTAL != 0.0f)
 uv.x -= HORIZONTAL * 0.2f;
 if(VERTICAL != 0.0f)
-uv.y += VERTICAL * 0.2f;
+uv.y += VERTICAL * 0.4f;
 if(ZOOM != 0.0f){
 uv.x *= scaleFactor;
 uv.y *= scaleFactor;
@@ -432,15 +432,14 @@ RGB.x = _tex2D(p_TexR, uvX, uvY);
 RGB.y = _tex2D(p_TexG, uvX, uvY);
 RGB.z = _tex2D(p_TexB, uvX, uvY);
 }
-
+if(illegal(uv))
+RGB = make_float3(0.0f, 0.0f, 0.0f);
+float3 aces = RGB;
 if(BLUR != 0.0f){
 float amount = BLUR * 0.01f;
-RGB = blur_chroma(RGB, p_TexR, p_TexG, p_TexB, uvX, uvY, p_Width, p_Height, amount);
+aces = blur_chroma(aces, p_TexR, p_TexG, p_TexB, uvX, uvY, p_Width, p_Height, amount);
 }
-
-float3 aces = RGB;
 if(SOFTCLIP != 0.0f) aces = softclip(aces, _powf(SOFTCLIP, 0.07f));
-
 if(SCALE != 0.0f || BLUEFIX){
 aces = ACESCCT ? ACEScct_to_ACES(aces) : ACEScc_to_ACES(aces);
 if(BLUEFIX) aces = mult_f3_f33(aces, bluefix);
@@ -455,10 +454,7 @@ aces = max_f3_f(aces, 0.0f);
 }
 aces = ACESCCT ? ACES_to_ACEScct(aces) : ACES_to_ACEScc(aces);
 }
-
-if(illegal(uv))
-aces = make_float3(0.0f, 0.0f, 0.0f);
-if(BLANKING && aces.x + aces.y + aces.z <= THRESH)
+if(BLANKING && RGB.x + RGB.y + RGB.z <= THRESH)
 aces.x = 1.0f;
 
 return aces;
