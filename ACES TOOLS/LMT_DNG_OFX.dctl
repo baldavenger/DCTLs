@@ -387,6 +387,17 @@ __DEVICE__ bool illegal( float2 uv) {
 return (uv.x < 0.0f) || (uv.y < 0.0f) || (uv.x > 1.0f) || (uv.y > 1.0f);
 }
 
+__DEVICE__ float bilinear( int Width, int Height, __TEXTURE__ Tex, float2 uv) {
+int x, y; float w, h, A, B, C, D, out;
+Width -= 1; Height -= 1;
+x = _floor(uv.x * Width); y = _floor(uv.y * Height);
+w = uv.x * Width - x; h = uv.y * Height - y;
+A = _tex2D(Tex, x, y); B = _tex2D(Tex, x + 1, y);
+C = _tex2D(Tex, x, y + 1); D = _tex2D(Tex, x + 1, y + 1);
+out = A * (1.0f - w) * (1.0f - h) + B * w * (1.0f - h) + C * h * (1.0f - w) + D * (w * h);
+return out;
+}
+
 __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
 {
 float CINEMA_WHITE = 48.0f;
@@ -426,11 +437,9 @@ uv.y *= scaleFactor;
 uv.x = uv.x * 0.5f + 0.5f;
 uv.y = uv.y * 0.5f + 0.5f;
 if(DISTORTION != 0.0f || ZOOM != 0.0f || HORIZONTAL != 0.0f || VERTICAL != 0.0f){
-uvX = _round(uv.x * width);
-uvY = _round(uv.y * height);
-RGB.x = _tex2D(p_TexR, uvX, uvY);
-RGB.y = _tex2D(p_TexG, uvX, uvY);
-RGB.z = _tex2D(p_TexB, uvX, uvY);
+RGB.x = bilinear(p_Width, p_Height, p_TexR, uv);
+RGB.y = bilinear(p_Width, p_Height, p_TexG, uv);
+RGB.z = bilinear(p_Width, p_Height, p_TexB, uv);
 }
 if(illegal(uv))
 RGB = make_float3(0.0f, 0.0f, 0.0f);
