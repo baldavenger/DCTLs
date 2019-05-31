@@ -1,0 +1,277 @@
+// Protean Clouds OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Animate, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(HUE, Hue, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(msX, Rotate, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(msY, Density, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(SCALE, Zoom, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+
+typedef struct {
+float3 r0, r1, r2;
+} mat3;
+
+#define mag2(p)		dot(p, p)
+#define m3		mult_f33_f(make_mat3_9(0.33338f, 0.56034f, -0.71817f, -0.87887f, 0.32651f, -0.15323f, 0.15162f, 0.69596f, 0.61339f), 1.93f)
+
+__DEVICE__ float3 COS( float3 A);
+__DEVICE__ float3 SIN( float3 A);
+__DEVICE__ float3 CLAMP( float3 in, float clampMin, float clampMax);
+__DEVICE__ float3 POW( float3 A, float3 B);
+__DEVICE__ float3 rotateXY( float3 xyz, float b);
+__DEVICE__ mat3 make_mat3_9( float m00, float m01, float m02, float m10, float m11, float m12, float m20, float m21, float m22);
+__DEVICE__ mat3 make_mat3_33( float3 A, float3 B, float3 C);
+__DEVICE__ mat3 mult_f33_f( mat3 A, float B);
+__DEVICE__ float3 mult_f3_f33( float3 X, mat3 A);
+__DEVICE__ float3 make_float3_f2_f( float2 A, float B);
+__DEVICE__ float4 make_float4_f3_f( float3 A, float B);
+__DEVICE__ float linstep( float mn, float mx, float x);
+__DEVICE__ float2 disp( float t);
+__DEVICE__ float2 map( float3 p, float prm1, float bsMoY, float iTime);
+__DEVICE__ float3 render( float3 ro, float3 rd, float prm1, float bsMoY, float time );
+__DEVICE__ float getsat( float3 c);
+__DEVICE__ float3 iLerp( float3 a, float3 b, float x);
+__DEVICE__ float3 rgb_to_hsv( float3 rgb);
+__DEVICE__ float3 hsv_to_rgb( float3 hsv);
+
+__DEVICE__ float3 COS( float3 A) {
+return make_float3(_cosf(A.x), _cosf(A.y), _cosf(A.z));
+}
+
+__DEVICE__ float3 SIN( float3 A) {
+return make_float3(_sinf(A.x), _sinf(A.y), _sinf(A.z));
+}
+
+__DEVICE__ float3 CLAMP( float3 in, float clampMin, float clampMax) {
+float3 out;
+out.x = _clampf( in.x, clampMin, clampMax);
+out.y = _clampf( in.y, clampMin, clampMax);
+out.z = _clampf( in.z, clampMin, clampMax);   
+return out;
+}
+
+__DEVICE__ float3 POW( float3 A, float3 B) {
+return make_float3(_powf(A.x, B.x), _powf(A.y, B.y), _powf(A.z, B.z));
+}
+
+__DEVICE__ float3 rotateXY( float3 xyz, float b) {
+float3 out;
+float AX = xyz.x;
+float AY = xyz.y;
+float c = _cosf(b);
+float s = _sinf(b);
+out.x = AX * c - AY * s;
+out.y = AX * s + AY * c;
+out.z = xyz.z;
+return out;
+}
+
+__DEVICE__ mat3 make_mat3_9( float m00, float m01, float m02, float m10, float m11, float m12, float m20, float m21, float m22) {
+mat3 M;
+M.r0 = make_float3(m00, m01, m02); M.r1 = make_float3(m10, m11, m12); M.r2 = make_float3(m20, m21, m22);
+return M;
+}
+
+__DEVICE__ mat3 make_mat3_33( float3 A, float3 B, float3 C) {
+mat3 D;
+D.r0 = A; D.r1 = B; D.r2 = C;
+return D;
+}
+
+__DEVICE__ mat3 mult_f33_f( mat3 A, float B) {
+return make_mat3_33(A.r0 * B, A.r1 * B, A.r2 * B);
+}
+
+__DEVICE__ float3 make_float3_f2_f( float2 A, float B) {
+return make_float3(A.x, A.y, B);
+}
+
+__DEVICE__ float4 make_float4_f3_f( float3 A, float B) {
+return make_float4(A.x, A.y, A.z, B);
+}
+
+__DEVICE__ float3 mult_f3_f33( float3 X, mat3 A) {
+float r[3];
+float x[3] = {X.x, X.y, X.z};
+float a[3][3] =	{{A.r0.x, A.r0.y, A.r0.z}, {A.r1.x, A.r1.y, A.r1.z}, {A.r2.x, A.r2.y, A.r2.z}};
+for( int i = 0; i < 3; ++i){
+r[i] = 0.0f;
+for( int j = 0; j < 3; ++j){
+r[i] = r[i] + x[j] * a[j][i];
+}}
+return make_float3(r[0], r[1], r[2]);
+}
+
+__DEVICE__ float linstep( float mn, float mx, float x) {
+return _clampf((x - mn) / (mx - mn), 0.0f, 1.0f);
+}
+
+__DEVICE__ float2 disp( float t) {
+return make_float2(_sinf(t * 0.22f) * 1.0f, _cosf(t * 0.175f) * 1.0f) * 2.0f;
+}
+
+__DEVICE__ float2 map( float3 p, float prm1, float bsMoY, float iTime) {
+float3 p2 = p;
+p2.x -= disp(p.z).x;
+p2.y -= disp(p.z).y;
+p = rotateXY(p, _sinf(p.z + iTime) * 0.15f + iTime * 0.09f);
+float cl = mag2(make_float2(p2.x, p2.y));
+float d = 0.0f;
+p = p * 0.61f;
+float z = 1.0f;
+float trk = 1.0f;
+for(int i = 0; i < 5; i++){
+p = p + SIN(make_float3(p.z, p.x, p.y) * 0.75f * trk + iTime * trk * 0.8f) * (0.1f + prm1 * 0.2f);
+d -= _fabs(dot(COS(p), SIN(make_float3(p.y, p.z, p.x))) * z);
+z *= 0.57f;
+trk *= 1.4f;
+p = mult_f3_f33(p, m3);
+}
+d = _fabs(d + prm1 * 3.0f)+ prm1 * 0.3f - 2.5f + bsMoY;
+return make_float2(d + cl * 0.2f + 0.25f, cl);
+}
+
+__DEVICE__ float3 render( float3 ro, float3 rd, float prm1, float bsMoY, float time ) {
+float4 rez = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+float t = 1.5f;
+float fogT = 0.0f;
+for(int i=0; i<130; i++){
+if(rez.w > 0.99f) break;
+float3 pos = ro + t * rd;
+float2 mpv = map(pos, prm1, bsMoY, time / 3.0f);
+float den = _clampf(mpv.x - 0.3f, 0.0f, 1.0f) * 1.12f;
+float dn = _clampf((mpv.x + 2.0f), 0.0f, 3.0f);
+float4 col = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+if (mpv.x > 0.6f){
+col = make_float4_f3_f(SIN(make_float3(5.0f, 0.4f, 0.2f) + mpv.y * 0.1f + _sinf(pos.z * 0.4f) * 0.5f + 1.8f) * 0.5f + 0.5f, 0.08f);
+col = col * (den * den * den);
+col.x *= linstep(4.0f, -2.5f, mpv.x) * 2.3f;
+col.y *= linstep(4.0f, -2.5f, mpv.x) * 2.3f;
+col.z *= linstep(4.0f, -2.5f, mpv.x) * 2.3f;
+float2 yo = map(pos + 0.8f, prm1, bsMoY, time / 3.0f);
+float dif = _clampf( (den - yo.x) / 9.0f, 0.001f, 1.0f );
+dif += _clampf( (den - map(pos + 0.35f, prm1, bsMoY, time / 3.0f).x) / 2.5f, 0.001f, 1.0f );
+col.x *= den * (0.005f + 1.5f * 0.033f * dif);
+col.y *= den * (0.045f + 1.5f * 0.07f * dif);
+col.z *= den * (0.075f + 1.5f * 0.03f * dif);
+}
+float fogC = _expf(t * 0.2f - 2.2f);
+col = col + make_float4(0.06f, 0.11f, 0.11f, 0.1f) * _clampf(fogC - fogT, 0.0f, 1.0f);
+fogT = fogC;
+rez = rez + col * (1.0f - rez.w);
+t += _clampf(0.5f - dn * dn * 0.05f, 0.09f, 0.3f);
+}
+float3 out = make_float3(rez.x, rez.y, rez.z);
+return CLAMP(out, 0.0f, 1.0f);
+}
+
+__DEVICE__ float getsat( float3 c) {
+float mi = _fminf(_fminf(c.x, c.y), c.z);
+float ma = _fmaxf(_fmaxf(c.x, c.y), c.z);
+return (ma - mi)/(ma + 1e-7f);
+}
+
+__DEVICE__ float3 iLerp( float3 a, float3 b, float x) {
+float3 ic = _mix(a, b, x) + make_float3(1e-6f, 0.0f, 0.0f);
+float sd = _fabs(getsat(ic) - _mix(getsat(a), getsat(b), x));
+float3 dir = normalize(make_float3(2.0f * ic.x - ic.y - ic.z, 2.0f * ic.y - ic.x - ic.z, 2.0f * ic.z - ic.y - ic.x));
+float lgt = dot(make_float3(1.0f, 1.0f, 1.0f), ic);
+float ff = dot(dir, normalize(ic));
+ic = ic + (1.5f * dir * sd * ff * lgt);
+return CLAMP(ic, 0.0f, 1.0f);
+}
+
+__DEVICE__ float3 rgb_to_hsv( float3 rgb) {
+float3 hsv = make_float3(0.0f, 0.0f, 0.0f);
+float min = _fminf(_fminf(rgb.x, rgb.y), rgb.z);
+float max = _fmaxf(_fmaxf(rgb.x, rgb.y), rgb.z);
+hsv.z = max;
+float delta = max - min;
+if (max != 0.0f) {
+hsv.y = delta / max;
+} else {
+hsv.y = 0.0f;
+hsv.x = 0.0f;
+return hsv;
+}
+if (delta == 0.0f) {
+hsv.x = 0.0f;
+} else if (rgb.x == max) {
+hsv.x = (rgb.y - rgb.z) / delta;
+} else if (rgb.y == max) {
+hsv.x = 2.0f + (rgb.z - rgb.x) / delta;
+} else {
+hsv.x = 4.0f + (rgb.x - rgb.y) / delta;
+}
+hsv.x *= 1.0f / 6.0f;
+if (hsv.x < 0.0f) {
+hsv.x += 1.0f;
+}
+return hsv;
+}
+
+__DEVICE__ float3 hsv_to_rgb(float3 hsv) {
+float3 rgb = make_float3(0.0f, 0.0f, 0.0f);
+if (hsv.y == 0.0f){
+rgb.x = rgb.y = rgb.z = hsv.z;
+return rgb;
+}
+hsv.x *= 6.0f;
+int i = _floor(hsv.x);
+float f = hsv.x - (float)i;
+i = (i >= 0) ? (i % 6) : (i % 6) + 6;
+float p = hsv.z * (1.0f - hsv.y);
+float q = hsv.z * (1.0f - hsv.y * f);
+float t = hsv.z * (1.0f - hsv.y * (1.0f - f));
+rgb.x = i == 0 ? hsv.z : i == 1 ? q : i == 2 ? p : i == 3 ? p : i == 4 ? t : hsv.z;
+rgb.y = i == 0 ? t : i == 1 ? hsv.z : i == 2 ? hsv.z : i == 3 ? q : i == 4 ? p : p;
+rgb.z = i == 0 ? p : i == 1 ? p : i == 2 ? t : i == 3 ? hsv.z : i == 4 ? hsv.z : q;
+return rgb;
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float iTime = 0.0f;
+float prm1 = 0.0f;
+float2 bsMo = make_float2(0.0f, 0.0f);
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+float2 XY = make_float2(X, Y);
+float2 resolution = make_float2(width, height);
+iTime = TIME * 24.0f + 1.0f;
+float2 q = XY / resolution;
+float2 p = q - 0.5f;
+p = p / (SCALE + 0.1f);
+p.x *= resolution.x / resolution.y;
+msY = msY < 0.0f ? msY * 20.0f : msY * 3.0f;
+bsMo = make_float2(0.0f, msY);
+float time = iTime * 3.0f;
+float3 ro = make_float3(0.0f, 0.0f, time);
+ro = ro + make_float3(_sinf(iTime) * 0.5f, _sinf(iTime * 1.0f) * 0.0f, 0.0f);
+float dspAmp = 0.85f;
+ro.x += disp(ro.z).x * dspAmp;
+ro.y += disp(ro.z).y * dspAmp;
+float tgtDst = 3.5f;
+float3 target = normalize(ro - make_float3_f2_f(disp(time + tgtDst) * dspAmp, time + tgtDst));
+float3 rightdir = normalize(cross(target, make_float3(0.0f, 1.0f, 0.0f)));
+float3 updir = normalize(cross(rightdir, target));
+rightdir = normalize(cross(updir, target));
+float3 rd = normalize((p.x * rightdir + p.y * updir) * 1.0f - target);
+float2 yo = disp(time + 3.5f);
+rd = rotateXY(rd, -yo.x * 0.2f);
+prm1 = smoothstep(-0.4f, 0.4f, _sinf(iTime * 0.3f));
+ro = rotateXY(ro, msX * 6.0f);
+rd = rotateXY(rd, msX * 6.0f);
+float3 col = render(ro, rd, prm1, bsMo.y, time);
+col = iLerp(make_float3(col.z, col.y, col.x), col, _clampf(1.0f - prm1, 0.05f, 1.0f));
+col = POW(col, make_float3(0.55f, 0.65f, 0.6f)) * make_float3(1.0f, 0.97f, 0.9f);
+col = col * (_powf( 16.0f * q.x * q.y * (1.0f - q.x) * (1.0f - q.y), 0.12f) * 0.7f + 0.3f);
+if (HUE != 0.0f){
+col = rgb_to_hsv(col);
+col.x += HUE;
+col = hsv_to_rgb(col);
+}
+return col;
+}
