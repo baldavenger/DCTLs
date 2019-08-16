@@ -1,0 +1,179 @@
+// Exploding Cube OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Animate, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(LENGTH, Length, DCTLUI_SLIDER_INT, 4, 2, 10, 1)
+DEFINE_UI_PARAMS(SCALE1, Block Size, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(SCALE2, Cube Size, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(ROTATEY, Rotate Y, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+DEFINE_UI_PARAMS(ROTATEX, Rotate X, DCTLUI_SLIDER_FLOAT, 0, -6, 6, 0.001)
+DEFINE_UI_PARAMS(BKG, Grey Background, DCTLUI_CHECK_BOX, 1)
+
+typedef struct {
+float3 r0, r1, r2;
+} mat3;
+
+__DEVICE__ float fract( float A) {
+return A - _floor(A);
+}
+
+__DEVICE__ mat3 make_mat3( float3 A, float3 B, float3 C) {
+mat3 D;
+D.r0 = A; D.r1 = B; D.r2 = C;
+return D;
+}
+
+__DEVICE__ float3 multi( float3 A, mat3 B) {
+float3 C;
+C.x = A.x * B.r0.x + A.y * B.r0.y + A.z * B.r0.z;
+C.y = A.x * B.r1.x + A.y * B.r1.y + A.z * B.r1.z;
+C.z = A.x * B.r2.x + A.y * B.r2.y + A.z * B.r2.z;
+return C;
+}
+
+__DEVICE__ mat3 multi( mat3 A, mat3 B) {
+float r[3][3];
+float a[3][3] =	{{A.r0.x, A.r0.y, A.r0.z},
+{A.r1.x, A.r1.y, A.r1.z},
+{A.r2.x, A.r2.y, A.r2.z}};
+float b[3][3] =	{{B.r0.x, B.r0.y, B.r0.z},
+{B.r1.x, B.r1.y, B.r1.z},
+{B.r2.x, B.r2.y, B.r2.z}};
+for( int i = 0; i < 3; ++i){
+for( int j = 0; j < 3; ++j){
+r[i][j] = 0.0f;
+for( int k = 0; k < 3; ++k){
+r[i][j] = r[i][j] + a[i][k] * b[k][j];
+}}}
+mat3 R = make_mat3(make_float3(r[0][0], r[0][1], r[0][2]), 
+make_float3(r[1][0], r[1][1], r[1][2]), make_float3(r[2][0], r[2][1], r[2][2]));
+return R;
+}
+
+__DEVICE__ float3 POW( float3 A, float B) {
+return make_float3(_powf(A.x, B), _powf(A.y, B), _powf(A.z, B));
+}
+
+__DEVICE__ float sign( float A) {
+return (A < 0.0f ? -1.0f : A > 0.0f ? 1.0f : 0.0f);
+}
+
+__DEVICE__ float rand( float2 co) {
+return fract(_sinf(dot(co, make_float2(12.9898f, 78.233f))) * 43758.5453f);
+}
+
+__DEVICE__ mat3 rotmat( float3 v, float angle) {
+float c = _cosf(angle);
+float s = _sinf(angle);
+return make_mat3(make_float3(c + (1.0f - c) * v.x * v.x, (1.0f - c) * v.x * v.y - s * v.z, (1.0f - c) * v.x * v.z + s * v.y),
+make_float3((1.0f - c) * v.x * v.y + s * v.z, c + (1.0f - c) * v.y * v.y, (1.0f - c) * v.y * v.z - s * v.x),
+make_float3((1.0f - c) * v.x * v.z - s * v.y, (1.0f - c) * v.y * v.z + s * v.x, c + (1.0f - c) * v.z * v.z));
+}
+
+__DEVICE__ void rotate( float* ax, float* ay, float b) {
+float AX = *ax; float AY = *ay;
+float c = _cosf(b); float s = _sinf(b);
+*ax = AX * c - AY * s;
+*ay = AX * s + AY * c;
+}
+
+__DEVICE__ bool cube( float3 p, float3 dir, float3 pos, float size, float2 *startend, float3 *side, float3 *hit) {
+float fix = 0.00001f;
+float3 minim = pos - make_float3(size) * 0.5f;
+float3 maxim = pos + make_float3(size) * 0.5f;
+float3 omin = ( minim - p ) / dir;
+float3 omax = ( maxim - p ) / dir;
+float3 maxi = _fmaxf( omax, omin );
+float3 mini = _fminf( omax, omin );
+startend->y = _fminf( maxi.x, _fminf( maxi.y, maxi.z ) );
+startend->x = _fmaxf( _fmaxf( mini.x, 0.0f ), _fmaxf( mini.y, mini.z ) );
+float rayhit = 0.0f;
+if (startend->y - startend->x > fix) rayhit = 1.0f;
+*hit = p + startend->x * dir;
+*side = make_float3(0.0f, 0.0f, -1.0f);
+if (_fabs(hit->x - minim.x) < fix) *side = make_float3( 1.0f, 0.0f, 0.0f);
+if (_fabs(hit->y - minim.y) < fix) *side = make_float3( 0.0f, 1.0f, 0.0f);
+if (_fabs(hit->z - minim.z) < fix) *side = make_float3( 0.0f, 0.0f, 1.0f);
+if (_fabs(hit->x - maxim.x) < fix) *side = make_float3(-1.0f, 0.0f, 0.0f);
+if (_fabs(hit->y - maxim.y) < fix) *side = make_float3( 0.0f,-1.0f, 0.0f);
+return rayhit > 0.5f;
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+float2 resolution = make_float2(width, height);
+float2 XY = make_float2(X, Y);
+float2 uv = XY / resolution - 0.5f;
+uv.y *= resolution.y / resolution.x;
+float3 col = make_float3(p_R, p_G, p_B);
+
+float3 lightdir = normalize( make_float3(0.0f, -0.5f, 1.0f) );
+float3 rdir = make_float3(uv.x * 1.8f, uv.y * 1.8f, 1.0f);
+float3 rori = make_float3(0.0f, 0.0f, -10.0f);
+rotate(&rdir.z, &rdir.x, ROTATEY);
+rotate(&rori.z, &rori.x, ROTATEY);
+rotate(&lightdir.z, &lightdir.x, ROTATEY);
+rotate(&rdir.y, &rdir.z, ROTATEX);
+rotate(&rori.y, &rori.z, ROTATEX);
+rotate(&lightdir.y, &lightdir.z, ROTATEX);
+
+if(BKG) col = make_float3(0.5f);
+float2 startend;
+float2 nearest = make_float2(1000.0f, 0.0f);
+float3 normal, hitpos, chitpos, cpos, cnor;
+float hit = 0.0f;
+mat3 crot;
+int CUBE = LENGTH * LENGTH * LENGTH;
+float Length = (float)LENGTH;
+float Cube = (float)CUBE;
+float Cubesize = SCALE2;
+
+float cyc = _fmod(TIME * 24.0f, 15.0f);
+float shake = _clampf(cyc, 3.0f, 5.0f);
+if (cyc < 5.0f) rori += _sinf(shake * 1000.0f) * 0.05f * (shake - 3.0f);
+float ti = 5.0f - _fabs(_fmaxf(0.0f, cyc - 5.0f) - 5.0f);
+if (cyc > 10.0f) ti = _powf(ti / 5.0f, 3.0f) * 5.0f;
+
+for (int i = 0; i < CUBE; i++) {
+float I = (float)i;
+float3 posid = make_float3(_floor(I / Cube * Length), 
+_fmod(_floor(I / Length), Length),
+_fmod(I, Length));
+float3 pos = posid * Cubesize - Cubesize * Length * 0.5f + Cubesize * 0.5f;
+float r = rand(make_float2(posid.x, posid.y) * 20.25684265f + posid.z * 38.56485f);
+float anim = ti * (0.25f + r * 3.0f) * (1.0f + length(pos) * 0.3f);
+mat3 rot = rotmat(normalize(pos), anim * 2.0f * sign(r - 0.5f));
+bool intersect = cube(multi(rori, rot), multi(rdir, rot), pos * (1.0f + anim), Cubesize * SCALE1, &startend, &normal, &hitpos);
+if (length(pos) > 0.01f && intersect && startend.x < nearest.x) {
+nearest = startend;
+cpos = posid;
+chitpos = hitpos;
+cnor = normal;
+hit = 1.0f;
+crot = rot;
+}}
+
+if (hit > 0.5f) {
+col = (0.05f + cpos / Length) * (_fmaxf(0.0f, dot(cnor, multi(lightdir, crot))) * 1.3f + 0.15f * (1.0f - sign(ti)));	
+float3 r = reflect(multi(make_float3(0.0f, 0.0f, 1.0f), crot), cnor);
+col = col + _powf(_fmaxf(0.0f, dot(multi(lightdir, crot), -r)), 30.0f) * 0.5f;				
+float3 expdir = normalize(chitpos);
+float expbri = (shake - 3.0f) * (2.0f - sign(ti) * 1.5f);
+col += make_float3(1.0f, 0.8f, 0.5f) * expbri * (_fmaxf(0.0f, dot(cnor, expdir)) * 1.5f + sign(ti) * 0.2f);	
+r = reflect(multi(make_float3(0.0f, 0.0f, 1.0f), crot), cnor);
+col += _powf(_fmaxf(0.0f, dot(expdir, -r)), 30.0f) * expbri;				
+col = _mix(make_float3(0.5f, 0.5f, 0.5f), col, _expf(-0.0007f * _powf(nearest.x, 3.0f)));
+col = POW(col, 1.3f);
+}
+
+float et = _powf(ti, 0.7f) + 0.1f;
+float E = _powf(_fmaxf(0.0f, et - length(uv) - _fabs(_sinf(-TIME * 8.0f + _atan2f(uv.x, uv.y) * 6.0f)) * 0.025f) / et, 5.0f);
+col = _mix(col, col + make_float3(E, E * E, E * E * E * 0.6f), _clampf((nearest.x - 9.0f) * 0.3f, 0.0f, 1.0f));
+if (cyc > 5.0f && cyc < 5.1f) col += make_float3(0.5f, 0.5f, 0.5f);
+
+return col;
+}
