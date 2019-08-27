@@ -1,0 +1,141 @@
+// Spline Demo OFX DCTL (Catmull–Rom spline)
+
+DEFINE_UI_PARAMS(OFFSETAX, PointA_0.0_X, DCTLUI_SLIDER_FLOAT, 0, -0.2, 0.2, 0.001)
+DEFINE_UI_PARAMS(OFFSETAY, PointA_0.0_Y, DCTLUI_SLIDER_FLOAT, 0, -0.2, 0.2, 0.001)
+DEFINE_UI_PARAMS(OFFSETBX, PointB_0.2_X, DCTLUI_SLIDER_FLOAT, 0, -0.2, 0.2, 0.001)
+DEFINE_UI_PARAMS(OFFSETBY, PointB_0.2_Y, DCTLUI_SLIDER_FLOAT, 0, -0.2, 0.2, 0.001)
+DEFINE_UI_PARAMS(OFFSETCX, PointC_0.4_X, DCTLUI_SLIDER_FLOAT, 0, -0.2, 0.2, 0.001)
+DEFINE_UI_PARAMS(OFFSETCY, PointC_0.4_Y, DCTLUI_SLIDER_FLOAT, 0, -0.2, 0.2, 0.001)
+DEFINE_UI_PARAMS(OFFSETDX, PointD_0.6_X, DCTLUI_SLIDER_FLOAT, 0, -0.2, 0.2, 0.001)
+DEFINE_UI_PARAMS(OFFSETDY, PointD_0.6_Y, DCTLUI_SLIDER_FLOAT, 0, -0.2, 0.2, 0.001)
+DEFINE_UI_PARAMS(OFFSETEX, PointE_0.8_X, DCTLUI_SLIDER_FLOAT, 0, -0.2, 0.2, 0.001)
+DEFINE_UI_PARAMS(OFFSETEY, PointE_0.8_Y, DCTLUI_SLIDER_FLOAT, 0, -0.2, 0.2, 0.001)
+DEFINE_UI_PARAMS(OFFSETFX, PointF_1.0_X, DCTLUI_SLIDER_FLOAT, 0, -0.2, 0.2, 0.001)
+DEFINE_UI_PARAMS(OFFSETFY, PointF_1.0_Y, DCTLUI_SLIDER_FLOAT, 0, -0.2, 0.2, 0.001)
+DEFINE_UI_PARAMS(TENSION, Tension, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(SCALE, GUI Scale, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(FLAT, Horizontal, DCTLUI_CHECK_BOX, 0)
+DEFINE_UI_PARAMS(DOTS, Dots, DCTLUI_CHECK_BOX, 1)
+DEFINE_UI_PARAMS(SMOOTH, Smooth, DCTLUI_CHECK_BOX, 1)
+DEFINE_UI_PARAMS(BKG, Plain Background, DCTLUI_CHECK_BOX, 1)
+
+__DEVICE__ float2 rotateXY( float ax, float ay, float b);
+__DEVICE__ float2 interpolate( float2 G1, float2 G2, float2 G3, float2 G4, float T, float x);
+__DEVICE__ float sdSegmentSq( float2 p, float2 a, float2 b);
+__DEVICE__ float sdPointSq(float2 p, float2 a);
+
+__DEVICE__ float2 rotateXY( float ax, float ay, float b) {
+float AX = ax; float AY = ay;
+float c = _cosf(-b); float s = _sinf(-b);
+ax = AX * c - AY * s;
+ay = AX * s + AY * c + 0.5f;
+return make_float2(ax, ay);
+}
+
+__DEVICE__ float2 interpolate( float2 G1, float2 G2, float2 G3, float2 G4, float T, float x) {
+float2 A = G1 * -T + G2 * (2.0f - T) + G3 * (T - 2.0f) + G4 * T;
+float2 B = G1 * (2.0f * T) + G2 * (T - 3.0f) + G3 * (3.0f - 2.0f * T) + G4 * -T;
+float2 C = G1 * -T + G3 * T;
+float2 D = G2;
+return x * (x * (x * A + B) + C) + D;
+}
+
+__DEVICE__ float sdSegmentSq( float2 p, float2 a, float2 b) {
+float2 pa = p - a, ba = b - a;
+float h = _clampf(dot(pa, ba) / dot(ba, ba), 0.0f, 1.0f);
+float2 d = pa - ba * h;
+return dot(d, d);
+}
+
+__DEVICE__ float sdPointSq(float2 p, float2 a) {
+float2 d = p - a;
+return dot(d, d);
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+Y = height - Y;
+float2 resolution = make_float2(width, height);
+float2 XY = make_float2(X, Y);
+float Scale = SCALE;
+float e = 1.0f / width;
+float2 uv = XY / resolution;
+float3 col = make_float3(0.8f, 0.8f, 0.8f);
+col = col * (1.0f - 0.3f * length(XY / resolution - 0.5f));
+if(!BKG) col = make_float3(p_R, p_G, p_B);
+float T = TENSION * 0.5f;
+float ROTATE = 0.785f;
+const int NUM = 9;
+float2 path[9];
+path[0] = make_float2(-0.2f, -0.2f);
+path[1] = make_float2(0.0f, 0.0f);
+path[2] = make_float2(0.2f, 0.2f);
+path[3] = make_float2(0.4f, 0.4f);
+path[4] = make_float2(0.6f, 0.6f);
+path[5] = make_float2(0.8f, 0.8f);
+path[6] = make_float2(1.0f, 1.0f);
+path[7] = make_float2(1.2f, 1.2f);
+path[8] = make_float2(1.4f, 1.4f);
+
+if(FLAT){
+uv.x *= 1.413f;
+path[0] = rotateXY(path[0].x, path[0].y, ROTATE);
+path[1] = rotateXY(path[1].x, path[1].y, ROTATE);
+path[2] = rotateXY(path[2].x, path[2].y, ROTATE);
+path[3] = rotateXY(path[3].x, path[3].y, ROTATE);
+path[4] = rotateXY(path[4].x, path[4].y, ROTATE);
+path[5] = rotateXY(path[5].x, path[5].y, ROTATE);
+path[6] = rotateXY(path[6].x, path[6].y, ROTATE);
+path[7] = rotateXY(path[7].x, path[7].y, ROTATE);
+path[8] = rotateXY(path[8].x, path[8].y, ROTATE);
+Scale *= 1.413f;
+}
+
+path[1].x += OFFSETAX;
+path[1].y += OFFSETAY;
+path[2].x += OFFSETBX;
+path[2].y += OFFSETBY;
+path[3].x += OFFSETCX;
+path[3].y += OFFSETCY;
+path[4].x += OFFSETDX;
+path[4].y += OFFSETDY;
+path[5].x += OFFSETEX;
+path[5].y += OFFSETEY;
+path[6].x += OFFSETFX;
+path[6].y += OFFSETFY;
+
+float d = 1e5f;
+float2 p = path[0];
+for (int i = 0; i < NUM - 3; i++) {
+float2 A = path[i + 0];
+float2 B = path[i + 1];
+float2 C = path[i + 2];
+float2 D = path[i + 3];
+for (float t = 0.0f; t <= 1.01f; t += 0.1f) {
+float2 q = interpolate(A, B, C, D, T, t);
+d = _fminf(d, sdSegmentSq(uv, p, q));
+p = q;
+}}
+d = _sqrtf(d);
+
+float dd = 1000.0f;
+for (int i = 1; i < (NUM - 2); i++) {
+float2 a = path[i];
+dd = _fminf(dd, sdPointSq(uv, a));
+}
+dd = _sqrtf(dd);
+
+float LINE = step(6.0f * e * Scale, d);
+float DOT = step(20.0f * e * Scale, dd);
+if(SMOOTH){
+LINE = smoothstep(0.0f * e, 8.0f * e * Scale, d);
+DOT = smoothstep(15.0f * e * Scale, 22.0f * e * Scale, dd);
+}
+col = _mix(col, make_float3(0.1f, 0.1f, 0.1f), 1.0f - LINE);
+if(DOTS) col = _mix(col, make_float3(1.0f, 1.0f, 1.0f), 1.0f - DOT);
+return col;
+}
