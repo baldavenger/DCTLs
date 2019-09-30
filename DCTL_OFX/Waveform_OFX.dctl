@@ -1,0 +1,103 @@
+// Waveform OFX DCTL
+
+DEFINE_UI_PARAMS(CHANNEL, Channel, DCTLUI_COMBO_BOX, 0, { LUMA, RED, GREEN, BLUE, COMBORGB, COMBOYRGB }, { luma, red, green, blue, combined rgb, combined yrgb })
+DEFINE_UI_PARAMS(DISPLAY, DISPLAY, DCTLUI_COMBO_BOX, 0, { WAVE, OVER, BOX }, { waveform, overlay, box })
+DEFINE_UI_PARAMS(DENSITY, Density, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(GAIN, Gain, DCTLUI_SLIDER_FLOAT, 1, 0, 3, 0.001)
+DEFINE_UI_PARAMS(MAX, Value Max, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(MIN, Value Min, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(BTMLX, Bottom Left X, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(BTMLY, Bottom Left Y, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(TOPRX, Top Right X, DCTLUI_SLIDER_FLOAT, 1, 0, 1, 0.001)
+DEFINE_UI_PARAMS(TOPRY, Top Right Y, DCTLUI_SLIDER_FLOAT, 1, 0, 1, 0.001)
+DEFINE_UI_PARAMS(BORDER, Box Border, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+
+#define _RED	_tex2D(p_TexR, XX, YY)
+#define _GREEN	_tex2D(p_TexG, XX, YY)
+#define _BLUE	_tex2D(p_TexB, XX, YY)
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{
+float X = (float)p_X;
+float Y = (float)p_Y;
+float width = (float)p_Width;
+float height = (float)p_Height;
+int XX = p_X;
+int YY = p_Y;
+float3 RGB;
+RGB.x = _RED;
+RGB.y = _GREEN;
+RGB.z = _BLUE;
+Y = height - Y;
+float2 resolution = make_float2(width, height);
+float2 XY = make_float2(X, Y);
+float2 uv = XY / resolution;
+float y = Y / height;
+X = X * (TOPRX - BTMLX) + (width * BTMLX);
+XX = (int)X;
+float BorderX = (width / 1920.0f) * BORDER * 0.01f;
+float BorderY = (height / 1920.0f) * BORDER * 0.01f;       
+if(DISPLAY == BOX){
+if(uv.x >= BTMLX - BorderY && uv.x <= BTMLX + BorderY && uv.y >= BTMLY - BorderX && uv.y <= TOPRY + BorderX) RGB = make_float3(1.0f, 1.0f, 0.0);
+if(uv.y >= BTMLY - BorderX && uv.y <= BTMLY + BorderX && uv.x >= BTMLX - BorderY && uv.x <= TOPRX + BorderY) RGB = make_float3(1.0f, 1.0f, 0.0);
+if(uv.x >= TOPRX - BorderY && uv.x <= TOPRX + BorderY && uv.y >= BTMLY - BorderX && uv.y <= TOPRY + BorderX) RGB = make_float3(1.0f, 1.0f, 0.0);
+if(uv.y >= TOPRY - BorderX && uv.y <= TOPRY + BorderX && uv.x >= BTMLX - BorderY && uv.x <= TOPRX + BorderY) RGB = make_float3(1.0f, 1.0f, 0.0);
+return RGB;
+}
+float buckets = height * _powf(10.0f, DENSITY)/100.0f;
+float bucket_min = _logf(_floor(y * buckets)/buckets);
+float bucket_max = _logf(_floor((y * buckets) + 1.0f)/buckets);
+float pixelr, pixelg, pixelb, pixely, countr, countg, countb, county;
+float3 VAL;
+countr = countg = countb = county = 0.0f;
+int BUCKETS = (int)buckets;
+if(CHANNEL == LUMA || CHANNEL == COMBORGB || CHANNEL == COMBOYRGB){
+for( int i = 0; i < BUCKETS; i++ ) {
+float j = (float)i / buckets;
+j = j * height;
+j = j * (TOPRY - BTMLY) + (height * BTMLY);
+int YY = (int)(height - j);
+pixelr = _RED;
+pixelg = _GREEN;
+pixelb = _BLUE;
+pixelr = (pixelr - MIN) / (MAX - MIN);
+pixelg = (pixelg - MIN) / (MAX - MIN);
+pixelb = (pixelb - MIN) / (MAX - MIN);
+pixely = pixelr * 0.2126f + pixelg * 0.7152f + pixelb * 0.0722f;
+pixelr = _logf(pixelr);
+pixelg = _logf(pixelg);
+pixelb = _logf(pixelb);
+pixely = _logf(pixely);
+if( pixelr >= bucket_min && pixelr < bucket_max) countr += 0.8f;
+if( pixelg >= bucket_min && pixelg < bucket_max) countg += 0.8f;
+if( pixelb >= bucket_min && pixelb < bucket_max) countb += 0.8f;
+if( pixely >= bucket_min && pixely < bucket_max) county += 0.8f;
+}
+countr = _saturatef(_logf(countr * GAIN));
+countg = _saturatef(_logf(countg * GAIN));
+countb = _saturatef(_logf(countb * GAIN));
+county = _saturatef(_logf(county * GAIN));
+VAL = CHANNEL == LUMA ? make_float3(county, county, county) : CHANNEL == COMBORGB ? make_float3(countr, countg, countb) : 
+make_float3(_saturatef(countr + county), _saturatef(countg + county), _saturatef(countb + county));
+} else {
+for( int i = 0; i < BUCKETS; i++ ) {
+float j = (float)i / buckets;
+j = j * height;
+j = j * (TOPRY - BTMLY) + (height * BTMLY);
+int YY = (int)(height - j);
+pixelr = CHANNEL == RED ? _RED : CHANNEL == GREEN ? _GREEN : _BLUE;
+pixelr = (pixelr - MIN) / (MAX - MIN);
+pixelr = _logf(pixelr);
+if( pixelr >= bucket_min && pixelr < bucket_max) countr += 0.8f;
+}
+countr = _saturatef(_logf(countr * GAIN));
+VAL = CHANNEL == RED ? make_float3(countr, 0.0f, 0.0f) : CHANNEL == GREEN ? make_float3(0.0f, countr, 0.0f) : make_float3(0.0f, 0.0f, countr);
+}
+if(DISPLAY == OVER){
+RGB.x = _mix(RGB.x, 1.0f, VAL.x);
+RGB.y = _mix(RGB.y, 1.0f, VAL.y);
+RGB.z = _mix(RGB.z, 1.0f, VAL.z);
+}
+if(DISPLAY == WAVE) RGB = VAL;
+return RGB;
+}
