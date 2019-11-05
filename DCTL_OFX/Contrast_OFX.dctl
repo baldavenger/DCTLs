@@ -1,0 +1,24 @@
+// Contrast OFX DCTL
+
+DEFINE_UI_PARAMS(TYPE, Type, DCTLUI_COMBO_BOX, 0, { S_CURVE, LINEAR }, { S-Curve Contrast, Linear Contrast} )
+DEFINE_UI_PARAMS(CURVE, Contrast, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(PIVOT, Pivot, DCTLUI_SLIDER_FLOAT, 0.5, 0, 1, 0.001)
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float3 RGB = make_float3(p_R, p_G, p_B);
+CURVE = CURVE > 0.0f ? CURVE * 2.0f : CURVE;
+CURVE += 1.0f;
+
+if(TYPE == S_CURVE) {
+RGB.x = RGB.x <= PIVOT ? _powf(RGB.x / PIVOT, CURVE) * PIVOT : (1.0f - _powf(1.0f - (RGB.x - PIVOT) / (1.0f - PIVOT), CURVE)) * (1.0f - PIVOT) + PIVOT;
+RGB.y = RGB.y <= PIVOT ? _powf(RGB.y / PIVOT, CURVE) * PIVOT : (1.0f - _powf(1.0f - (RGB.y - PIVOT) / (1.0f - PIVOT), CURVE)) * (1.0f - PIVOT) + PIVOT;
+RGB.z = RGB.z <= PIVOT ? _powf(RGB.z / PIVOT, CURVE) * PIVOT : (1.0f - _powf(1.0f - (RGB.z - PIVOT) / (1.0f - PIVOT), CURVE)) * (1.0f - PIVOT) + PIVOT;
+} else {
+RGB.x = (RGB.x - PIVOT) * CURVE + PIVOT;
+RGB.y = (RGB.y - PIVOT) * CURVE + PIVOT;
+RGB.z = (RGB.z - PIVOT) * CURVE + PIVOT;
+}
+
+return RGB;
+}
