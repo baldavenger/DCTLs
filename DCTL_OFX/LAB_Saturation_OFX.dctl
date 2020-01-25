@@ -152,43 +152,45 @@ return XYZ;
 }
 
 __DEVICE__ float3 ArrilogC_to_LAB( float3 rgb) {
-float3 lab;
-lab = ArrilogC_to_XYZ(rgb);
+float3 lab = ArrilogC_to_XYZ(rgb);
 lab = XYZ_to_LAB(lab);
 return lab;
 }
 
 __DEVICE__ float3 LAB_to_ArrilogC( float3 lab) {
-float3 rgb;
-rgb = LAB_to_XYZ(lab);
+float3 rgb = LAB_to_XYZ(lab);
 rgb = XYZ_to_ArrilogC(rgb);
 return rgb;
 }
 
 __DEVICE__ float3 ACEScct_to_LAB( float3 rgb) {
+rgb = ACEScct_to_XYZ(rgb);
 float3 lab;
-lab = ACEScct_to_XYZ(rgb);
+lab.x = 0.987224f * rgb.x - 0.00611327f * rgb.y + 0.0159533f * rgb.z;
+lab.y = -0.00759836f * rgb.x + 1.00186f * rgb.y + 0.00533002f * rgb.z;
+lab.z = 0.00307257f * rgb.x - 0.00509595f * rgb.y + 1.08168f * rgb.z;
 lab = XYZ_to_LAB(lab);
 return lab;
 }
 
 __DEVICE__ float3 LAB_to_ACEScct( float3 lab) {
+lab = LAB_to_XYZ(lab);
 float3 rgb;
-rgb = LAB_to_XYZ(lab);
+rgb.x = 1.01303f * lab.x + 0.00610531f * lab.y - 0.014971f * lab.z;
+rgb.y = 0.00769823f * lab.x + 0.998165f * lab.y - 0.00503203f * lab.z;
+rgb.z = -0.00284131f * lab.x + 0.00468516f * lab.y + 0.924507f * lab.z;
 rgb = XYZ_to_ACEScct(rgb);
 return rgb;
 }
 
 __DEVICE__ float3 Rec709_to_LAB( float3 rgb) {
-float3 lab;
-lab = Rec709_to_XYZ(rgb);
+float3 lab = Rec709_to_XYZ(rgb);
 lab = XYZ_to_LAB(lab);
 return lab;
 }
 
 __DEVICE__ float3 LAB_to_Rec709( float3 lab) {
-float3 rgb;
-rgb = LAB_to_XYZ(lab);
+float3 rgb = LAB_to_XYZ(lab);
 rgb = XYZ_to_Rec709(rgb);
 return rgb;
 }
