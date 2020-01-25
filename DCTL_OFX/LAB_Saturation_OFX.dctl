@@ -1,15 +1,16 @@
 // LAB Saturation OFX DCTL
 
 DEFINE_UI_PARAMS(p_SPACE, Convert to LAB, DCTLUI_COMBO_BOX, 0, { ALEXA, ACESCCT, REC709 }, { Alexa LogC to LAB, ACEScct to LAB, Rec709 to LAB })
-DEFINE_UI_PARAMS(p_SAT, Saturation, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
-DEFINE_UI_PARAMS(p_SOFT, Softclip, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
-DEFINE_UI_PARAMS(p_THRESH, Softclip Peak, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(p_GAIN, AB Gain, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(p_GAMMA, AB Gamma, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(p_SOFT, Saturation Softclip, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(p_THRESH, Softclip Modifier, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
 
 __DEVICE__ float normalizedLogCToRelativeExposure( float x) {
 if (x > 0.149659f)
-return (_powf(10.0f, (x - 0.385537f) / 0.247189f) - 0.052272f) / 5.555556f;
+return (_exp10f((x - 0.385537f) / 0.247189f) - 0.052272f) / 5.555556f;
 else
-return (x - 0.092809f) / 5.367650f;
+return (x - 0.092809f) / 5.36765f;
 }
 
 __DEVICE__ float relativeExposureToLogC( float x) {
@@ -195,7 +196,7 @@ return rgb;
 __DEVICE__ float Softclip( float curve, float soft, float peak) {
 if (soft < 1.0f)
 curve = curve > soft ? (-1.0f / ((curve - soft) / (peak - soft) + 1.0f) + 1.0f) * (peak - soft) + soft : curve;
-if (peak > 1.0f)
+if (peak != 1.0f)
 curve = curve > 1.0f - (peak / 50.0f) ? (-1.0f / ((curve - (1.0f - (peak / 50.0f))) / 
 (1.0f - (1.0f - (peak / 50.0f))) + 1.0f) + 1.0f) * (1.0f - (1.0f - (peak / 50.0f))) + (1.0f - (peak / 50.0f)) : curve;
 return curve;
@@ -205,10 +206,12 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p
 {
 float3 rgb = make_float3(p_R, p_G, p_B);
 float3 lab = rgb;
+float GAIN = p_GAIN + 1.0f;
+float GAMMA = p_GAMMA == 0.0f ? 1.0f : p_GAMMA * 0.5f + 1.0f;
 float SOFT = 1.0f - p_SOFT;
-float THRESH = p_THRESH + 1.0f;
+float THRESH = p_THRESH > 0.0f ? p_THRESH + 1.0f : p_THRESH * p_SOFT + 1.0f;
 
-switch (p_SPACE){
+switch (p_SPACE) {
 case ALEXA:
 {lab = ArrilogC_to_LAB(rgb);}
 break;
@@ -218,9 +221,18 @@ break;
 case REC709:
 {lab = Rec709_to_LAB(rgb);}}
 
-if (p_SAT != 1.0f) {
-lab.y = (lab.y - 0.5f) * p_SAT + 0.5f;
-lab.z = (lab.z - 0.5f) * p_SAT + 0.5f;
+if (GAIN != 1.0f) {
+lab.y = (lab.y - 0.5f) * GAIN + 0.5f;
+lab.z = (lab.z - 0.5f) * GAIN + 0.5f;
+}
+
+if (GAMMA != 1.0f) {
+float A = (lab.y - 0.5f) * 2.0f;
+A = A > 0.0f ? _powf(A, 1.0f/GAMMA) : _powf(-A, 1.0f/GAMMA) * -1.0f;
+lab.y = A * 0.5f + 0.5f;
+float B = (lab.z - 0.5f) * 2.0f;
+B = B > 0.0f ? _powf(B, 1.0f/GAMMA) : _powf(-B, 1.0f/GAMMA) * -1.0f;
+lab.z = B * 0.5f + 0.5f;
 }
 
 if (SOFT < 1.0f) {
@@ -232,7 +244,7 @@ B = B > 0.0f ? Softclip(B, SOFT, THRESH) : Softclip(-B, SOFT, THRESH) * -1.0f;
 lab.z = B * 0.5f + 0.5f;
 }
 
-switch (p_SPACE){
+switch (p_SPACE) {
 case ALEXA:
 {rgb = LAB_to_ArrilogC(lab);}
 break;
