@@ -1,0 +1,131 @@
+// Film Saturation Test OFX DCTL
+
+DEFINE_UI_PARAMS(p_Sat, Film Saturation, DCTLUI_SLIDER_FLOAT, 0, 0, 2, 0.001)
+DEFINE_UI_PARAMS(p_LimitS, Low Saturation Limiter, DCTLUI_SLIDER_FLOAT, 0, 0, 2, 0.001)
+DEFINE_UI_PARAMS(p_LimitL, Low Luma Limiter, DCTLUI_SLIDER_FLOAT, 0, 0, 2, 0.001)
+DEFINE_UI_PARAMS(p_Display, Display Alpha, DCTLUI_CHECK_BOX, 0)
+DEFINE_UI_PARAMS(p_LUMA1, Luma Coefficients, DCTLUI_SLIDER_INT, 0, 0, 5, 1)
+DEFINE_UI_PARAMS(p_LUMA2, Luma Coefficients, DCTLUI_COMBO_BOX, 0, { REC709, REC2020, DCIP3, ACESAP0, ACESAP1, AVERAGE }, { Rec709, Rec2020, DCIP3, ACES AP0, ACES AP1, Average })
+
+__DEVICE__ float3 RGB_to_HSV( float3 RGB ) {
+float3 HSV;
+float min = _fminf(_fminf(RGB.x, RGB.y), RGB.z);
+float max = _fmaxf(_fmaxf(RGB.x, RGB.y), RGB.z);
+HSV.z = max;
+float delta = max - min;
+if (max != 0.0f) {
+HSV.y = delta / max;
+} else {
+HSV.y = 0.0f;
+HSV.x = 0.0f;
+return HSV;
+}
+if (delta == 0.0f) {
+HSV.x = 0.0f;
+} else if (RGB.x == max) {
+HSV.x = (RGB.y - RGB.z) / delta;
+} else if (RGB.y == max) {
+HSV.x = 2.0f + (RGB.z - RGB.x) / delta;
+} else {
+HSV.x = 4.0f + (RGB.x - RGB.y) / delta;
+}
+HSV.x *= 1.0f / 6.0f;
+if (HSV.x < 0.0f)
+HSV.x += 1.0f;
+return HSV;
+}
+
+__DEVICE__ float3 HSV_to_RGB(float3 HSV) {
+float3 RGB;
+if (HSV.y == 0.0f) {
+RGB.x = RGB.y = RGB.z = HSV.z;
+} else {
+HSV.x *= 6.0f;
+int i = floor(HSV.x);
+float f = HSV.x - i;
+i = (i >= 0) ? (i % 6) : (i % 6) + 6;
+float p = HSV.z * (1.0f - HSV.y);
+float q = HSV.z * (1.0f - HSV.y * f);
+float t = HSV.z * (1.0f - HSV.y * (1.0f - f));
+RGB.x = i == 0 ? HSV.z : i == 1 ? q : i == 2 ? p : i == 3 ? p : i == 4 ? t : HSV.z;
+RGB.y = i == 0 ? t : i == 1 ? HSV.z : i == 2 ? HSV.z : i == 3 ? q : i == 4 ? p : p;
+RGB.z = i == 0 ? p : i == 1 ? p : i == 2 ? t : i == 3 ? HSV.z : i == 4 ? HSV.z : q;
+}
+return RGB;
+}
+
+__DEVICE__ float RGB_to_Sat( float3 RGB) {
+float min = _fminf(_fminf(RGB.x, RGB.y), RGB.z);
+float max = _fmaxf(_fmaxf(RGB.x, RGB.y), RGB.z);
+float delta = max - min;
+float Sat = max != 0.0f ? delta / max : 0.0f;
+return Sat;
+}
+
+__DEVICE__ float3 Saturation(float3 RGB, float luma, float Sat) {
+RGB.x = (1.0f - Sat) * luma + RGB.x * Sat;
+RGB.y = (1.0f - Sat) * luma + RGB.y * Sat;
+RGB.z = (1.0f - Sat) * luma + RGB.z * Sat;
+return RGB;
+}
+
+__DEVICE__ float get_luma(float R, float G, float B, int L) {
+float lumaRec709 = R * 0.2126f + G * 0.7152f + B * 0.0722f;
+float lumaRec2020 = R * 0.2627f + G * 0.6780f + B * 0.0593f;
+float lumaDCIP3 = R * 0.209492f + G * 0.721595f + B * 0.0689131f;
+float lumaACESAP0 = R * 0.3439664498f + G * 0.7281660966f + B * -0.0721325464f;
+float lumaACESAP1 = R * 0.2722287168f + G * 0.6740817658f + B * 0.0536895174f;
+float lumaAvg = (R + G + B) / 3.0f;
+float luma = L == 0 ? lumaRec709 : L == 1 ? lumaRec2020 : L == 2 ? lumaDCIP3 : 
+L == 3 ? lumaACESAP0 : L == 4 ? lumaACESAP1 : lumaAvg;
+return luma;
+}
+
+__DEVICE__ float Limiter(float val, float limiter) {
+float alpha = limiter > 1.0f ? val + (1.0f - limiter) * (1.0f - val) : limiter >= 0.0f ? (val >= limiter ? 1.0f : 
+val / limiter) : limiter < -1.0f ? (1.0f - val) + (limiter + 1.0f) * val : val <= (1.0f + limiter) ? 1.0f : 
+(1.0 - val) / (1.0f - (limiter + 1.0f));
+alpha = _saturatef(alpha);
+return alpha;
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float3 rgbIn = make_float3(p_R, p_G, p_B);
+if (p_Sat == 0.0f && p_Display == 0)
+return rgbIn;
+
+int p_LUMA = p_LUMA1;
+#if (__RESOLVE_VER_MAJOR__ > 15)
+p_LUMA = p_LUMA2;
+#endif
+
+float luma = get_luma(rgbIn.x, rgbIn.y, rgbIn.z, p_LUMA);
+float SatA = 1.0f / (p_Sat + 1.0f);
+float3 rgbOut = Saturation(rgbIn, luma, SatA);
+
+float alphaS, alphaL, alpha;
+alphaS = alphaL = alpha = 1.0f;
+
+if (p_LimitS > 0.0f) {
+float sat = RGB_to_Sat(rgbIn);
+alphaS = Limiter(sat, p_LimitS);
+alpha = alphaS;
+}
+if (p_LimitL > 0.0f) {
+alphaL = Limiter(luma, p_LimitL);
+alpha *= alphaL;
+}
+
+rgbOut = RGB_to_HSV(rgbOut);
+rgbOut.y *= 1.0f / SatA ;
+rgbOut = HSV_to_RGB(rgbOut);
+
+if (alpha < 1.0f)
+rgbOut = rgbOut * alpha + (1.0f - alpha) * rgbIn;
+
+if (p_Display)
+return make_float3(alpha, alpha, alpha);
+
+return rgbOut;
+}
