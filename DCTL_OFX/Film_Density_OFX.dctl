@@ -1,11 +1,12 @@
-// Film Saturation Test OFX DCTL
+// Film Density OFX DCTL
 
-DEFINE_UI_PARAMS(p_Sat, Film Saturation, DCTLUI_SLIDER_FLOAT, 0, 0, 2, 0.001)
-DEFINE_UI_PARAMS(p_LimitS, Low Saturation Limiter, DCTLUI_SLIDER_FLOAT, 0, 0, 2, 0.001)
-DEFINE_UI_PARAMS(p_LimitL, Low Luma Limiter, DCTLUI_SLIDER_FLOAT, 0, 0, 2, 0.001)
+DEFINE_UI_PARAMS(p_Den, Film Density, DCTLUI_SLIDER_FLOAT, 0, 0, 2, 0.001)
+DEFINE_UI_PARAMS(p_WR, Red Weight, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(p_WG, Green Weight, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(p_WB, Blue Weight, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(p_LimitS, Low Saturation Limiter, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(p_LimitL, Low Luma Limiter, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
 DEFINE_UI_PARAMS(p_Display, Display Alpha, DCTLUI_CHECK_BOX, 0)
-DEFINE_UI_PARAMS(p_LUMA1, Luma Coefficients, DCTLUI_SLIDER_INT, 0, 0, 5, 1)
-DEFINE_UI_PARAMS(p_LUMA2, Luma Coefficients, DCTLUI_COMBO_BOX, 0, { REC709, REC2020, DCIP3, ACESAP0, ACESAP1, AVERAGE }, { Rec709, Rec2020, DCIP3, ACES AP0, ACES AP1, Average })
 
 __DEVICE__ float3 RGB_to_HSV( float3 RGB ) {
 float3 HSV;
@@ -69,15 +70,12 @@ RGB.z = (1.0f - Sat) * luma + RGB.z * Sat;
 return RGB;
 }
 
-__DEVICE__ float get_luma(float R, float G, float B, int L) {
-float lumaRec709 = R * 0.2126f + G * 0.7152f + B * 0.0722f;
-float lumaRec2020 = R * 0.2627f + G * 0.6780f + B * 0.0593f;
-float lumaDCIP3 = R * 0.209492f + G * 0.721595f + B * 0.0689131f;
-float lumaACESAP0 = R * 0.3439664498f + G * 0.7281660966f + B * -0.0721325464f;
-float lumaACESAP1 = R * 0.2722287168f + G * 0.6740817658f + B * 0.0536895174f;
-float lumaAvg = (R + G + B) / 3.0f;
-float luma = L == 0 ? lumaRec709 : L == 1 ? lumaRec2020 : L == 2 ? lumaDCIP3 : 
-L == 3 ? lumaACESAP0 : L == 4 ? lumaACESAP1 : lumaAvg;
+__DEVICE__ float get_luma(float3 RGB, float Rw, float Gw, float Bw) {
+float R, G, B;
+R = Rw + 1.0f - (Gw / 2.0f) - (Bw / 2.0f);
+G = Gw + 1.0f - (Rw / 2.0f) - (Bw / 2.0f);
+B = Bw + 1.0f - (Rw / 2.0f) - (Gw / 2.0f);
+float luma = (RGB.x * R + RGB.y * G + RGB.z * B) / 3.0f;
 return luma;
 }
 
@@ -92,16 +90,14 @@ return alpha;
 __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
 {
 float3 rgbIn = make_float3(p_R, p_G, p_B);
-if (p_Sat == 0.0f && p_Display == 0)
+if (p_Den == 0.0f && p_Display == 0)
 return rgbIn;
 
-int p_LUMA = p_LUMA1;
-#if (__RESOLVE_VER_MAJOR__ > 15)
-p_LUMA = p_LUMA2;
-#endif
-
-float luma = get_luma(rgbIn.x, rgbIn.y, rgbIn.z, p_LUMA);
-float SatA = 1.0f / (p_Sat + 1.0f);
+float WR = 2.0f - p_WR;
+float WG = 2.0f - p_WG;
+float WB = 2.0f - p_WB;
+float luma = get_luma(rgbIn, WR, WG, WB);
+float SatA = 1.0f / (p_Den + 1.0f);
 float3 rgbOut = Saturation(rgbIn, luma, SatA);
 
 float alphaS, alphaL, alpha;
@@ -113,7 +109,8 @@ alphaS = Limiter(sat, p_LimitS);
 alpha = alphaS;
 }
 if (p_LimitL > 0.0f) {
-alphaL = Limiter(luma, p_LimitL);
+alphaL = (rgbIn.x + rgbIn.y + rgbIn.z) / 3.0f;
+alphaL = Limiter(alphaL, p_LimitL);
 alpha *= alphaL;
 }
 
