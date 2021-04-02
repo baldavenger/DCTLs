@@ -1,0 +1,338 @@
+// Text Digits OFX DCTL METAL
+
+DEFINE_UI_PARAMS(pixelX, Pixel X, DCTLUI_SLIDER_FLOAT, 0.5, 0, 1, 0.001)
+DEFINE_UI_PARAMS(pixelY, Pixel Y, DCTLUI_SLIDER_FLOAT, 0.5, 0, 1, 0.001)
+DEFINE_UI_PARAMS(textcolor, Text Colour, DCTLUI_SLIDER_INT, 1, 0, 7, 1)
+DEFINE_UI_PARAMS(SCALE, Scale, DCTLUI_SLIDER_INT, 8, 1, 16, 1)
+DEFINE_UI_PARAMS(decimalPlace, Decimal Places, DCTLUI_SLIDER_INT, 6, 1, 10, 1)
+DEFINE_UI_PARAMS(cross, Display Cross, DCTLUI_CHECK_BOX, 1)
+DEFINE_UI_PARAMS(bottomleft, Bottom Left, DCTLUI_CHECK_BOX, 0)
+
+__CONSTANT__ float ch_sp = 0.0f;
+__CONSTANT__ float ch_a = 712557.0f;
+__CONSTANT__ float ch_b = 1760622.0f;
+__CONSTANT__ float ch_c = 706858.0f;
+__CONSTANT__ float ch_d = 1760110.0f;
+__CONSTANT__ float ch_e = 2018607.0f;
+__CONSTANT__ float ch_f = 2018596.0f;
+__CONSTANT__ float ch_g = 706922.0f;
+__CONSTANT__ float ch_h = 1498989.0f;
+__CONSTANT__ float ch_i = 1909911.0f;
+__CONSTANT__ float ch_j = 1872746.0f;
+__CONSTANT__ float ch_k = 1498477.0f;
+__CONSTANT__ float ch_l = 1198375.0f;
+__CONSTANT__ float ch_m = 1571693.0f;
+__CONSTANT__ float ch_n = 1760109.0f;
+__CONSTANT__ float ch_o = 711530.0f;
+__CONSTANT__ float ch_p = 711972.0f;
+__CONSTANT__ float ch_q = 711675.0f;
+__CONSTANT__ float ch_r = 1760621.0f;
+__CONSTANT__ float ch_s = 2018927.0f;
+__CONSTANT__ float ch_t = 1909906.0f;
+__CONSTANT__ float ch_u = 1497963.0f;
+__CONSTANT__ float ch_v = 1497938.0f;
+__CONSTANT__ float ch_w = 1498109.0f;
+__CONSTANT__ float ch_x = 1496429.0f;
+__CONSTANT__ float ch_y = 1496210.0f;
+__CONSTANT__ float ch_z = 2004271.0f;
+__CONSTANT__ float ch_1 = 730263.0f;
+__CONSTANT__ float ch_2 = 693543.0f;
+__CONSTANT__ float ch_3 = 693354.0f;
+__CONSTANT__ float ch_4 = 1496649.0f;
+__CONSTANT__ float ch_5 = 1985614.0f;
+__CONSTANT__ float ch_6 = 707946.0f;
+__CONSTANT__ float ch_7 = 1873042.0f;
+__CONSTANT__ float ch_8 = 709994.0f;
+__CONSTANT__ float ch_9 = 710250.0f;
+__CONSTANT__ float ch_0 = 711530.0f;
+__CONSTANT__ float ch_per = 2.0f;
+__CONSTANT__ float ch_que = 693378.0f;
+__CONSTANT__ float ch_exc = 599170.0f;
+__CONSTANT__ float ch_com = 10.0f;
+__CONSTANT__ float ch_scl = 65556.0f;
+__CONSTANT__ float ch_col = 65552.0f;
+__CONSTANT__ float ch_usc = 7.0f;
+__CONSTANT__ float ch_crs = 11904.0f;
+__CONSTANT__ float ch_dsh = 3584.0f;
+__CONSTANT__ float ch_ast = 21824.0f;
+__CONSTANT__ float ch_fsl = 304292.0f;
+__CONSTANT__ float ch_bsl = 1189001.0f;
+__CONSTANT__ float ch_lpr = 346385.0f;
+__CONSTANT__ float ch_rpr = 1118804.0f;
+__CONSTANT__ float ch_lba = 862355.0f;
+__CONSTANT__ float ch_rpa = 1647254.0f;
+
+__CONSTANT__ float2 CHAR_SIZE = {3.0f, 7.0f};
+__CONSTANT__ float2 CHAR_SPACING = {4.0f, 8.0f};
+#define STRWIDTH(c) (c * CHAR_SPACING.x)
+#define STRHEIGHT(c) (c * CHAR_SPACING.y)
+
+__DEVICE__ float3 add(float3 A, float B) {
+float3 C;
+C.x = A.x + B;
+C.y = A.y + B;
+C.z = A.z + B;
+return C;
+}
+
+__DEVICE__ float2 divide(float2 A, float2 B) {
+float2 C;
+C.x = A.x / B.x;
+C.y = A.y / B.y;
+return C;
+}
+
+__DEVICE__ float fract(float A) {
+float B;
+B = A - _floor(A);
+return B;
+}
+
+__DEVICE__ float2 minus(float2 A, float2 B) {
+float2 C;
+C.x = A.x - B.x;
+C.y = A.y - B.y;
+return C;
+}
+
+__DEVICE__ float3 RGB_HSL(float3 RGB) {
+float mn = _fminf(RGB.x, _fminf(RGB.y, RGB.z));    
+float Mx = _fmaxf(RGB.x, _fmaxf(RGB.y, RGB.z));    
+float del_Mx = Mx - mn;
+float L = (Mx + mn) / 2.0f;
+float luma = RGB.x * 0.2126f + RGB.y * 0.7152f + RGB.z * 0.0722f;
+float S = del_Mx == 0.0f ? 0.0f : L < 0.5f ? del_Mx / (Mx + mn) : del_Mx / (2.0f - Mx - mn);
+float del_R = ((Mx - RGB.x) / 6.0f + del_Mx / 2.0f) / del_Mx;
+float del_G = ((Mx - RGB.y) / 6.0f + del_Mx / 2.0f) / del_Mx;
+float del_B = ((Mx - RGB.z) / 6.0f + del_Mx / 2.0f) / del_Mx;
+float h = del_Mx == 0.0f ? 0.0f : RGB.x == Mx ? del_B - del_G : RGB.y == Mx ? 1.0f / 3.0f + 
+del_R - del_B : 2.0f / 3.0f + del_G - del_R;
+float H = h < 0.0f ? h + 1.0f : h > 1.0f ? h - 1.0f : h;
+return make_float3(H, S, luma);
+}
+
+__DEVICE__ float extract_bit(float n, float b) {
+return _floor(_fmod(_floor(n / _exp2f(_floor(b))), 2.0f));   
+}
+
+__DEVICE__ float sprite(float spr, float2 size, float2 uv) {
+uv.x = _floor(uv.x);
+uv.y = _floor(uv.y);
+float bit = (size.x - uv.x - 1.0f) + uv.y * size.x;
+bool bounds = uv.x >= 0.0f && uv.y >= 0.0f;
+bounds = bounds && (uv.x < size.x) && (uv.y < size.y);
+return bounds ? extract_bit(spr, bit) : 0.0f;
+}
+
+__DEVICE__ float2 Char(float ch, float2 uv, float print_posX, float print_posY) {
+float a = print_posX;
+float b = print_posY;
+float2 px;
+float2 yo = make_float2(uv.x - a, uv.y - b);
+px.x = sprite(ch, CHAR_SIZE, yo);
+px.y = print_posX + CHAR_SPACING.x;
+return px;
+}
+
+__DEVICE__ float get_digit(float d) {
+d = _floor(d);
+if(d == 0.0f) return ch_0;
+if(d == 1.0f) return ch_1;
+if(d == 2.0f) return ch_2;
+if(d == 3.0f) return ch_3;
+if(d == 4.0f) return ch_4;
+if(d == 5.0f) return ch_5;
+if(d == 6.0f) return ch_6;
+if(d == 7.0f) return ch_7;
+if(d == 8.0f) return ch_8;
+if(d == 9.0f) return ch_9;
+return 0.0f;
+}
+
+__DEVICE__  float2 print_number(float number, float2 uv, float print_posX, float print_posY) {
+float2 dec_pos;
+dec_pos.x = print_posX;
+dec_pos.y = print_posY;
+float2 result;
+result.x = 0.0f;
+for(int i = 3;i >= 0;i--)
+{
+float clip = float(_fabs(number) > _exp10f(float(i)) || i == 0);
+float digit = _fmod(number / _exp10f(float(i)),10.0f);
+result += sprite(get_digit(digit),CHAR_SIZE, make_float2(uv.x - dec_pos.x, uv.y - dec_pos.y)) * clip;
+dec_pos.x += CHAR_SPACING.x * clip;
+result.y = print_posX + CHAR_SPACING.x;
+}
+return result;
+}
+
+__DEVICE__ float DigitBin(const int x) {
+return x==0 ? 480599.0f : x==1 ? 139810.0f : x==2 ? 476951.0f : x==3 ? 476999.0f : x==4 ? 350020.0f : x==5 ? 464711.0f : 
+x==6 ? 464727.0f : x==7 ? 476228.0f : x==8 ? 481111.0f : x==9 ? 481095.0f : 0.0f;
+}
+
+__DEVICE__ float2 PrintValue(const float fValue, float PixelCoordX, float PixelCoordY, 
+const float2 vFontSize, const float fMaxDigits, const float fDecimalPlaces, float2 Coord, int SCALE) {
+float2 result;
+float2 vPixelCoords;
+vPixelCoords.x = PixelCoordX * SCALE/2.0f;
+vPixelCoords.y = PixelCoordY * SCALE;
+float2 vStringCharCoords = divide(minus(Coord, vPixelCoords), vFontSize);
+if ((vStringCharCoords.y < 0.0f) || (vStringCharCoords.y >= 1.0f)) return 0.0f;
+float fLog10Value = _log2f(_fabs(fValue)) / _log2f(10.0f);
+float fBiggestIndex = _fmaxf(_floor(fLog10Value), 0.0f);
+float fDigitIndex = fMaxDigits - _floor(vStringCharCoords.x);
+float fCharBin = 0.0f;
+if(fDigitIndex > (-fDecimalPlaces - 1.01f)) {
+if(fDigitIndex > fBiggestIndex) {
+if((fValue < 0.0f) && (fDigitIndex < (fBiggestIndex + 1.5f))) fCharBin = 1792.0f;
+} else {		
+if(fDigitIndex == -1.0f) {
+if(fDecimalPlaces > 0.0f) fCharBin = 2.0f;
+} else {
+if(fDigitIndex < 0.0f) fDigitIndex += 1.0f;
+float fDigitValue = (_fabs(fValue / (_powf(10.0f, fDigitIndex))));
+float kFix = 0.0001f;
+fCharBin = DigitBin(int(_floor(_fmod(kFix + fDigitValue, 10.0f))));
+}}}
+result.y = PixelCoordX + (fMaxDigits + fDecimalPlaces + 2.0f) * 7.0f;
+result.x = _floor(_fmod((fCharBin / _powf(2.0f, _floor(fract(vStringCharCoords.x) * 4.0f) + (_floor(vStringCharCoords.y * 5.0f) * 4.0f))), 2.0f));
+return result;
+}
+
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{ 
+float3 COL = make_float3(_tex2D(p_TexR, p_X, p_Y), _tex2D(p_TexG, p_X, p_Y), _tex2D(p_TexB, p_X, p_Y));
+float2 LOCATION = make_float2(pixelX * p_Width, pixelY * p_Height);
+float X = (float)p_X;
+float Y = (float)(p_Height - p_Y);
+float2 Coord = make_float2(X, Y);
+float2 resolution = make_float2((float)p_Width, (float)p_Height);
+float fDigits = 4.0f;
+float Decimals = float(decimalPlace);
+float2 vFontSize = make_float2(8.0f * SCALE / 2.0f, 15.0f * SCALE / 2.0f);
+
+float r = _tex2D(p_TexR, (int)LOCATION.x, p_Height - (int)LOCATION.y);
+float g = _tex2D(p_TexG, (int)LOCATION.x, p_Height - (int)LOCATION.y);
+float b = _tex2D(p_TexB, (int)LOCATION.x, p_Height - (int)LOCATION.y);
+float3 HSL = RGB_HSL(make_float3(r, g, b));
+
+float2 res = make_float2(resolution.x / SCALE, resolution.y / SCALE);
+float2 uv = make_float2(X / SCALE, Y / SCALE);
+uv = make_float2(_floor(uv.x), _floor(uv.y));
+float print_posX, print_posY;
+float col = 0.0f;
+float yo1 = col;
+
+float ROWS = SCALE + 8.0f;
+print_posY = res.y - 8.0f;
+
+if (bottomleft){
+print_posY = 2.0f;
+ROWS *= -1.0f;
+}
+
+print_posX = 2.0f;
+float2 yo = Char(ch_p,uv, print_posX, print_posY);
+col += yo.x;
+print_posX = yo.y;
+yo = Char(ch_i,uv, print_posX, print_posY);
+col += yo.x;
+print_posX = yo.y;
+yo = Char(ch_x,uv, print_posX, print_posY);
+col += yo.x;
+print_posX = yo.y;
+yo = Char(ch_e,uv, print_posX, print_posY);
+col += yo.x;
+print_posX = yo.y;
+yo = Char(ch_l,uv, print_posX, print_posY);
+col += yo.x;
+print_posX = yo.y;
+yo = Char(ch_col,uv, print_posX, print_posY);
+col += yo.x;
+print_posX = yo.y;
+yo = Char(ch_sp,uv, print_posX, print_posY);
+col += yo.x;
+print_posX = yo.y;
+yo = print_number(LOCATION.x, uv, print_posX, print_posY);
+col += yo.x;
+print_posX = yo.y;
+yo = Char(ch_sp,uv, print_posX, print_posY);
+col += yo.x;
+print_posX = yo.y;
+yo = print_number(LOCATION.y, uv, print_posX, print_posY);
+col += yo.x;
+
+print_posX = 2.0f;
+print_posY -= ROWS;
+yo = Char(ch_r,uv, print_posX, print_posY);
+col += yo.x;
+print_posX = yo.y;
+yo = Char(ch_g,uv, print_posX, print_posY);
+col += yo.x;
+print_posX = yo.y;
+yo = Char(ch_b,uv, print_posX, print_posY);
+col += yo.x;
+print_posX = yo.y;
+yo = Char(ch_col,uv, print_posX, print_posY);
+col += yo.x;
+print_posX = yo.y;
+yo = Char(ch_sp,uv, print_posX, print_posY);
+col += yo.x;
+print_posX = yo.y;
+yo = PrintValue(r, print_posX, print_posY, vFontSize, fDigits, Decimals, Coord, SCALE);
+yo1 += yo.x;
+print_posX = yo.y;
+yo = PrintValue(g, print_posX, print_posY, vFontSize, fDigits, Decimals, Coord, SCALE);
+yo1 += yo.x;
+print_posX = yo.y;
+yo = PrintValue(b, print_posX, print_posY, vFontSize, fDigits, Decimals, Coord, SCALE);
+yo1 += yo.x;
+print_posX = yo.y;
+
+print_posX = 2.0f;
+print_posY -= ROWS;
+yo = Char(ch_h,uv, print_posX, print_posY);
+col += yo.x;
+print_posX = yo.y;
+yo = Char(ch_s,uv, print_posX, print_posY);
+col += yo.x;
+print_posX = yo.y;
+yo = Char(ch_l,uv, print_posX, print_posY);
+col += yo.x;
+print_posX = yo.y;
+yo = Char(ch_col,uv, print_posX, print_posY);
+col += yo.x;
+print_posX = yo.y;
+yo = Char(ch_sp,uv, print_posX, print_posY);
+col += yo.x;
+print_posX = yo.y;
+yo = PrintValue(HSL.x * 360.0f, print_posX, print_posY, vFontSize, fDigits, Decimals, Coord, SCALE);
+yo1 += yo.x;
+print_posX = yo.y;
+yo = PrintValue(HSL.y, print_posX, print_posY, vFontSize, fDigits, Decimals, Coord, SCALE);
+yo1 += yo.x;
+print_posX = yo.y;
+yo = PrintValue(HSL.z, print_posX, print_posY, vFontSize, fDigits, Decimals, Coord, SCALE);
+yo1 += yo.x;
+print_posX = yo.y;
+
+col += yo1;
+COL = make_float3(COL.x * (1.0f - col), COL.y * (1.0f - col), COL.z * (1.0f - col));
+
+float3 textcol = textcolor == 0 ? make_float3(0.0f,0.0f,0.0f) : textcolor == 1 ? make_float3(col,col,col) : 
+textcolor == 2 ? make_float3(col,0.0f,0.0f) : textcolor == 3 ? make_float3(col,col,0.0f) : textcolor == 4 ? make_float3(0.0f,col,0.0f) : 
+textcolor == 5 ? make_float3(0.0f,col,col) : textcolor == 6 ? make_float3(0.0f,0.0f,col) : make_float3(col,0.0f,col);
+COL = make_float3(COL.x + textcol.x, COL.y + textcol.y, COL.z + textcol.z);
+
+if(cross) {
+float yoX = LOCATION.x / SCALE - 1.0f;
+float yoY = LOCATION.y / SCALE - 1.0f;
+float cross = Char(ch_crs,uv, yoX, yoY).x;
+COL.x +=cross;
+COL.y +=cross;
+}
+
+return COL;
+}
