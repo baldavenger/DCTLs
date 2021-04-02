@@ -1,0 +1,660 @@
+// ED-209 OFX DCTL METAL
+
+DEFINE_UI_PARAMS(TIME, Animate, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001f)
+DEFINE_UI_PARAMS(PARA1, Track, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001f)
+DEFINE_UI_PARAMS(PARA2, Crane, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001f)
+DEFINE_UI_PARAMS(PARA3, Dolly, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001f)
+DEFINE_UI_PARAMS(HUE, Hue, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001f)
+DEFINE_UI_PARAMS(SAT, Sat, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001f)
+DEFINE_UI_PARAMS(LUM, Lum, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001f)
+DEFINE_UI_PARAMS(AA, Anti-Alias, DCTLUI_CHECK_BOX, 0)
+
+#define MIN_DIST      0.0015f
+#define MAX_DIST      64.0f
+#define MAX_STEPS     120.0f
+#define SHADOW_STEPS  30.0f
+
+typedef struct {
+float2 r0, r1;
+} mat2;
+
+typedef struct {
+float d;
+float3 mat;
+float specPower;
+} MarchData;
+
+__DEVICE__ float3 make_float3_3( float A) {
+return make_float3(A, A, A);
+}
+
+__DEVICE__ float2 _fabs2( float2 A) {
+return make_float2(_fabs(A.x), _fabs(A.y));
+}
+
+__DEVICE__ float3 _fabs3( float3 A) {
+return make_float3(_fabs(A.x), _fabs(A.y), _fabs(A.z));
+}
+
+__DEVICE__ float2 _fmaxf2( float2 in, float Min) {
+float2 out;
+out.x = _fmaxf(in.x, Min);
+out.y = _fmaxf(in.y, Min);
+return out;
+}
+
+__DEVICE__ float3 _fmaxf3( float3 in, float Min) {
+float3 out;
+out.x = _fmaxf(in.x, Min);
+out.y = _fmaxf(in.y, Min);
+out.z = _fmaxf(in.z, Min);
+return out;
+}
+
+__DEVICE__ float _fract( float A) {
+return A - _floor(A);
+}
+
+__DEVICE__ float3 _powf3( float3 in, float3 pw) {
+float3 out;
+out.x = _powf( in.x, pw.x);
+out.y = _powf( in.y, pw.y);
+out.z = _powf( in.z, pw.z);
+return out;
+}
+
+__DEVICE__ float _sign( float A) {
+return (A < 0.0f ? -1.0f : A > 0.0f ? 1.0f : 0.0f);
+}
+
+__DEVICE__ float2 Rotate( float ax, float ay, float b) {
+float AX = ax;
+float AY = ay;
+float c = _cosf(b);
+float s = _sinf(b);
+ax = AX * c + AY * s;
+ay = AX * -s + AY * c;
+return make_float2(ax, ay);
+}
+
+__DEVICE__ float3 rgb_to_hsv( float3 rgb) {
+float r = rgb.x;
+float g = rgb.y;
+float b = rgb.z;
+float h, s, v;
+float min = _fminf(_fminf(r, g), b);
+float max = _fmaxf(_fmaxf(r, g), b);
+v = max;
+float delta = max - min;
+if (max != 0.0f) {
+s = delta / max;
+} else {
+s = 0.0f;
+h = 0.0f;
+return make_float3(h, s, v);
+}
+if (delta == 0.0f) {
+h = 0.0f;
+} else if (r == max) {
+h = (g - b) / delta;
+} else if (g == max) {
+h = 2.0f + (b - r) / delta;
+} else {
+h = 4.0f + (r - g) / delta;
+}
+h *= 1.0f / 6.0f;
+if (h < 0.0f) {
+h += 1.0f;
+}
+return make_float3(h, s, v);
+}
+
+__DEVICE__ float3 hsv_to_rgb(float3 hsv) {
+float H = hsv.x;
+float S = hsv.y;
+float V = hsv.z;
+float r, g, b;
+if (S == 0.0f) {
+r = g = b = V; return make_float3(r, g, b);
+}
+H *= 6.0f;
+float i = _floor(H);
+float f = H - i;
+i = (i >= 0.0f) ? _fmod(i,6.0f) : _fmod(i, 6.0f) + 6.0f;
+float p = V * (1.0f - S);
+float q = V * (1.0f - S * f);
+float t = V * (1.0f - S * (1.0f - f));
+r = i == 0.0f ? V : i == 1.0f ? q : i == 2.0f ? p : i == 3.0f ? p : i == 4.0f ? t : V;
+g = i == 0.0f ? t : i == 1.0f ? V : i == 2.0f ? V : i == 3.0f ? q : i == 4.0f ? p : p;
+b = i == 0.0f ? p : i == 1.0f ? p : i == 2.0f ? t : i == 3.0f ? V : i == 4.0f ? V : q;
+return make_float3(r, g, b);
+}
+
+__DEVICE__ float3 hsv(float3 rgb, float3 edit) {
+float3 hsv = rgb_to_hsv(rgb);
+return hsv_to_rgb(make_float3(hsv.x + edit.x, hsv.y * edit.y, hsv.x * edit.z));
+}
+
+__DEVICE__ float remap(float f, float in1, float in2, float out1, float out2) {
+return _mix(out1, out2, _clampf((f - in1) / (in2 - in1), 0.0f, 1.0f));
+}
+
+__DEVICE__ float sdBox(float3 p, float3 b) {
+float3 q = _fabs3(p) - b;
+return length(_fmaxf3(q, 0.0f)) + _fminf(_fmaxf(q.x, _fmaxf(q.y, q.z)), 0.0f);
+}
+
+__DEVICE__ float sdChamferedCube(float3 p, float3 r, float c) {
+float cube = sdBox(p, r);
+float2 pxz = Rotate(p.x, p.z, 3.141f / 4.0f);
+p.x = pxz.x;
+p.z = pxz.y;
+float2 rxz = Rotate(r.x, r.z, -c / 1.41f + 1.41f);
+r.x = rxz.x;
+r.z = rxz.y;
+return _fmaxf(cube, sdBox(p, r));
+}
+
+__DEVICE__ float sdTriPrism(float3 p, float2 h) {
+float3 q = _fabs3(p);
+return _fmaxf(q.z - h.y, _fmaxf(q.x * 0.866025f + p.y * 0.5f, -p.y) - h.x * 0.5f);
+}
+
+__DEVICE__ float sdCappedCone(float3 p, float3 a, float3 b, float ra, float rb) {
+float rba  = rb-ra,
+baba = dot(b-a,b-a),
+papa = dot(p-a,p-a),
+paba = dot(p-a,b-a)/baba,
+x = _sqrtf( papa - paba*paba*baba ),
+cax = _fmaxf(0.0f,x-((paba<0.5f)?ra:rb)),
+cay = _fabs(paba-0.5f)-0.5f,
+k = rba*rba + baba,
+f = _clampf( (rba * (x - ra) + paba * baba) / k, 0.0f, 1.0f ),
+cbx = x - ra - f * rba,
+cby = paba - f,
+s = (cbx < 0.0f && cay < 0.0f) ? -1.0f : 1.0f;
+return s * _sqrtf( _fminf(cax*cax + cay*cay*baba, cbx*cbx + cby*cby*baba) );
+}
+
+__DEVICE__ float sdCappedCylinder(float3 p, float h, float r) {
+float2 d = _fabs2(make_float2(length(make_float2(p.x, p.y)), p.z)) - make_float2(h, r);
+return _fminf(_fmaxf(d.x, d.y), 0.0f) + length(_fmaxf2(d, 0.0f));
+}
+
+__DEVICE__ float sdCapsule( float3 p, float3 a, float3 b, float r ) {
+float3 pa = p - a, ba = b - a;
+float h = _clampf(dot(pa, ba) / dot(ba, ba), 0.0f, 1.0f);
+return length(pa - ba * h) - r;
+}
+
+__DEVICE__ float sdOctogon(float2 p, float r) {
+float3 k = make_float3(-0.9238795325f, 0.3826834323f, 0.4142135623f);
+p = _fabs2(p);
+p -= 2.0f * _fminf(dot(make_float2( k.x, k.y), p), 0.0f) * make_float2( k.x, k.y);
+p -= 2.0f * _fminf(dot(make_float2(-k.x, k.y), p), 0.0f) * make_float2(-k.x, k.y);
+p -= make_float2(_clampf(p.x, -k.z * r, k.z * r), r);
+return length(p) * _sign(p.y);
+}
+
+__DEVICE__ float3 getRayDir(float3 ro, float3 lookAt, float2 uv) {
+float3 forward = normalize(lookAt - ro),
+right = normalize(cross(make_float3(0.0f, 1.0f, 0.0f), forward)),
+up = cross(forward, right);
+return normalize(forward + right * uv.x + up * uv.y);
+}
+
+__DEVICE__ MarchData minResult(MarchData a, MarchData b) {
+if (a.d < b.d) return a;
+return b;
+}
+
+__DEVICE__ float legWalkAngle(float f, float edWalk) { 
+return _sinf(edWalk * 3.141f * 6.0f * f) * 0.2f;
+}
+
+__DEVICE__ float edZ(float edWalk) { 
+return _mix(5.0f, -2.0f, edWalk); 
+}
+
+__DEVICE__ float fireShock(float edShoot) { 
+return _fabs(_sinf(edShoot * 3.1415f * 25.0f)); 
+}
+
+__DEVICE__ float headSphere(float3 p) {
+return (length(p / make_float3(1.0f, 0.8f, 1.0f)) - 1.0f) * 0.8f;
+}
+
+__DEVICE__ MarchData headVisor(float3 p, float h, float bump) {
+bump *= _sinf(p.x * 150.0f) * _sinf(p.y * 150.0f) * 0.002f;
+MarchData result;
+result.d = sdBox(p, make_float3(1.0f, h, 2.0f));
+result.d = _fmaxf(_mix(result.d, headSphere(p), 0.57f), -p.y) - bump;
+result.mat = make_float3_3(0.05f);
+result.specPower = 30.0f;
+return result;
+}
+
+__DEVICE__ MarchData headLower(float3 p, float gunsUp, float3 newRGB) {
+float3 op = p;
+MarchData r = headVisor(p * make_float3(0.95f, -1.4f, 0.95f), 1.0f, 0.0f);
+float roof = _fmaxf(_fmaxf(headVisor((p + make_float3(0.0f, 0.01f, 0.0f)) * make_float3_3(0.95f), 1.0f, 0.0f).d, p.y - 0.35f), p.y * 0.625f - p.z - 0.66f);
+r.d = _fminf(r.d, roof);
+float2 pxy = Rotate(p.x, p.y, 0.075f * (gunsUp - 1.0f) * _sign(p.x));
+p.x = pxy.x;
+p.y = pxy.y;
+p.x = _fabs(p.x) - 1.33f;
+p.y -= 0.1f - p.x * 0.1f;
+r.d = _fminf(r.d, sdBox(p, make_float3(0.4f, 0.06f * (1.0f - p.x), 0.3f - (p.x * 0.2f))));
+p = op;
+p.y = _fabs(_fabs(p.y + 0.147f) - 0.1f * 0.556f) - 0.05f * 0.556f;
+r.d = _fmaxf(r.d, -sdBox(p + make_float3(0.0f, 0.0f, 1.5f), make_float3(_mix(0.25f, 0.55f, -op.y), 0.015f, 0.1f)));
+p = op;
+p.y = _fabs(p.y + 0.16f) - 0.06f;
+p.z -= -1.1f;
+float cheeks = _fmaxf(sdCappedCylinder(make_float3(p.x, p.z, p.y), 1.0f, 0.03f), sdCappedCylinder(make_float3(p.x, p.z, p.y), 0.55f, 1.0f) * -1.0f);
+cheeks = _fmaxf(cheeks, p.z + 0.2f);
+r.d = _fmaxf(r.d, -cheeks);
+r.mat = newRGB;
+r.specPower = 30.0f;
+return r;
+}
+
+__DEVICE__ MarchData gunPod(float3 p, float3 newRGB, float edShoot, float glow) {
+MarchData r;
+r.mat = newRGB;
+r.specPower = 30.0f;
+p.y += 0.1f;
+p.z += 0.45f;
+float rr = 0.35f, chamfer = 0.1f;
+float3 pp = p;
+pp.z = _fabs(pp.z) - 0.5f;
+r.d = sdCappedCone(pp, make_float3_3(0.0f), make_float3(0.0f, 0.0f, -chamfer), rr - chamfer, rr);
+r.d = _fminf(r.d, sdCappedCylinder(p, rr, 0.4f));
+pp = make_float3(p.x, 0.28f - p.y, p.z);
+r.d = _fminf(r.d, sdTriPrism(pp, make_float2(0.1f, 0.5f)));
+pp = p;
+pp.x = _fabs(p.x);
+float2 ppxy = Rotate(pp.x, pp.y, 3.141f / 4.0f);
+pp.x = ppxy.x;
+pp.y = ppxy.y;
+float bump = _sign(_sinf(pp.z * 33.3f)) * 0.003f,
+d = sdBox(pp, make_float3(0.1f - bump, 0.38f - bump, 0.34f)) - 0.02f;
+pp = p - make_float3(0.0f, 0.0f, -0.6f);
+pp.x = _fabs(pp.x) - 0.1f;
+d = _fminf(d, sdCappedCylinder(pp, 0.06f, 0.15f));
+d = _fminf(d, sdCappedCylinder(pp + make_float3(0.0f, 0.12f, -0.05f), 0.06f, 0.05f));
+d = _fminf(d, sdBox(p + make_float3(0.0f, 0.0f, 0.54f), make_float3(0.1f, 0.06f, 0.04f)));
+if (d < r.d) {
+d = _fmaxf(d, -sdCappedCylinder(pp + make_float3(0.0f, 0.0f, 0.1f), 0.03f, 0.2f));
+r.d = d;
+r.mat = make_float3_3(0.02f);
+}
+float fs = fireShock(edShoot);
+if (fs > 0.5f) {
+d = sdCappedCylinder(pp, 0.01f + pp.z * 0.05f, _fract(fs * 3322.423f) * 0.5f + 0.9f);
+if (d < r.d) {
+r.d = d;
+r.mat = make_float3_3(1.0f);
+glow += 0.1f / (0.01f + d * d * 400.0f);
+}}
+return r;
+}
+
+__DEVICE__ MarchData arms(float3 p, float3 newRGB, float gunsUp, float gunsForward, float edShoot, float glow) {
+MarchData r;
+r.d = 0.0f;
+r.mat = newRGB;
+r.specPower = 30.0f;
+p.x = _fabs(p.x);
+p.y += 0.24f;
+float2 pxy = Rotate(p.x, p.y, 0.15f * (gunsUp - 1.0f));
+p.x = pxy.x;
+p.y = pxy.y;
+float3 elbow = make_float3(1.5f, 0.0f, 0.0f), wrist = elbow - make_float3(0.0f, 0.0f, 0.3f);
+r.d = _fminf(sdCapsule(p, make_float3_3(0.0f), elbow, 0.2f), sdCapsule(p, elbow, wrist, 0.2f));
+p -= wrist;
+p.z -= gunsForward * 0.15f;
+return minResult(r, gunPod(p, newRGB, edShoot, glow));
+}
+
+__DEVICE__ float toe(float3 p) {
+p.y += 0.1f;
+p.z += 0.32f;
+return _fmaxf(sdBox(p, make_float3(0.3f + 0.2f * (p.z - 0.18f) - (p.y * 0.456f) * 0.5f, 0.3f + 0.2f * _cosf((p.z - 0.18f) * 3.69f), 0.35f)), 0.1f - p.y);
+}
+
+__DEVICE__ float foot(float3 p) {
+p.z += 0.8f;
+float2 pyz = Rotate(p.y, p.z, 0.86f);
+p.y = pyz.x;
+p.z = pyz.y;
+float d = toe(p);
+float2 pxz = Rotate(p.x, p.z, 1.57f);
+p.x = pxz.x;
+p.z = pxz.y;
+p.x -= 0.43f;
+p.z = 0.25f - _fabs(p.z);
+return _fminf(d, toe(p));
+}
+
+__DEVICE__ MarchData waist(float3 p, float3 newRGB, float edWalk) {
+MarchData r;
+r.d = 0.0f;
+r.mat = newRGB;
+r.specPower = 30.0f;
+p.y += 0.65f;
+float2 pyz = Rotate(p.y, p.z, -0.2f);
+p.y = pyz.x;
+p.z = pyz.y;
+float legAngle = legWalkAngle(1.0f, edWalk);
+float2 pxy = Rotate(p.x, p.y, legAngle * 0.3f);
+p.x = pxy.x;
+p.y = pxy.y;
+float3 pp = p;
+pp.y += 0.3f;
+r.d = _fmaxf(sdCappedCylinder(make_float3(pp.z, pp.y, pp.x), 0.5f, 0.5f), p.y + 0.15f);
+float bump = 0.5f - _fabs(_sinf(p.y * 40.0f)) * 0.03f;
+float d = sdBox(p, make_float3(bump, 0.15f, bump));
+bump = 0.3f - _fabs(_sinf(p.x * 40.0f)) * 0.03f;
+pp.y += 0.18f;
+d = _fminf(d, sdCappedCylinder(make_float3(pp.z, pp.y, pp.x), bump, 0.75f));
+pp.x = _fabs(pp.x);
+float2 ppyz = Rotate(pp.y, pp.z, 0.2f - 3.141f / 4.0f + legAngle * _sign(p.x));
+pp.y = ppyz.x;
+pp.z = ppyz.y;
+pp.x -= 0.98f;
+r.d = _fminf(r.d, _fmaxf(sdCappedCylinder(make_float3(pp.z, pp.y, pp.x), 0.4f, 0.24f), -pp.y));
+r.d = _fminf(r.d, sdBox(pp, make_float3(0.24f, 0.2f, 0.14f + 0.2f * pp.y)));
+p = pp;
+pp.x = _fabs(pp.x) - 0.12f;
+pp.z = _fabs(pp.z) - 0.25f;
+float pistons = _fminf(sdCappedCylinder(make_float3(pp.x, pp.z, pp.y), 0.1f, 0.325f), sdCappedCylinder(make_float3(pp.x, pp.z, pp.y), 0.05f, 0.5f));
+r.d = _fminf(r.d, _fmaxf(pistons, pp.y));
+p.y += 0.68f;
+r.d = _fminf(r.d, sdBox(p, make_float3(_sign(_fabs(p.y) - 0.04f) * 0.005f + 0.26f, 0.2f, 0.34f)));
+if (d < r.d) {
+r.d = d;
+r.mat = make_float3_3(0.02f);
+}
+return r;
+}
+
+__DEVICE__ MarchData legs(float3 p, float3 newRGB, float edWalk) {
+MarchData r;
+r.d = 0.0f;
+r.mat = newRGB;
+r.specPower = 30.0f;
+float legAngle = legWalkAngle(1.0f, edWalk);
+p.z += 0.27;
+float2 pyz = Rotate(p.y, p.z, legAngle * _sign(p.x));
+p.y = pyz.x;
+p.z = pyz.y;
+p.z -= 0.27f;
+p.y += 0.65f;
+pyz = Rotate(p.y, p.z, -0.2f);
+p.y = pyz.x;
+p.z = pyz.y;
+float2 pxy = Rotate(p.x, p.y, legAngle * 0.3f);
+p.x = pxy.x;
+p.y = pxy.y;
+float3 pp = p;
+pp.x = _fabs(pp.x);
+pp.y += 0.48f;
+float2 ppyz = Rotate(pp.y, pp.z, 0.2f - 3.141f / 4.0f);
+pp.y = ppyz.x;
+pp.z = ppyz.y;
+pp.x -= 0.98f;
+float3 cp = pp;
+p = pp;
+pp.x = _fabs(pp.x) - 0.12f;
+pp.z = _fabs(pp.z) - 0.25f;
+p.y += 0.68f;
+p.x = _fabs(p.x) - 0.12f;
+p.y = _fabs(p.y) - 0.12f;
+float silver = sdBox(p, make_float3(0.07f, 0.05f, 1.2f));
+cp.y += 0.7f;
+r.d = sdBox(cp - make_float3(0.0f, 0.0f, 1.15f), make_float3(0.17f, 0.17f, 0.07f)) - 0.04f;
+cp.z += 1.0f;
+float yo = 0.28f - _sign(_fabs(cp.z) - 0.3f) * 0.01f;
+r.d = _fminf(r.d, sdChamferedCube(make_float3(cp.x, cp.z, cp.y), make_float3(yo, 0.5f, yo), 0.18f));
+r.d = _fminf(r.d, foot(cp));
+if (silver < r.d) {
+r.d = silver;
+r.mat = make_float3_3(0.8f);
+}
+return r;
+}
+
+__DEVICE__ MarchData ed209(float3 p, float3 newRGB, float edWalk, float stretch, float edShoot, float edDown, float gunsUp, float gunsForward, float glow, float edTwist) {
+float2 yo = make_float2(legWalkAngle(2.0f, edWalk) * 0.2f + 0.1f, -edZ(edWalk));
+p.y += yo.x;
+p.z += yo.y;
+MarchData r = legs(p, newRGB, edWalk);
+float f = _fminf(stretch * 2.0f, 1.0f),
+slide = f < 0.5f ? smoothstep(0.0f, 0.5f, f) : (1.0f - smoothstep(0.5f, 1.0f, f) * 0.2f);
+p.y -= slide * 0.5f;
+p.z -= slide * 0.5f;
+gunsUp = smoothstep(0.0f, 1.0f, _clampf((stretch - 0.66f) * 6.0f, 0.0f, 1.0f));
+gunsForward = smoothstep(0.0f, 1.0f, _clampf((stretch - 0.83f) * 6.0f, 0.0f, 1.0f))
++ fireShock(edShoot) * 0.5f;
+r = minResult(r, waist(p, newRGB, edWalk));
+float2 pyz = Rotate(p.y, p.z, 0.1f * (-edDown + legWalkAngle(2.0f, edWalk) + smoothstep(0.0f, 1.0f, _clampf((stretch - 0.5f) * 6.0f, 0.0f, 1.0f)) - 1.0f));
+p.y = pyz.x;
+p.z = pyz.y;
+float2 pxz = Rotate(p.x, p.z, edTwist * 0.2f);
+p.x = pxz.x;
+p.z = pxz.y;
+r = minResult(r, headLower(p, gunsUp, newRGB));
+r = minResult(r, headVisor(p, 0.8f, 1.0f));
+return minResult(r, arms(p, newRGB, gunsUp, gunsForward, edShoot, glow));
+}
+
+__DEVICE__ MarchData room(float3 p, float doorOpen) {
+MarchData r;
+r.mat = make_float3_3(0.4f);
+r.specPower = 10000000.0f;
+float3 frameInner = make_float3(2.8f, 2.6f, 0.1f);
+float2 xy = make_float2(p.x, p.y - 2.0f);
+p.x = _fabs(p.x);
+p.y += 0.5f;
+p.z -= 3.4f;
+float doorHole = sdBox(p, frameInner + make_float3(0.0f, 0.0f, 1.0f)),
+backWall = _fabs(p.z - 8.0f);
+r.d = _fminf(backWall, _fmaxf(_fabs(p.z), -doorHole + 0.1f));
+if (r.d == backWall) {
+float ocp;
+ocp = _fminf(_fabs(sdOctogon(xy, 2.6f)), _fabs(sdOctogon(xy, 1.9f)));
+ocp = _fmaxf(ocp, _fminf(0.7f - _fabs(xy.x + 1.2f), -xy.y));
+ocp = _fminf(ocp, _fmaxf(_fabs(sdOctogon(xy, 1.2f)), _fminf(xy.x, 0.7f - _fabs(xy.y))));
+if (ocp < 0.3f)
+r.mat = make_float3(0.39f, 0.57f, 0.71f);
+}
+float doorFrame = _fmaxf(sdBox(p, frameInner + make_float3(0.4f, 0.4f, 0.1f)), doorHole * -1.0f),
+doorWidth = frameInner.x * 0.5f;
+p.x -= frameInner.x;
+float2 pxz = Rotate(p.x, p.z, doorOpen * 2.1f);
+p.x = pxz.x;
+p.z = pxz.y;
+p.x += doorWidth;
+float door = sdBox(p, make_float3(doorWidth, frameInner.y, frameInner.z));
+p = _fabs3(p) - make_float3(doorWidth * 0.5f, 1.1f, 0.14f);
+door = _fmaxf(door, -(_fmaxf(sdBox(p, make_float3(0.45f, 0.9f, 0.1f)), -sdBox(p, make_float3(0.35f, 0.8f, 1.0f)))));
+float d = _fminf(doorFrame, door);
+if (d < r.d) {
+r.d = d;
+r.mat = make_float3(0.02f, 0.02f, 0.024f);
+r.specPower = 10.0f;
+}
+return r;
+}
+
+__DEVICE__ MarchData map(float3 p, float doorOpen, float3 newRGB, float edWalk, float stretch, float edShoot, float edDown, float gunsUp, float gunsForward, float glow, float edTwist) {
+MarchData r = minResult(room(p, doorOpen), ed209(p, newRGB, edWalk, stretch, edShoot, edDown, gunsUp, gunsForward, glow, edTwist));
+float gnd = _fabs(p.y + 3.0f);
+if (gnd < r.d) {
+r.d = gnd;
+r.mat = make_float3_3(0.1f);
+}
+return r;
+}
+
+__DEVICE__ float calcShadow(float3 p, float3 lightPos, float doorOpen, float3 newRGB, float edWalk, float stretch, float edShoot, float edDown, float gunsUp, float gunsForward, float glow, float edTwist) {
+float3 rd = normalize(lightPos - p);
+float res = 1.0f, t = 0.1f;
+for (float i = 0.0f; i < SHADOW_STEPS; i++) {
+float h = map(p + rd * t, doorOpen, newRGB, edWalk, stretch, edShoot, edDown, gunsUp, gunsForward, glow, edTwist).d;
+res = _fminf(res, 12.0f * h / t);
+t += h;
+if (res < 0.001f || t > 25.0f) break;
+}
+return _clampf(res, 0.0f, 1.0f);
+}
+
+__DEVICE__ float3 calcNormal(float3 p, float t, float doorOpen, float3 newRGB, float edWalk, float stretch, float edShoot, float edDown, float gunsUp, float gunsForward, float glow, float edTwist) {
+float sceneAdjust = 0.33f;
+float d = 0.01f * t * sceneAdjust;
+float2 e = make_float2(1.0f, -1.0f) * 0.5773f * d;
+return normalize(make_float3(e.x, e.y, e.y) * map(p + make_float3(e.x, e.y, e.y), doorOpen, newRGB, edWalk, stretch, edShoot, edDown, gunsUp, gunsForward, glow, edTwist).d + 
+make_float3(e.y, e.y, e.x) * map(p + make_float3(e.y, e.y, e.x), doorOpen, newRGB, edWalk, stretch, edShoot, edDown, gunsUp, gunsForward, glow, edTwist).d + 
+make_float3(e.y, e.x, e.y) * map(p + make_float3(e.y, e.x, e.y), doorOpen, newRGB, edWalk, stretch, edShoot, edDown, gunsUp, gunsForward, glow, edTwist).d + 
+make_float3(e.x, e.x, e.x) * map(p + make_float3(e.x, e.x, e.x), doorOpen, newRGB, edWalk, stretch, edShoot, edDown, gunsUp, gunsForward, glow, edTwist).d);
+}
+
+__DEVICE__ float ao(float3 p, float3 n, float h, float doorOpen, float3 newRGB, float edWalk, float stretch, float edShoot, float edDown, float gunsUp, float gunsForward, float glow, float edTwist) {
+return map(p + h * n, doorOpen, newRGB, edWalk, stretch, edShoot, edDown, gunsUp, gunsForward, glow, edTwist).d / h;
+}
+
+__DEVICE__ float3 vignette(float3 col, float2 fragCoord, float2 iResolution) {
+float2 q = make_float2(fragCoord.x / iResolution.x, fragCoord.y / iResolution.y);
+col *= 0.5f + 0.5f * _powf(16.0f * q.x * q.y * (1.0f - q.x) * (1.0f - q.y), 0.4f);
+return col;
+}
+
+__DEVICE__ float3 applyLighting(float3 p, float3 rd, float d, MarchData data, float doorOpen, float3 newRGB, float edWalk, float stretch, float edShoot, float edDown, float gunsUp, float gunsForward, float glow, float edTwist) {
+float3 sunPos = make_float3(10.0f, 10.0f, -10.0f);
+float3 sunDir = normalize(sunPos - p), n = calcNormal(p, d, doorOpen, newRGB, edWalk, stretch, edShoot, edDown, gunsUp, gunsForward, glow, edTwist);
+float primary = _fmaxf(0.0f, dot(sunDir, n)),
+bounce = _fmaxf(0.0f, dot(-sunDir, n)) * 0.2f,
+spe = _powf(_fmaxf(0.0f, dot(rd, reflect(sunDir, n))), data.specPower) * 2.0f,
+fre = smoothstep(0.7f, 1.0f, 1.0f + dot(rd, n)),
+fog = _expf(length(p) * -0.05f);
+primary *= _mix(0.2f, 1.0f, calcShadow(p, sunPos, doorOpen, newRGB, edWalk, stretch, edShoot, edDown, gunsUp, gunsForward, glow, edTwist));
+float3 lig = ((primary + bounce) * ao(p, n, 0.33f, doorOpen, newRGB, edWalk, stretch, edShoot, edDown, gunsUp, gunsForward, glow, edTwist) + spe) * make_float3(2.0f, 1.6f, 1.7f);
+return _mix(data.mat * lig, make_float3_3(0.01f), fre) * fog;
+}
+
+__DEVICE__ float3 getSceneColor(float3 ro, float3 rd, float doorOpen, float3 newRGB, float edWalk, float stretch, float edShoot, float edDown, float gunsUp, float gunsForward, float glow, float edTwist) {
+float3 p;
+float d = 0.01f;
+MarchData h;
+for (float steps = 0.0f; steps < MAX_STEPS; steps++) {
+p = ro + rd * d;
+h = map(p, doorOpen, newRGB, edWalk, stretch, edShoot, edDown, gunsUp, gunsForward, glow, edTwist);
+if (_fabs(h.d) < MIN_DIST * d)
+break;
+if (d > MAX_DIST)
+return make_float3_3(0.0f);
+d += h.d;
+}
+float g = glow;
+return applyLighting(p, rd, d, h, doorOpen, newRGB, edWalk, stretch, edShoot, edDown, gunsUp, gunsForward, glow, edTwist) + fireShock(edShoot) * 0.3f + g;
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float edWalk = 1.0f;
+float edTwist = 0.0f;
+float edDown = 0.0f;
+float edShoot = 0.0f;
+float doorOpen = 1.0f;
+float stretch = 1.0f;
+float gunsUp = 0.0f;
+float gunsForward = 0.0f;
+float glow = 0.0f;
+float3 newRGB = make_float3(0.36f, 0.45f, 0.5f);
+
+float iTime = TIME * 55.0f;
+float TRACK = PARA1 * 5.0f;
+float CRANE = PARA2 * 5.0f;
+float DOLLY = PARA3 * 5.0f;
+float width = (float)p_Width;
+float height = (float)p_Height;
+float X = (float)p_X;
+float Y = height - (float)p_Y;
+float2 iResolution = make_float2(width, height);
+float2 fragCoord = make_float2(X, Y);
+
+float3 ro, lookAt;
+float startScene, endScene, time = _fmod(iTime, 55.0f);
+if (time < 12.0f) {
+startScene = 0.0f;
+endScene = 12.0f;
+edWalk = 0.0f;
+ro = make_float3(0.0f + TRACK, -1.5f + CRANE, -0.625f + DOLLY);
+lookAt = make_float3(0.0f, -1.0f, edZ(edWalk));
+doorOpen = smoothstep(0.0f, 1.0f, time / 5.0f);
+stretch = remap(time, 7.0f, 10.0f, 0.0f, 1.0f);
+} else if (time < 25.0f) {
+startScene = 12.0f;
+endScene = 25.0f;
+float t = time - startScene;
+edWalk = smoothstep(0.0f, 1.0f, remap(t, 3.0f, 8.0f, 0.0f, 1.0f));
+ro = make_float3(-0.5f * _cosf(t * 0.7f) + TRACK, 0.5f - t * 0.1f + CRANE, edZ(edWalk) - 3.0f + DOLLY);
+lookAt = make_float3(0.0f, 0.0f, edZ(edWalk));
+} else if (time < 29.0f) {
+startScene = 25.0f;
+endScene = 29.0f;
+float t = time - startScene;
+ro = make_float3(-2.0f + TRACK, 0.5f + t * 0.1f + CRANE, edZ(edWalk) - 3.0f + DOLLY);
+lookAt = make_float3(0.0f, 0.0f, edZ(edWalk));
+} else if (time < 37.0f) {
+startScene = 29.0f;
+endScene = 37.0f;
+float t = time - startScene;
+ro = make_float3(1.5f + TRACK, -1.0f - t * 0.05f + CRANE, edZ(edWalk) - 5.0f + DOLLY);
+lookAt = make_float3(0.0f, -1.0f, edZ(edWalk));
+stretch = remap(t, 2.0f, 5.0f, 1.0f, 0.0f);
+} else if (time < 55.0f) {
+startScene = 37.0f;
+endScene = 55.0f;
+float t = time - startScene;
+ro = make_float3(-1.8f + TRACK, -0.5f + CRANE, edZ(edWalk) - 2.5f + DOLLY);
+stretch = remap(t, 2.0f, 3.0f, 0.0f, 1.0f) - remap(t, 11.5f, 14.5f, 0.0f, 1.0f);
+lookAt = make_float3(0.0f, stretch * 0.5f - 0.5f, edZ(edWalk));
+edTwist = remap(t, 3.0f, 3.2f, 0.0f, 1.0f) * stretch;
+edDown = remap(t, 3.2f, 3.4f, 0.0f, 1.0f) * stretch;
+edShoot = t <= 9.5f ? remap(t, 4.0f, 9.5f, 0.0f, 1.0f) : 0.0f;
+}
+
+float dim = 1.0f - _cosf(_fminf(1.0f, 2.0f * _fminf(_fabs(time - startScene), _fabs(time - endScene))) * 3.141f / 2.0f);
+
+float3 col = make_float3_3(0.0f);
+float2 coord = fragCoord;
+float2 uv = make_float2(0.0f, 0.0f);
+newRGB = make_float3(0.36f, 0.45f, 0.5f);
+
+if (HUE != 0.0f || SAT != 1.0f || LUM != 1.0f)
+newRGB = hsv(newRGB, make_float3(HUE, SAT, LUM));
+
+if(AA) {
+for (float dx = 0.0f; dx <= 1.0f; dx++) {
+for (float dy = 0.0f; dy <= 1.0f; dy++) {
+coord = fragCoord + make_float2(dx, dy) * 0.5f;
+coord.x += (_fract(fireShock(edShoot) * 23242.2323f) - 0.5f) * 10.0f;
+coord.y += (_fract(fireShock(edShoot) * 978.23465f) - 0.5f) * 10.0f;
+uv.x = (coord.x - 0.5f * iResolution.x) / iResolution.y;
+uv.y = (coord.y - 0.5f * iResolution.y) / iResolution.y;
+col += getSceneColor(ro, getRayDir(ro, lookAt, uv), doorOpen, newRGB, edWalk, stretch, edShoot, edDown, gunsUp, gunsForward, glow, edTwist);
+}}
+col /= 4.0f;
+} else {
+coord.x += (_fract(fireShock(edShoot) * 23242.2323f) - 0.5f) * 10.0f;
+coord.y += (_fract(fireShock(edShoot) * 978.23465f) - 0.5f) * 10.0f;
+uv.x = (coord.x - 0.5f * iResolution.x) / iResolution.y;
+uv.y = (coord.y - 0.5f * iResolution.y) / iResolution.y;
+col += getSceneColor(ro, getRayDir(ro, lookAt, uv), doorOpen, newRGB, edWalk, stretch, edShoot, edDown, gunsUp, gunsForward, glow, edTwist);
+}
+
+float3 COL = vignette(_powf3(col * dim, make_float3_3(0.4545f)), fragCoord, iResolution);
+return COL;
+}
