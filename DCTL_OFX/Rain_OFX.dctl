@@ -1,0 +1,174 @@
+// Rain OFX DCTL
+
+DEFINE_UI_PARAMS(TIME, Animate, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001f)
+DEFINE_UI_PARAMS(RAIN1, Rain Amount, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001f)
+DEFINE_UI_PARAMS(RAIN2, Rain Offset, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001f)
+DEFINE_UI_PARAMS(ZOOM, Zoom, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001f)
+DEFINE_UI_PARAMS(POST, Post Processing, DCTLUI_CHECK_BOX, 0)
+DEFINE_UI_PARAMS(LIGHTNING, Lightning, DCTLUI_CHECK_BOX, 0)
+
+#define S(a, b, t) smoothstep(a, b, t)
+
+__DEVICE__ float3 make_float3_3( float A) {
+return make_float3(A, A, A);
+}
+
+__DEVICE__ float _fract( float A) {
+return A - _floor(A);
+}
+
+__DEVICE__ float2 _fract2( float2 A) {
+A.x = _fract(A.x); A.y = _fract(A.y);
+return A;
+}
+
+__DEVICE__ float3 _fract3( float3 A) {
+A.x = _fract(A.x); A.y = _fract(A.y); A.z = _fract(A.z);
+return A;
+}
+
+__DEVICE__ float4 _fract4( float4 A) {
+A.x = _fract(A.x); A.y = _fract(A.y); A.z = _fract(A.z); A.w = _fract(A.w);
+return A;
+}
+
+__DEVICE__ float3  _powf3_3( float3 A, float3 B) {
+return make_float3(_powf(A.x, B.x), _powf(A.y, B.y), _powf(A.z, B.z));
+}
+
+__DEVICE__ float4 _sinf4( float4 A) {
+return make_float4(_sinf(A.x), _sinf(A.y), _sinf(A.z), _sinf(A.w));
+}
+
+__DEVICE__ float3 N13(float p) {
+float3 p3 = _fract3(make_float3_3(p) * make_float3(0.1031f, 0.11369f, 0.13787f));
+p3 += dot(p3, make_float3(p3.y, p3.z, p3.x) + 19.19f);
+return _fract3(make_float3((p3.x + p3.y)*p3.z, (p3.x+p3.z)*p3.y, (p3.y+p3.z)*p3.x));
+}
+
+__DEVICE__ float4 N14(float t) {
+return _fract4(_sinf4(t * make_float4(123.0f, 1024.0f, 1456.0f, 264.0f)) * make_float4(6547.0f, 345.0f, 8799.0f, 1564.0f));
+}
+
+__DEVICE__ float N(float t) {
+return _fract(_sinf(t * 12345.564f) * 7658.76f);
+}
+
+__DEVICE__ float Saw(float b, float t) {
+return S(0.0f, b, t) * S(1.0f, b, t);
+}
+
+__DEVICE__ float2 DropLayer2(float2 uv, float t) {
+float2 UV = uv;
+uv.y += t * 0.75f;
+float2 a = make_float2(6.0f, 1.0f);
+float2 grid = a * 2.0f;
+float2 id = _floor(uv * grid);
+float colShift = N(id.x); 
+uv.y += colShift;
+id = _floor(uv * grid);
+float3 n = N13(id.x * 35.2f + id.y * 2376.1f);
+float2 st = _fract2(uv * grid) - make_float2(0.5f, 0.0f);
+float x = n.x - 0.5f;
+float y = UV.y * 20.0f;
+float wiggle = _sinf(y + _sinf(y));
+x += wiggle * (0.5f - _fabs(x)) * (n.z - 0.5f);
+x *= 0.7f;
+float ti = _fract(t + n.z);
+y = (Saw(0.85f, ti) - 0.5f) * 0.9f + 0.5f;
+float2 p = make_float2(x, y);
+float d = length((st - p) * make_float2(a.y, a.x));
+float mainDrop = S(0.4f, 0.0f, d);
+float r = _sqrtf(S(1.0f, y, st.y));
+float cd = _fabs(st.x - x);
+float trail = S(0.23f * r, 0.15f * r * r, cd);
+float trailFront = S(-0.02f, 0.02f, st.y - y);
+trail *= trailFront * r * r;
+y = UV.y;
+float trail2 = S(0.2f * r, 0.0f, cd);
+float droplets = _fmaxf(0.0f, (_sinf(y * (1.0f - y) * 120.0f) - st.y)) * trail2 * trailFront * n.z;
+y = _fract(y * 10.0f) + (st.y - 0.5f);
+float dd = length(st - make_float2(x, y));
+droplets = S(0.3f, 0.0f, dd);
+float m = mainDrop + droplets * r * trailFront;
+return make_float2(m, trail);
+}
+
+__DEVICE__ float StaticDrops(float2 uv, float t) {
+uv *= 40.0f;
+float2 id = _floor(uv);
+uv = _fract2(uv) - make_float2(0.5f, 0.5f);
+float3 n = N13(id.x * 107.45f + id.y * 3543.654f);
+float2 p = (make_float2(n.x, n.y) - 0.5f) * 0.7f;
+float d = length(uv - p);
+float fade = Saw(0.025f, _fract(t + n.z));
+float c = S(0.3f, 0.0f, d) * _fract(n.z * 10.0f) * fade;
+return c;
+}
+
+__DEVICE__ float2 Drops(float2 uv, float t, float l0, float l1, float l2) {
+float s = StaticDrops(uv, t) * l0; 
+float2 m1 = DropLayer2(uv, t) * l1;
+float2 m2 = DropLayer2(uv * 1.85f, t) * l2;
+float c = s + m1.x + m2.x;
+c = S(0.3f, 1.0f, c);
+return make_float2(c, _fmaxf(m1.y * l0, m2.y * l1));
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{ 
+float width = (float)p_Width;
+float height = (float)p_Height;
+float X = (float)p_X;
+float Y = height - (float)p_Y;
+float2 iResolution = make_float2(width, height);
+float2 fragCoord = make_float2(X, Y);
+float iTime = TIME * 100.0f;
+
+float2 uv;
+uv.x = (fragCoord.x - 0.5f * iResolution.x) / iResolution.y;
+uv.y = (fragCoord.y - 0.5f * iResolution.y) / iResolution.y;
+float2 UV;
+UV.x = fragCoord.x / iResolution.x;
+UV.y = fragCoord.y / iResolution.y;
+float T = iTime + RAIN2 * 2.0f;
+
+float t = T * 0.2f;
+float rainAmount = RAIN1 * (_sinf(T * 0.05f) * 0.3f + 0.7f);
+float maxBlur = _mix(3.0f, 6.0f, rainAmount);
+float minBlur = 2.0f;
+float story = 0.0f;
+
+uv *= 0.7f - ZOOM * 0.3f;
+
+float staticDrops = S(-0.5f, 1.0f, rainAmount) * 2.0f;
+float layer1 = S(0.25f, 0.75f, rainAmount);
+float layer2 = S(0.0f, 0.5f, rainAmount);
+
+float2 c = Drops(uv, t, staticDrops, layer1, layer2);
+float2 e = make_float2(0.001f, 0.0f);
+float cx = Drops(uv + e, t, staticDrops, layer1, layer2).x;
+float cy = Drops(uv + make_float2(e.y, e.x), t, staticDrops, layer1, layer2).x;
+float2 n = make_float2(cx-c.x, cy-c.x);
+
+float focus = _mix(maxBlur - c.y, minBlur, S(0.1f, 0.2f, c.x));
+float3 col;
+UV.y = 1.0f - UV.y;
+col.x = _tex2D(p_TexR, (int)((UV.x + n.x) * width), (int)((UV.y + n.y) * height)); 
+col.y = _tex2D(p_TexG, (int)((UV.x + n.x) * width), (int)((UV.y + n.y) * height)); 
+col.z = _tex2D(p_TexB, (int)((UV.x + n.x) * width), (int)((UV.y + n.y) * height)); 
+
+if(POST) {
+t = (T + 3.0f) * 0.5f;
+float colFade = _sinf(t * 0.2f) * 0.5f + 0.5f + story;
+col *= _mix(make_float3_3(1.0f), make_float3(0.8f, 0.9f, 1.3f), colFade);
+float lightning = 0.0f;
+if(LIGHTNING)
+lightning = _sinf(t * _sinf(t * 10.0f)) * _powf(_fmaxf(0.0f, _sinf(t + _sinf(t))), 10.0f);
+col *= 1.0f + lightning * _mix(1.0f, 0.1f, story * story);
+UV -= 0.5f;
+col *= 1.0f - dot(UV, UV);
+}
+
+return col;
+}
