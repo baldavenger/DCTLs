@@ -1,11 +1,11 @@
 // Rain OFX DCTL
 
 DEFINE_UI_PARAMS(TIME, Animate, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001f)
-DEFINE_UI_PARAMS(RAIN1, Rain Amount, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001f)
-DEFINE_UI_PARAMS(RAIN2, Rain Offset, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001f)
+DEFINE_UI_PARAMS(RAIN, Rain Amount, DCTLUI_SLIDER_FLOAT, 0.5, 0, 1, 0.001f)
 DEFINE_UI_PARAMS(ZOOM, Zoom, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001f)
-DEFINE_UI_PARAMS(POST, Post Processing, DCTLUI_CHECK_BOX, 0)
+DEFINE_UI_PARAMS(POST, Effects, DCTLUI_CHECK_BOX, 0)
 DEFINE_UI_PARAMS(LIGHTNING, Lightning, DCTLUI_CHECK_BOX, 0)
+DEFINE_UI_PARAMS(JUST_RAIN, Just Rain, DCTLUI_CHECK_BOX, 0)
 
 #define S(a, b, t) smoothstep(a, b, t)
 
@@ -123,7 +123,7 @@ float X = (float)p_X;
 float Y = height - (float)p_Y;
 float2 iResolution = make_float2(width, height);
 float2 fragCoord = make_float2(X, Y);
-float iTime = TIME * 100.0f;
+float T = TIME * 100.0f;
 
 float2 uv;
 uv.x = (fragCoord.x - 0.5f * iResolution.x) / iResolution.y;
@@ -131,15 +131,14 @@ uv.y = (fragCoord.y - 0.5f * iResolution.y) / iResolution.y;
 float2 UV;
 UV.x = fragCoord.x / iResolution.x;
 UV.y = fragCoord.y / iResolution.y;
-float T = iTime + RAIN2 * 2.0f;
 
 float t = T * 0.2f;
-float rainAmount = RAIN1 * (_sinf(T * 0.05f) * 0.3f + 0.7f);
+float rainAmount = RAIN * (_sinf(T * 0.05f) * 0.3f + 0.7f) * 1.5f;
 float maxBlur = _mix(3.0f, 6.0f, rainAmount);
 float minBlur = 2.0f;
 float story = 0.0f;
-
-uv *= 0.7f - ZOOM * 0.3f;
+uv *= (2.0f - ZOOM) + 0.2f;
+uv.x -= 1.0f;
 
 float staticDrops = S(-0.5f, 1.0f, rainAmount) * 2.0f;
 float layer1 = S(0.25f, 0.75f, rainAmount);
@@ -149,7 +148,7 @@ float2 c = Drops(uv, t, staticDrops, layer1, layer2);
 float2 e = make_float2(0.001f, 0.0f);
 float cx = Drops(uv + e, t, staticDrops, layer1, layer2).x;
 float cy = Drops(uv + make_float2(e.y, e.x), t, staticDrops, layer1, layer2).x;
-float2 n = make_float2(cx-c.x, cy-c.x);
+float2 n = make_float2(cx - c.x, cy - c.x);
 
 float focus = _mix(maxBlur - c.y, minBlur, S(0.1f, 0.2f, c.x));
 float3 col;
@@ -168,6 +167,13 @@ lightning = _sinf(t * _sinf(t * 10.0f)) * _powf(_fmaxf(0.0f, _sinf(t + _sinf(t))
 col *= 1.0f + lightning * _mix(1.0f, 0.1f, story * story);
 UV -= 0.5f;
 col *= 1.0f - dot(UV, UV);
+}
+
+if(JUST_RAIN) {
+float r = _tex2D(p_TexR, p_X, p_Y);
+float g = _tex2D(p_TexG, p_X, p_Y);
+float b = _tex2D(p_TexB, p_X, p_Y);
+col -= make_float3(r, g, b);
 }
 
 return col;
