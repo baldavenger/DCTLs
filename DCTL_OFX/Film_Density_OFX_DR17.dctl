@@ -1,0 +1,134 @@
+// Film Density OFX DCTL
+
+DEFINE_UI_PARAMS(p_Den, Film Density, DCTLUI_SLIDER_FLOAT, 0, 0, 2, 0.001)
+DEFINE_UI_PARAMS(p_WR, Red Weight, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(p_WG, Green Weight, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(p_WB, Blue Weight, DCTLUI_SLIDER_FLOAT, 1, 0, 2, 0.001)
+DEFINE_UI_PARAMS(p_LimitS, Low Saturation Limiter, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(p_LimitL, Low Luma Limiter, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(p_Display, Display Alpha, DCTLUI_CHECK_BOX, 0)
+
+#if (__RESOLVE_VER_MAJOR__ < 17)
+__DEVICE__ float _floorf( float A) {
+return (float)_floor(A);
+}
+#endif
+
+__DEVICE__ float3 RGB_to_HSV( float3 RGB ) {
+float3 HSV;
+float min = _fminf(_fminf(RGB.x, RGB.y), RGB.z);
+float max = _fmaxf(_fmaxf(RGB.x, RGB.y), RGB.z);
+HSV.z = max;
+float delta = max - min;
+if (max != 0.0f) {
+HSV.y = delta / max;
+} else {
+HSV.y = 0.0f;
+HSV.x = 0.0f;
+return HSV;
+}
+if (delta == 0.0f) {
+HSV.x = 0.0f;
+} else if (RGB.x == max) {
+HSV.x = (RGB.y - RGB.z) / delta;
+} else if (RGB.y == max) {
+HSV.x = 2.0f + (RGB.z - RGB.x) / delta;
+} else {
+HSV.x = 4.0f + (RGB.x - RGB.y) / delta;
+}
+HSV.x *= 1.0f / 6.0f;
+if (HSV.x < 0.0f)
+HSV.x += 1.0f;
+return HSV;
+}
+
+__DEVICE__ float3 HSV_to_RGB(float3 HSV) {
+float3 RGB;
+if (HSV.y == 0.0f) {
+RGB.x = RGB.y = RGB.z = HSV.z;
+} else {
+HSV.x *= 6.0f;
+float i = _floorf(HSV.x);
+float f = HSV.x - i;
+i = i >= 0.0f ? _fmod(i, 6.0f) : _fmod(i, 6.0f) + 6.0f;
+float p = HSV.z * (1.0f - HSV.y);
+float q = HSV.z * (1.0f - HSV.y * f);
+float t = HSV.z * (1.0f - HSV.y * (1.0f - f));
+RGB.x = i == 0.0f ? HSV.z : i == 1.0f ? q : i == 2.0f ? p : i == 3.0f ? p : i == 4.0f ? t : HSV.z;
+RGB.y = i == 0.0f ? t : i == 1 ? HSV.z : i == 2.0f ? HSV.z : i == 3.0f ? q : i == 4.0f ? p : p;
+RGB.z = i == 0.0f ? p : i == 1 ? p : i == 2.0f ? t : i == 3.0f ? HSV.z : i == 4.0f ? HSV.z : q;
+}
+return RGB;
+}
+
+__DEVICE__ float RGB_to_Sat( float3 RGB) {
+float min = _fminf(_fminf(RGB.x, RGB.y), RGB.z);
+float max = _fmaxf(_fmaxf(RGB.x, RGB.y), RGB.z);
+float delta = max - min;
+float Sat = max != 0.0f ? delta / max : 0.0f;
+return Sat;
+}
+
+__DEVICE__ float3 Saturation(float3 RGB, float luma, float Sat) {
+RGB.x = (1.0f - Sat) * luma + RGB.x * Sat;
+RGB.y = (1.0f - Sat) * luma + RGB.y * Sat;
+RGB.z = (1.0f - Sat) * luma + RGB.z * Sat;
+return RGB;
+}
+
+__DEVICE__ float get_luma(float3 RGB, float Rw, float Gw, float Bw) {
+float R, G, B;
+R = Rw + 1.0f - (Gw / 2.0f) - (Bw / 2.0f);
+G = Gw + 1.0f - (Rw / 2.0f) - (Bw / 2.0f);
+B = Bw + 1.0f - (Rw / 2.0f) - (Gw / 2.0f);
+float luma = (RGB.x * R + RGB.y * G + RGB.z * B) / 3.0f;
+return luma;
+}
+
+__DEVICE__ float Limiter(float val, float limiter) {
+float alpha = limiter > 1.0f ? val + (1.0f - limiter) * (1.0f - val) : limiter >= 0.0f ? (val >= limiter ? 1.0f : 
+val / limiter) : limiter < -1.0f ? (1.0f - val) + (limiter + 1.0f) * val : val <= (1.0f + limiter) ? 1.0f : 
+(1.0 - val) / (1.0f - (limiter + 1.0f));
+alpha = _saturatef(alpha);
+return alpha;
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float3 rgbIn = make_float3(p_R, p_G, p_B);
+if (p_Den == 0.0f && p_Display == 0)
+return rgbIn;
+
+float WR = 2.0f - p_WR;
+float WG = 2.0f - p_WG;
+float WB = 2.0f - p_WB;
+float luma = get_luma(rgbIn, WR, WG, WB);
+float SatA = 1.0f / (p_Den + 1.0f);
+float3 rgbOut = Saturation(rgbIn, luma, SatA);
+
+float alphaS, alphaL, alpha;
+alphaS = alphaL = alpha = 1.0f;
+
+if (p_LimitS > 0.0f) {
+float sat = RGB_to_Sat(rgbIn);
+alphaS = Limiter(sat, p_LimitS);
+alpha = alphaS;
+}
+if (p_LimitL > 0.0f) {
+alphaL = (rgbIn.x + rgbIn.y + rgbIn.z) / 3.0f;
+alphaL = Limiter(alphaL, p_LimitL);
+alpha *= alphaL;
+}
+
+rgbOut = RGB_to_HSV(rgbOut);
+rgbOut.y *= 1.0f / SatA ;
+rgbOut = HSV_to_RGB(rgbOut);
+
+if (alpha < 1.0f)
+rgbOut = rgbOut * alpha + (1.0f - alpha) * rgbIn;
+
+if (p_Display)
+return make_float3(alpha, alpha, alpha);
+
+return rgbOut;
+}
