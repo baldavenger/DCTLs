@@ -1,0 +1,525 @@
+// TIE Fighters OFX DCTL METAl
+
+DEFINE_UI_PARAMS(time, Animate, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(ROTATE_S, Rotate Scene, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(HORI, Horizontal, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(VERT, Vertical, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(ZOOM, Zoom, DCTLUI_SLIDER_FLOAT, 0, -1, 1, 0.001)
+DEFINE_UI_PARAMS(LAZER, Lazer, DCTLUI_SLIDER_INT, 0, 0, 5, 1)
+
+typedef struct {
+float d;
+int id;
+float3 uv;
+float glo;
+} Hit;
+
+typedef struct {
+float2 r0, r1;
+} mat2;
+
+typedef struct {
+float3 r0, r1, r2;
+} mat3;
+
+typedef struct {
+float4 r0, r1,r2, r3;
+} mat4;
+
+#if (__RESOLVE_VER_MAJOR__ < 17)
+__DEVICE__ float _floorf( float A) {
+return (float)_floor(A);
+}
+#endif
+
+__DEVICE__ float2 _fabs2( float2 A) {
+return make_float2(_fabs(A.x), _fabs(A.y));
+}
+
+__DEVICE__ float3 _fabs3( float3 A) {
+return make_float3(_fabs(A.x), _fabs(A.y), _fabs(A.z));
+}
+
+__DEVICE__ float3 _floorf3( float3 A) {
+return make_float3(_floorf(A.x), _floorf(A.y), _floorf(A.z));
+}
+
+__DEVICE__ float _fract( float A) {
+return A - _floorf(A);
+}
+
+__DEVICE__ float3 _fract3( float3 A) {
+float3 B;
+B.x = A.x - _floorf(A.x); B.y = A.y - _floorf(A.y); B.z = A.z - _floorf(A.z);
+return B;
+}
+
+__DEVICE__ float4 _fract4( float4 A) {
+float4 B;
+B.x = A.x - _floorf(A.x); B.y = A.y - _floorf(A.y);
+B.z = A.z - _floorf(A.z); B.w = A.w - _floorf(A.w);
+return B;
+}
+
+__DEVICE__ float2 _fmaxf2( float2 in, float Min) {
+float2 out;
+out.x = _fmaxf(in.x, Min); out.y = _fmaxf(in.y, Min);
+return out;
+}
+
+__DEVICE__ float3 _fmaxf3( float3 in, float Min) {
+float3 out;
+out.x = _fmaxf(in.x, Min); out.y = _fmaxf(in.y, Min); out.z = _fmaxf(in.z, Min);
+return out;
+}
+
+__DEVICE__ float _sign( float A) {
+return (A < 0.0f ? -1.0f : A > 0.0f ? 1.0f : 0.0f);
+}
+
+__DEVICE__ float3 _powf3( float3 A, float B) {
+return make_float3(_powf(A.x, B), _powf(A.y, B), _powf(A.z, B));
+}
+
+__DEVICE__ mat2 make_mat2( float A1, float A2, float B1, float B2) {
+mat2 C;
+C.r0 = make_float2(A1, A2); C.r1 = make_float2(B1, B2);
+return C;
+}
+
+__DEVICE__ mat3 make_mat3_f3( float3 A, float3 B, float3 C) {
+mat3 D;
+D.r0 = A; D.r1 = B; D.r2 = C;
+return D;
+}
+
+__DEVICE__ mat3 make_mat3_f( float m00, float m01, float m02, 
+float m10, float m11, float m12, float m20, float m21, float m22) {
+mat3 M;
+M.r0 = make_float3(m00, m01, m02); M.r1 = make_float3(m10, m11, m12); 
+M.r2 = make_float3(m20, m21, m22);
+return M;
+}
+
+__DEVICE__ float3 multi_f3_f33( float3 A, mat3 B) {
+float3 C;
+C.x = A.x * B.r0.x + A.y * B.r0.y + A.z * B.r0.z;
+C.y = A.x * B.r1.x + A.y * B.r1.y + A.z * B.r1.z;
+C.z = A.x * B.r2.x + A.y * B.r2.y + A.z * B.r2.z;
+return C;
+}
+
+__DEVICE__ mat3 multi_f33_f33( mat3 A, mat3 B) {
+float r[3][3];
+float a[3][3] =	{{A.r0.x, A.r0.y, A.r0.z},
+{A.r1.x, A.r1.y, A.r1.z},
+{A.r2.x, A.r2.y, A.r2.z}};
+float b[3][3] =	{{B.r0.x, B.r0.y, B.r0.z},
+{B.r1.x, B.r1.y, B.r1.z},
+{B.r2.x, B.r2.y, B.r2.z}};
+for( int i = 0; i < 3; ++i) {
+for( int j = 0; j < 3; ++j) {
+r[i][j] = 0.0f;
+for( int k = 0; k < 3; ++k) {
+r[i][j] = r[i][j] + a[i][k] * b[k][j];
+}}}
+mat3 R = make_mat3_f3(make_float3(r[0][0], r[0][1], r[0][2]), 
+make_float3(r[1][0], r[1][1], r[1][2]), make_float3(r[2][0], r[2][1], r[2][2]));
+return R;
+}
+
+__DEVICE__ mat3 cam3D( float rotateX, float rotateY, float rotateZ) {
+mat3 rot_x = make_mat3_f(1.0f, 0.0f, 0.0f, 0.0f, _cosf(rotateX), _sinf(rotateX), 0.0f, -_sinf(rotateX), _cosf(rotateX));
+mat3 rot_y = make_mat3_f(_cosf(rotateY), 0.0f, _sinf(rotateY), 0.0f, 1.0f, 0.0f, -_sinf(rotateY), 0.0f, _cosf(rotateY));
+mat3 rot_z = make_mat3_f(_cosf(rotateZ), _sinf(rotateZ), 0.0f, -_sinf(rotateZ), _cosf(rotateZ), 0.0f, 0.0f, 0.0f, 1.0f);
+mat3 Cam = multi_f33_f33(multi_f33_f33(rot_y, rot_x), rot_z);
+return Cam;
+}
+
+__DEVICE__ float4 hash44( float4 p4) {
+p4 = _fract4(make_float4(p4.x * 0.1031f, p4.y * 0.103f, p4.z * 0.0973f, p4.w * 0.1099f));
+float p = dot(p4, make_float4(p4.w + 33.33f, p4.z + 33.33f, p4.x + 33.33f, p4.y + 33.33f));
+p4.x += p; p4.y += p; p4.z += p; p4.w += p;
+return _fract4(make_float4((p4.x + p4.y) * p4.z, (p4.x + p4.z) * p4.y, (p4.y + p4.z) * p4.w, (p4.z + p4.w) * p4.x));
+}
+
+__DEVICE__ float n31( float3 p) {
+float3 s = make_float3(7.0f, 157.0f, 113.0f);
+float3 ip = _floorf3(p);
+p = _fract3(p);
+p = p * p * (3.0f - 2.0f * p);
+float4 h = make_float4(0.0f, s.y, s.z, s.y + s.z) + dot(ip, s);
+h = _mix(hash44(h), hash44(h + s.x), p.x);
+float2 hxy = _mix(make_float2(h.x, h.z), make_float2(h.y, h.w), p.y);
+h.x = hxy.x;
+h.y = hxy.y;
+return _mix(h.x, h.y, p.z);
+}
+
+__DEVICE__ Hit minH( Hit a, Hit b) { 
+if (b.d < a.d) a = b;
+return a;
+}
+
+__DEVICE__ Hit make_Hit( float D, int ID, float3 UV, float GLO) { 
+Hit H;
+H.d = D; H.id = ID; H.uv = UV; H.glo = GLO; 
+return H;
+}
+
+__DEVICE__ float2 Rotate( float2 A, float B) {
+float AX = A.x; float AY = A.y;
+float c = _cosf(B); float s = _sinf(B);
+float2 C;
+C.x = AX * c + AY * s;
+C.y = AX * -s + AY * c;
+return C;
+}
+
+__DEVICE__ float2 opModPolar(float2 p, float n, float o) {
+float angle = 3.141f / n;
+float a = _fmod(_atan2f(p.y, p.x) + angle + o, 2.0f * angle) - angle;
+return length(p) * make_float2(_cosf(a), _sinf(a));
+}
+
+__DEVICE__ float sdHex(float3 p, float2 h) {
+float3 k = make_float3(-0.866f, 0.5f, 0.577f);
+p = _fabs3(p);
+float2 pxy = make_float2(p.x, p.y);
+pxy.x -= 2.0f * _fminf(dot(make_float2(k.x, k.y), make_float2(p.x, p.y)), 0.0f) * k.x;
+pxy.y -= 2.0f * _fminf(dot(make_float2(k.x, k.y), make_float2(p.x, p.y)), 0.0f) * k.y;
+p.x = pxy.x; p.y = pxy.y;
+float2 d = make_float2(length(make_float2(p.x, p.y) - make_float2(_clampf(p.x, -k.z * h.x, k.z * h.x), h.x)) * _sign(p.y - h.x), p.z - h.y);
+return _fminf(_fmaxf(d.x, d.y), 0.0f) + length(_fmaxf2(d, 0.0f));
+}
+
+__DEVICE__ float sdBox(float3 p, float3 b) {
+float3 q = _fabs3(p) - b;
+return length(_fmaxf3(q, 0.0f)) + _fminf(_fmaxf(q.x, _fmaxf(q.y, q.z)), 0.0f);
+}
+
+__DEVICE__ float sdPlane(float3 p, float3 n) { 
+return dot(p, n); 
+}
+
+__DEVICE__ float dot2(float3 a) { 
+return dot(a, a); 
+}
+
+__DEVICE__ float sdTri(float3 p, float3 a, float3 b, float3 c) {
+float3 ba = b - a,
+pa = p - a,
+cb = c - b,
+pb = p - b,
+ac = a - c,
+pc = p - c,
+n = cross(ba, ac);
+return _sqrtf((_sign(dot(cross(ba, n), pa)) + _sign(dot(cross(cb, n), pb)) + _sign(dot(cross(ac, n), pc)) < 2.0f) ? 
+_fminf(_fminf(dot2(ba * _clampf(dot(ba, pa) / dot2(ba), 0.0f, 1.0f) - pa), dot2(cb * _clampf(dot(cb, pb) / dot2(cb), 0.0f, 1.0f) - pb)), 
+dot2(ac * _clampf(dot(ac, pc) / dot2(ac), 0.0f, 1.0f) - pc)) : dot(n, pa) * dot(n, pa) / dot2(n));
+}
+
+__DEVICE__ float sdCyl(float3 p, float2 hr) {
+float2 d = _fabs2(make_float2(length(make_float2(p.x, p.y)), p.z)) - hr;
+return _fminf(_fmaxf(d.x, d.y), 0.0f) + length(_fmaxf2(d, 0.0f));
+}
+
+__DEVICE__ float3 getRayDir(float3 ro, float3 lookAt, float2 uv) {
+float3 f = normalize(lookAt - ro),
+r = normalize(cross(make_float3(0.0f, 1.0f, 0.0f), f));
+return normalize(f + r * uv.x + cross(f, r) * uv.y);
+}
+
+__DEVICE__ Hit sdWings(float3 p) {
+p.x = _fabs(p.x); p.y = _fabs(p.y);
+p.z = _fabs(p.z) - 2.3f;
+return make_Hit(_fminf(sdTri(p, make_float3(0.0f, 0.0f, 0.0f), make_float3(2.0f, 3.0f, 0.0f), 
+make_float3(-2.0f, 3.0f, 0.0f)), sdTri(p, make_float3(0.0f, 0.0f, 0.0f), make_float3(3.3f, 0.0f, 0.0f), 
+make_float3(2.0f, 3.0f, 0.0f))) - 0.03f, 2, p, 0.0f);
+}
+
+__DEVICE__ Hit sdTie(float3 p) {
+p = make_float3(p.z - 10.0f, p.y, p.x);
+
+// Wings.
+Hit h = sdWings(p);
+if (h.d > 2.5f) return h; // Bail early - Point is too far away
+
+// Wing ribs
+float3 op = p;
+p.x = _fabs(p.x);
+p.y = _fabs(p.y);
+p.z = _fabs(p.z) - 2.3f;
+float f = 0.0f;
+float d = 0.0f;
+if ((f = _fabs(p.y)) < 0.1f) d = 0.03f + step(f, 0.025f) * 0.02f;
+else if ((f = _fabs(p.y - p.x * 1.5f)) < 0.15f) d = 0.03f + step(f, 0.025f) * 0.02f;
+else if (_fabs(p.y - 3.0f) < 0.1f) d = 0.03f;
+else if (_fabs(p.x - 3.3f + p.y * 0.43f) < 0.1f) d = 0.03f;
+
+if (d > 0.0f) {
+h.d -= d;
+h.id = 1;
+}
+
+// Wing center hexes
+d = _fminf(sdHex(p, make_float2(0.7f, 0.06f)), sdHex(p, make_float2(0.5f, 0.12f)));
+// Crossbar
+d = _fminf(d, sdCyl(op, make_float2(_mix(0.21f, 0.23f, step(p.y, 0.04f)), 2.3f))); // Main bar
+p.z = _fabs(p.z + 0.8f) - 0.5f;
+f = sdCyl(p, make_float2(_mix(0.21f, 0.33f, (p.z + 0.33f) / 0.48f), 0.24f));
+p.x -= 0.25f;
+p.z += 0.02f;
+d = _fminf(d, _fmaxf(f, -sdBox(p, make_float3(0.1f, 0.4f, 0.08f)))); // Join to wing/cockpit
+p = op;
+p.y = _fabs(p.y);
+p.z = _fabs(p.z);
+h = minH(h, make_Hit(_fminf(d, sdTri(p, make_float3(0.0f, 0.0f, 0.0f), make_float3(0.0f, 0.8f, 0.0f), make_float3(0.0f, 0.0f, 2.0f)) - 0.05f), 1, p, h.glo)); // Triangle cockpit supports.
+// Cockpit - Sphere
+f = step(0.75f, p.y);
+h = minH(h, make_Hit(length(op) - 0.9f - 0.02f * (f + step(p.y, 0.03f) + f * step(p.z, 0.1f)), 6, p, h.glo));
+// Cockpit - Glass
+p = op;
+p.x += 0.27f;
+float2 pyz = opModPolar(make_float2(p.y, p.z), 8.0f, 0.4f);
+p.y = pyz.x;
+p.z = pyz.y;
+float2 A = Rotate(make_float2(-1.0f, 0.0f), 0.5f);
+h = minH(h, make_Hit(_fmaxf(length(p) - 0.7f, sdPlane(p + make_float3(0.77f, 0.0f, 0.0f), make_float3(A.x, A.y, 0.0f))), 3, p, h.glo));
+// Cockpit - Window frame
+h = minH(h, make_Hit(_fmaxf(length(p) - 0.71f, 0.45f - length(make_float2(p.y, p.z))), 5, p, h.glo));
+
+// Guns
+p = op;
+p.x += 0.7f;
+p.y += 0.6f;
+p.z = _fabs(p.z) - 0.2f;
+h = minH(h, make_Hit(sdCyl(make_float3(p.z, p.y, p.x), make_float2(0.05f, 0.2f)), 7, p, h.glo));
+return h;
+}
+
+// Position of the lead TIE
+__DEVICE__ float3 tiePos(float3 p, float t) {
+float x = _cosf(t * 0.7f);
+p.x += x;
+p.y += _cosf(t);
+p.z += _sinf(t * 1.1f);
+float2 pxy = Rotate(make_float2(p.x, p.y), x * -0.1f);
+p.x = pxy.x;
+p.y = pxy.y;
+return p;
+}
+
+__DEVICE__ Hit sdTies(float3 p, float TT) {
+float3 op = p;
+
+// Front tie
+p = tiePos(p, TT);
+Hit h = sdTie(p);
+if (_sinf(TT) - step(TT, 0.0f) * 10.0f > -0.7f) {
+// Weapon fire
+p.x = _fabs(p.x) - 0.2f;
+p.y += 0.6f;
+p.z = _fmod(p.z + TT * 50.0f, 8.0f) - 4.0f;
+float x = _fmaxf(sdCyl(p, make_float2(0.03f, 1.0f)), op.z - 8.0f);
+h = minH(h, make_Hit(x, 9, p, h.glo));
+h.glo += 0.05f / (0.01f + x * x);
+}
+
+// Rear tie
+if (h.d > 0.0015f) {
+float x = -_cosf(TT);
+p = op + make_float3(14.0f, -4.0f - 0.5f * _cosf(TT * 0.5f), -20.0f + 4.0f * _sinf(TT * 0.6f));
+float2 pxy = Rotate(make_float2(p.x, p.y), x * -0.1f);
+p.x = pxy.x; p.y = pxy.y;
+h = minH(h, sdTie(p));
+}
+
+return h;
+}
+
+__DEVICE__ Hit sdTerrain(float3 p, float TT) {
+p.z -= TT * 7e2; // Number controls the terrain speed
+float2 d;
+d.x = _sinf(p.x * 0.01476f) * 10.0f + _sinf(p.x * 0.05212f) * 2.0f;
+d.y = _sinf(p.z * 0.01345f) * 10.0f + _sinf(p.z * 0.04512f) * 2.0f;
+return make_Hit(_fabs(p.y - d.x + d.y + 25.0f), 4, p, 0.0f);
+}
+
+__DEVICE__ Hit map(float3 p, float TT) {
+Hit h = sdTerrain(p, TT);
+h = minH(h, sdTies(p, TT));
+return h;
+}
+
+__DEVICE__ float3 calcN(float3 p, float t, float TT, int iFrame) {
+float h = t * 0.2f;
+float3 n = make_float3(0.0f, 0.0f, 0.0f);
+for (int i = min(iFrame, 0); i < 4; i++) {
+float3 e = 0.005773f * (2.0f * make_float3((((i + 3) >> 1) & 1), (i >> 1) & 1, i & 1) - 1.0f);
+n += e * sdTies(p + e * h, TT).d;
+}
+return normalize(n);
+}
+
+// Terrian normal
+
+__DEVICE__ float3 calcTN(float3 p, float t, float TT, int iFrame) {
+float h = t * 2.0f;
+float3 n = make_float3(0.0f, 0.0f, 0.0f);
+for (int i = min(iFrame, 0); i < 4; i++) {
+float3 e = 0.005773f * (2.0f * make_float3((((i + 3) >> 1) & 1), (i >> 1) & 1, i & 1) - 1.0f);
+n += e * sdTerrain(p + e * h, TT).d;
+}
+return normalize(n);
+}
+
+__DEVICE__ float calcShadow(float3 p, float3 ld, float TT) {
+float s = 1.0f,
+t = 1.0f;
+for (float i = 0.0f; i < 30.0f; i++) {
+float h = sdTies(p + ld * t, TT).d;
+s = _fminf(s, 30.0f * h / t);
+t += h;
+if (s < 0.001f || t > 1e2) break;
+}
+
+return _clampf(s, 0.0f, 1.0f);
+}
+
+__DEVICE__ float ao(float3 p, float3 n, float h, float TT) { 
+return _clampf(sdTies(p + h * n, TT).d / h, 0.0f, 1.0f); 
+}
+
+// Sub-surface scattering (Applied to the snow)
+#define SSS(h)	_clampf(sdTerrain(p + ld * h, TT).d / h, 0.0f, 1.0f)
+
+
+__DEVICE__ float3 vignette(float3 c, float2 fc, float2 resolution) {
+float2 q = make_float2(fc.x / resolution.x, fc.y / resolution.y);
+float A = 0.5f + 0.5f * _powf(16.0f * q.x * q.y * (1.0f - q.x) * (1.0f - q.y), 0.4f);
+return make_float3(c.x * A, c.y * A, c.z * A);
+}
+
+__DEVICE__ float3 lights(float3 p, float3 rd, float d, Hit h, float TT, int iFrame) {
+float am, ldt, l, spe,
+sped = 4.0f;
+float3 c, n, lig,
+ld = normalize(make_float3(30.0f, 50.0f, -40.0f) - p);
+if (h.id == 4) {
+// Snow
+float C1 = 1.2f + SSS(1.0f) * 0.44f;
+c = make_float3(C1, C1, C1);
+
+n = normalize(calcTN(p, d, TT, iFrame) + n31(h.uv) * 0.1f);
+am = _mix(0.3f, 0.9f, sdTerrain(p + n, TT).d);
+sped = 0.4f;
+}
+else {
+n = calcN(p, d, TT, iFrame);
+am = _mix(ao(p, n, 0.5f, TT), ao(p, n, 1.2f, TT), 0.75f);
+if (h.id == 1 || h.id == 6) {
+float C2 = 0.3f - n31(h.uv * 18.7f) * 0.1f;
+c = make_float3(C2, C2, C2);
+sped = 0.5f;
+if (h.id == 6) c *= 1.0f - 0.8f * step(_fabs(_atan2f(h.uv.y, h.uv.z) - 0.8f), 0.01f); // Cockpit
+}
+else if (h.id == 2) {
+// Black wing area
+if (h.uv.x < h.uv.y * 0.7f) h.uv.y = 0.0f;
+float C3 = 0.005f + 0.045f * _powf(_fabs(_sinf((h.uv.x - h.uv.y) * 12.0f)), 20.0f);
+c = make_float3(C3, C3, C3);
+sped = 0.2f;
+}
+else if (h.id == 7) {
+// Guns
+c = make_float3(0.02f, 0.02f, 0.02f);
+sped = 0.2f;
+}
+else if (h.id == 3) c = make_float3(0.05f, 0.05f, 0.05f); // Cockpit glass
+else if (h.id == 5) c = make_float3(0.1f, 0.1f, 0.1f); // Glass surround
+else c = make_float3(0.3f, 1.0f, 0.3f); // Fire!
+}
+
+// Primary light
+ldt = dot(ld, n);
+l = _fmaxf(0.0f, 0.2f + 0.8f * ldt) + _fmaxf(0.0f, 0.2f - 0.8f * ldt) * 0.3f;
+spe = smoothstep(0.0f, 1.0f, _powf(_fmaxf(0.0f, dot(rd, reflect(ld, n))), 50.0f)) * sped;
+
+// Combine
+lig = l * am * _mix(0.4f, 1.0f, calcShadow(p, ld, TT)) * make_float3(2.0f, 1.8f, 1.7f) + _clampf(n.y, 0.05f, 1.0f) * make_float3(0.9f, 0.95f, 1.0f); // Sky light.
+return c * lig + spe;
+}
+
+__DEVICE__ float3 march(float3 ro, float3 rd, int lazer, float TT, int iFrame) {
+// Raymarch
+float3 p, c;
+float gg,
+d = 0.01f;
+Hit h;
+for (float i = 0.0f; i < 120.0f; i++) {
+p = ro + rd * d;
+h = map(p, TT);
+if (_fabs(h.d) < 0.0015f || d > 6e2) break;
+d += h.d; // No hit, so keep marching
+}
+
+gg = h.glo; // Cache the 'glow'
+if (d > 6e2) c = make_float3(0.85f, 0.9f, 1.0f);
+else c = _mix(lights(p, rd, d, h, TT, iFrame), make_float3(1.0f, 1.0f, 1.0f), smoothstep(2e2, 540.0f, d));
+
+float3 col = lazer == 0 ? make_float3(0.0f, 1.0f, 0.0f) : lazer == 1 ? make_float3(1.0f, 0.0f, 0.0f) : lazer == 2 ? make_float3(0.0f, 0.0f, 1.0f) : 
+lazer == 3 ? make_float3(1.0f, 1.0f, 0.0f) : lazer == 4 ? make_float3(0.0f, 1.0f, 1.0f) : make_float3(1.0f, 0.0f, 1.0f);
+
+c += gg * col;
+if (h.id == 3 || h.id == 1) {
+// Reflections applied to cockpit glass and tie metal
+rd = reflect(rd, calcN(p, d, TT, iFrame));
+float alpha = (h.id == 3 ? 0.4f : 0.2f) * smoothstep(0.0f, 1.0f, -rd.y);
+if (alpha < 0.001f) return c; // Only reflect downwards
+d = 0.01f;
+ro = p;
+for (float i = 0.0f; i < 40.0f; i++) {
+p = ro + rd * d;
+h = sdTerrain(p, TT);
+if (_fabs(h.d) < 0.0015f || d > 3e2) break;
+d += h.d; // No hit, so keep marching
+}
+
+// Combine a % of the reflected color
+c = _mix(c, d > 3e2 ? make_float3(1.0f, 1.0f, 1.0f) : lights(p, rd, d, h, TT, iFrame), alpha);
+}
+
+return c;
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+float width = (float)p_Width;
+float height = (float)p_Height;
+float X = (float)p_X;
+float Y = height - (float)p_Y;
+float2 iResolution = make_float2(width, height);
+float2 fc = make_float2(X, Y);
+
+float Time = time * 40.0f;
+
+float TT = _fmod(Time, 40.01f) - 4.0f;
+int iFrame = (int)_floorf(Time * 24.0f);
+float t = smoothstep(0.0f, 5.0f, TT);
+
+float3 lookAt = _mix(make_float3(0.0f, 0.0f, 6.0f) - tiePos(make_float3(0.0f, 0.0f, 0.0f), TT - 0.2f), make_float3(2.5f, 0.0f, 0.0f), t);
+
+float3 ro = _mix(lookAt - make_float3(0.0f, 0.0f, 1.0f), make_float3(4.0f + _cosf(TT), _sinf(TT) * 0.2f, -8.0f + _cosf(TT * 0.2f) * 6.0f), t);
+float3 rd = getRayDir(ro, lookAt, (fc - 0.5f * iResolution) / iResolution.y);
+
+ro = make_float3(ro.x - HORI * 6.0f, ro.y - VERT * 6.0f, ro.z + ZOOM * 6.0f);
+
+mat3 cam = cam3D(0.0f, ROTATE_S * 6.0f, 0.0f);
+ro = multi_f3_f33(ro, cam);
+rd = multi_f3_f33(rd, cam);
+
+float3 rgb = vignette(_powf3(march(ro, rd, LAZER, TT, iFrame), 0.45f), fc, iResolution);
+
+return rgb;
+}
