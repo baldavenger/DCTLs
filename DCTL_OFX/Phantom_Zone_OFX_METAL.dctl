@@ -1,0 +1,232 @@
+// Phantom Zone OFX DCTL METAL
+
+DEFINE_UI_PARAMS(time, Animate, DCTLUI_SLIDER_FLOAT, 0, 0, 1, 0.001)
+DEFINE_UI_PARAMS(rings, Ring Colour, DCTLUI_SLIDER_INT, 0, 0, 6, 1)
+
+typedef struct {
+float2 H;
+float2 gUV;
+float glow;
+} ZOD;
+
+#define PI		3.14159265359f
+
+__DEVICE__ float3 _fmaxf3( float3 in, float Min) {
+float3 out;
+out.x = _fmaxf(in.x, Min); out.y = _fmaxf(in.y, Min); out.z = _fmaxf(in.z, Min);
+return out;
+}
+
+__DEVICE__ float3 _fabs3( float3 A) {
+return make_float3(_fabs(A.x), _fabs(A.y), _fabs(A.z));
+}
+
+__DEVICE__ float3 _powf3( float3 A, float B) {
+return make_float3(_powf(A.x, B), _powf(A.y, B), _powf(A.z, B));
+}
+
+__DEVICE__ float3 rotate( float3 p, float R, int order) {
+float c = _cosf(R);
+float s = _sinf(R);
+float A = order == 23 ? p.y : p.x;
+float B = order == 12 ? p.y : p.z;
+float d1 = A * c + B * s;
+float d2 = A * -s + B * c;
+float3 D = order == 12 ? make_float3(d1, d2, p.z) : order == 13 ? 
+make_float3(d1, p.y, d2) : make_float3(p.x, d1, d2);
+return D;
+}
+
+__DEVICE__ float sdPlane( float3 p) {
+return p.y;
+}
+
+__DEVICE__ float sdCylinder( float3 p, float r, float h) {
+float d = length(make_float2(p.x, p.z)) - r;
+return _fmaxf(_fmaxf(-p.y, d), p.y - h);
+}
+
+__DEVICE__ float sdTorus(float3 p, float t) {
+float2 q = make_float2(length(make_float2(p.x, p.z)) - t, p.y);
+return length(q);
+}
+
+__DEVICE__ float sdBox( float3 p, float3 b) {
+float3 q = _fabs3(p) - b;
+return length(_fmaxf3(q, 0.0f)) + _fminf(_fmaxf(q.x, _fmaxf(q.y, q.z)), 0.0f);
+}
+
+__DEVICE__ float sdRings( float3 p, float iTime) {
+p = rotate(p, iTime * 3.0f, 13);
+p.y = _fabs(p.y - 1.85f) - 0.8f;
+p = rotate(p, PI / 8.0f, 12);
+float d = sdTorus(p, 2.0f);
+return d;
+}
+
+__DEVICE__ float2 sdRings2( float3 p, float iTime, float glow) {
+p = rotate(p, iTime * 3.0f, 13);
+p.y = _fabs(p.y - 1.85f) - 0.8f;
+p = rotate(p, PI / 8.0f, 12);
+float d = sdTorus(p, 2.0f);
+glow += 0.008f / (d * d);
+return make_float2(d, glow);
+}
+
+__DEVICE__ float sdGlass( float3 p, float iTime) {
+p.y -= 2.0f;
+p = rotate(p, iTime * 0.3f, 13);
+p = rotate(p, _sinf(iTime * 0.9f), 12);
+p = rotate(p, _sinf(iTime * 0.7f), 23);
+return sdBox(p, make_float3(1.2f, 1.2f, 0.01f));
+}
+
+__DEVICE__ float3 sdGlass2( float3 p, float iTime) {
+p.y -= 2.0f;
+p = rotate(p, iTime * 0.3f, 13);
+p = rotate(p, _sinf(iTime * 0.9f), 12);
+p = rotate(p, _sinf(iTime * 0.7f), 23);
+float ratio = 0.5625f;
+float2 glassUV = make_float2(p.x * ratio, p.y) * 0.42f + 0.5f;
+float A =  sdBox(p, make_float3(1.2f, 1.2f, 0.01f));
+return make_float3(A, glassUV.x, glassUV.y);
+}
+
+__DEVICE__ float2 map( float3 p, float iTime) {
+float d1 = sdCylinder(p, 2.0f, 0.2f);
+float d2 = sdPlane(p);
+float d3 = sdRings(p, iTime);
+float d4 = sdGlass(p, iTime);
+float2 res = d1 < d2 ? make_float2(d1, 1.5f) : make_float2(d2, 2.5f);
+if (d3 < res.x) res = make_float2(d3, 0.0f);
+if (d4 < res.x) res = make_float2(d4, 3.5f);
+return res;
+}
+
+__DEVICE__ ZOD map2( float3 p, float iTime, ZOD P) {
+float d1 = sdCylinder(p, 2.0f, 0.2f);
+float d2 = sdPlane(p);
+float2 D3 = sdRings2(p, iTime, P.glow);
+float d3 = D3.x;
+float3 D4 = sdGlass2(p, iTime);
+float d4 = D4.x;
+float2 res = d1 < d2 ? make_float2(d1, 1.5f) : make_float2(d2, 2.5f);
+if (d3 < res.x) res = make_float2(d3, 0.0f);
+if (d4 < res.x) res = make_float2(d4, 3.5f);
+ZOD N;
+N.H = res;
+N.gUV = make_float2(D4.y, D4.z);
+N.glow = D3.y;
+return N;
+}
+
+__DEVICE__ float3 getRayDir( float3 ro, float3 lookAt, float2 uv) {
+float3 forward = normalize(lookAt - ro);
+float3 right = normalize(cross(make_float3(0.0f, 1.0f, 0.0f), forward));
+float3 up = cross(forward, right);
+return normalize(forward + right * uv.x + up * uv.y);
+}
+
+__DEVICE__ float3 calcNormal( float3 p, float iTime) {
+float2 e = make_float2(1.0f, -1.0f) * 0.5773f * 0.0005f;
+return normalize(make_float3(e.x, e.y, e.y) * map(p + make_float3(e.x, e.y, e.y), iTime).x + 
+make_float3(e.y, e.y, e.x) * map(p + make_float3(e.y, e.y, e.x), iTime).x + 
+make_float3(e.y, e.x, e.y) * map(p + make_float3(e.y, e.x, e.y), iTime).x + 
+make_float3(e.x, e.x, e.x) * map(p + make_float3(e.x, e.x, e.x), iTime).x);
+}
+
+__DEVICE__ float calcShadow( float3 p, float3 lightPos, float sharpness, float iTime) {
+float3 rd = normalize(lightPos - p);
+float h;
+float minH = 1.0f / sharpness;
+for (float d = 0.1f; d < 32.0f; d += h) {
+h = _fmaxf(0.0f, map(p + rd * d, iTime).x);
+minH = _fminf(minH, h / d);
+if (minH < 0.01f)
+break;
+}
+return minH * sharpness;
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{ 
+float width = (float)p_Width;
+float height = (float)p_Height;
+float X = (float)p_X;
+float Y = (float)p_Y;
+float2 resolution = make_float2(width, height);
+float2 uv;
+uv.x = (X - 0.5f * resolution.x) / resolution.y;
+uv.y = (Y - 0.5f * resolution.y) / resolution.y;
+
+float iTime = time * 40.0f;
+
+// Raymarch
+float3 ro = 5.0f * make_float3(0.0f, 0.4f, -1.1f + (4.5f * _sinf(iTime * 0.5f) + _sinf(iTime * 0.25f)) * 0.1f);
+float3 rd = getRayDir(ro, make_float3(0.0f, 1.4f, 0.0f), uv);
+
+ZOD Z;
+Z.H = make_float2(0.0f, 0.0f);
+Z.gUV = make_float2(0.0f, 0.0f);
+Z.glow = 0.0f;
+
+int hit = 0;
+float d = 0.01f;
+float3 p;
+for (float steps = 0.0f; steps < 128.0f; steps++) {
+p = ro + rd * d;
+Z = map2(p, iTime, Z);
+float2 h = Z.H;
+if (h.x < 0.004f * d) {
+hit = (int)(h.y);
+break;
+}
+d += h.x;
+}
+
+float gl = Z.glow;
+float2 glassUV = Z.gUV;
+
+float3 M = make_float3(0.001f, 0.001f, 0.001f);
+float3 M2;
+int uvX = (int)(glassUV.x * width);
+int uvY = (int)(glassUV.y * height);
+M2.x = _tex2D(p_TexR, uvX, uvY);
+M2.y = _tex2D(p_TexG, uvX, uvY);
+M2.z = _tex2D(p_TexB, uvX, uvY);
+
+float3 skyCol = make_float3(0.18f, 0.2f, 0.22f) * 0.1f;
+float3 col = skyCol;
+
+if (hit > 0) {
+float3 n = calcNormal(p, iTime);
+float3 lightPos = make_float3(1.0f, 1.2f, -5.0f);
+float3 lightCol = make_float3(1.0f, 0.9f, 0.8f);
+float3 lightToPoint = normalize(lightPos - p);
+float sha = calcShadow(p, lightPos, 5.0f, iTime);
+float spe = 1.5f * _powf(_fmaxf(0.0f, dot(rd, reflect(lightToPoint, n))), 30.0f);
+float3 mainLight = _clampf(dot(n, lightToPoint), 0.01f, 1.0f) * lightCol;
+float3 backLight = _clampf(dot(n, -rd), 0.01f, 1.0f) * 0.2f * lightCol;
+float fog = 1.0f - _expf(d * -0.03f);
+
+if (hit == 3) M = M2;
+
+col = mainLight * lightCol * sha;
+col += backLight;
+col += spe * lightCol;
+col *= M;
+col = _mix(col, skyCol, fog);
+}
+
+// Glow
+float3 Rings = rings == 0 ? make_float3(1.0f, 1.0f, 1.0f) : rings == 1 ? make_float3(0.0f, 1.0f, 0.0f) : 
+rings == 2 ? make_float3(1.0f, 0.0f, 0.0f) : rings == 3 ? make_float3(0.0f, 0.0f, 1.0f) : 
+rings == 4 ? make_float3(1.0f, 1.0f, 0.0f) : rings == 5 ? make_float3(0.0f, 1.0f, 1.0f) : 
+make_float3(1.0f, 0.0f, 1.0f);
+
+col += gl * 0.1f * Rings;
+
+col = _powf3(col, 0.4545f);
+
+return col;
+}
